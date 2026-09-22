@@ -1,0 +1,7 @@
+services:
+  frontend:
+    build: .
+    container_name: ts-test-manager-frontend
+    ports:
+      - "80:80"
+    restart: unless-stopped

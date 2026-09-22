@@ -1,0 +1,232 @@
+import React, { useState, useEffect } from 'react';
+import { X, Download, CheckSquare, Square } from 'lucide-react';
+import { CustomFieldDefinition, HiddenDefaultColumns } from '../../types/testManager';
+import { ExportColumn, getDefaultExportColumns } from '../../utils/exportTestCases';
+
+interface ExportTestCasesModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onExport: (columns: ExportColumn[], format: 'csv' | 'xlsx') => void;
+    customFieldDefinitions: CustomFieldDefinition[];
+    visibleCustomFieldIds: string[];
+    hiddenColumns: HiddenDefaultColumns;
+    testCaseCount: number;
+}
+
+const ExportTestCasesModal: React.FC<ExportTestCasesModalProps> = ({
+    isOpen,
+    onClose,
+    onExport,
+    customFieldDefinitions,
+    visibleCustomFieldIds,
+    hiddenColumns,
+    testCaseCount,
+}) => {
+    const [columns, setColumns] = useState<ExportColumn[]>([]);
+    const [format, setFormat] = useState<'csv' | 'xlsx'>('xlsx');
+
+    // Initialize columns when modal opens
+    useEffect(() => {
+        if (isOpen) {
+            const defaultColumns = getDefaultExportColumns(
+                customFieldDefinitions,
+                visibleCustomFieldIds,
+                hiddenColumns
+            );
+            setColumns(defaultColumns);
+        }
+    }, [isOpen, customFieldDefinitions, visibleCustomFieldIds, hiddenColumns]);
+
+    if (!isOpen) return null;
+
+    const handleToggleColumn = (columnId: string) => {
+        setColumns(prev =>
+            prev.map(col =>
+                col.id === columnId ? { ...col, enabled: !col.enabled } : col
+            )
+        );
+    };
+
+    const handleSelectAll = () => {
+        setColumns(prev => prev.map(col => ({ ...col, enabled: true })));
+    };
+
+    const handleDeselectAll = () => {
+        setColumns(prev => prev.map(col => ({ ...col, enabled: false })));
+    };
+
+    const handleExport = () => {
+        onExport(columns, format);
+        onClose();
+    };
+
+    const enabledCount = columns.filter(col => col.enabled).length;
+    const defaultFieldColumns = columns.filter(col => !col.isCustomField);
+    const customFieldColumns = columns.filter(col => col.isCustomField);
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+                className="absolute inset-0 bg-white/40 dark:bg-black/60 backdrop-blur-sm transition-opacity"
+                onClick={onClose}
+            />
+
+            <div
+                className="bg-white dark:bg-gray-800 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-2xl border border-white/20 dark:border-gray-700 overflow-hidden transform transition-all scale-100 relative"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                    <div>
+                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                            <Download className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                            Export Test Cases
+                        </h2>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                            Select columns to include in the export ({testCaseCount} test case{testCaseCount !== 1 ? 's' : ''})
+                        </p>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                        <X className="h-6 w-6" />
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div className="p-6 max-h-[60vh] overflow-y-auto">
+                    {/* Selection Controls */}
+                    <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
+                        <button
+                            onClick={enabledCount >= columns.length / 2 ? handleDeselectAll : handleSelectAll}
+                            className={`text-sm font-medium flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors ${
+                                enabledCount >= columns.length / 2
+                                    ? 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                    : 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30'
+                            }`}
+                        >
+                            {enabledCount >= columns.length / 2 ? (
+                                <>
+                                    <Square className="h-4 w-4" />
+                                    Deselect All
+                                </>
+                            ) : (
+                                <>
+                                    <CheckSquare className="h-4 w-4" />
+                                    Select All
+                                </>
+                            )}
+                        </button>
+                        <div className="ml-auto text-sm text-gray-600 dark:text-gray-400">
+                            {enabledCount} of {columns.length} columns selected
+                        </div>
+                    </div>
+
+                    {/* Default Fields Section */}
+                    <div className="mb-6">
+                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 uppercase tracking-wide">
+                            Default Fields
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {defaultFieldColumns.map(column => (
+                                <label
+                                    key={column.id}
+                                    className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors group"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={column.enabled}
+                                        onChange={() => handleToggleColumn(column.id)}
+                                        className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 dark:bg-gray-700"
+                                    />
+                                    <span className="text-sm text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white">
+                                        {column.label}
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Custom Fields Section */}
+                    {customFieldColumns.length > 0 && (
+                        <div>
+                            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 uppercase tracking-wide">
+                                Custom Fields
+                            </h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {customFieldColumns.map(column => (
+                                    <label
+                                        key={column.id}
+                                        className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors group"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={column.enabled}
+                                            onChange={() => handleToggleColumn(column.id)}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 dark:bg-gray-700"
+                                        />
+                                        <span className="text-sm text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white">
+                                            {column.label}
+                                        </span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* No custom fields message */}
+                    {customFieldColumns.length === 0 && (
+                        <div className="text-sm text-gray-500 dark:text-gray-400 italic bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                            No custom fields defined for this project
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                    <button
+                        onClick={onClose}
+                        className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                    >
+                        Cancel
+                    </button>
+
+                    {/* Format toggle */}
+                    <div className="flex items-center rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden text-sm font-medium mr-auto ml-0">
+                        <button
+                            onClick={() => setFormat('xlsx')}
+                            className={`px-3 py-2 transition-colors ${
+                                format === 'xlsx'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
+                            }`}
+                        >
+                            XLSX
+                        </button>
+                        <button
+                            onClick={() => setFormat('csv')}
+                            className={`px-3 py-2 transition-colors ${
+                                format === 'csv'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
+                            }`}
+                        >
+                            CSV
+                        </button>
+                    </div>
+                    <button
+                        onClick={handleExport}
+                        disabled={enabledCount === 0}
+                        className="px-6 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white font-medium rounded-lg disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                    >
+                        <Download className="h-4 w-4" />
+                        Export {enabledCount > 0 && `(${enabledCount} columns)`}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default ExportTestCasesModal;

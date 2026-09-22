@@ -1,0 +1,856 @@
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useTestManagerStore } from '../../store/testManagerStore';
+import { useCollaborativeEditing } from '../../hooks/useCollaborativeEditing';
+import { TestCase, Priority, Status, HistoryEntry, CustomFieldDefinition } from '../../types/testManager';
+import { X, Plus, ChevronDown, ChevronRight, History, Check, Loader2, Cloud } from 'lucide-react';
+import RichTextEditor from './RichTextEditor';
+import IdDisplay from './IdDisplay';
+
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
+interface TestCaseModalProps {
+    testCase: TestCase | null;
+    availableAreas: string[];
+    onClose: () => void;
+    onSave: (updatedCase: TestCase) => Promise<TestCase | void>;
+    // Called when user wants to go back to view mode (passes current edited case)
+    onBack?: (updatedCase: TestCase) => void;
+}
+
+const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas, onClose, onSave, onBack }) => {
+    const [localCase, setLocalCase] = useState<TestCase | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [showHistory, setShowHistory] = useState(false);
+    const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+    // Track selected field preview for each history entry
+    const [selectedPreview, setSelectedPreview] = useState<{ entryId: string; field: string } | null>(null);
+
+    // Track if this is initial load vs user edit
+    const isInitialLoad = useRef(true);
+    const hasUnsavedChanges = useRef(false);
+    const autoSaveIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const savedTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const lastSavedCaseRef = useRef<string | null>(null);
+    const inFlightSaveRef = useRef<string | null>(null);
+
+    // Store access for projects/suites selection
+    const { projects, testSuites, fetchTestSuites, fetchProjectSettings, projectSettings } = useTestManagerStore();
+
+    // Project settings
+    const [customFields, setCustomFields] = useState<CustomFieldDefinition[]>([]);
+    const [hiddenFields, setHiddenFields] = useState<Record<string, boolean>>({});
+
+    // Load project settings when project changes
+    useEffect(() => {
+        if (localCase?.projectId) {
+            const loadSettings = async () => {
+                try {
+                    await fetchProjectSettings(localCase.projectId);
+                } catch (err) {
+                    console.error('Failed to load project settings:', err);
+                }
+            };
+            loadSettings();
+        }
+    }, [localCase?.projectId, fetchProjectSettings]);
+
+    // Separate effect to update custom fields when projectSettings changes
+    useEffect(() => {
+        if (localCase?.projectId && projectSettings[localCase.projectId]?.testCases) {
+            const settings = projectSettings[localCase.projectId];
+            setCustomFields(settings.testCases?.customFields || []);
+            setHiddenFields((settings.testCases?.hiddenDefaultFields as Record<string, boolean>) || {});
+        }
+    }, [localCase?.projectId, projectSettings]);
+
+    // Combobox state
+    const [isAreaDropdownOpen, setIsAreaDropdownOpen] = useState(false);
+    const areaRef = useRef<HTMLDivElement>(null);
+
+    // Collaborative editing - handle remote field updates
+    const handleRemoteFieldUpdate = useCallback((field: string, value: string | number | boolean | null) => {
+        setLocalCase(prev => {
+            if (!prev) return null;
+            return { ...prev, [field]: value };
+        });
+    }, []);
+
+    // Collaborative editing hook
+    const {
+        collaboratingUsers,
+        emitFieldChange,
+        remoteEditingField,
+        isCollaborating,
+    } = useCollaborativeEditing({
+        testCase: localCase,
+        onFieldUpdate: handleRemoteFieldUpdate,
+        debounceMs: 300,
+    });
+
+    useEffect(() => {
+        setLocalCase(testCase);
+        isInitialLoad.current = true;
+        hasUnsavedChanges.current = false;
+        setSaveStatus('idle');
+        lastSavedCaseRef.current = testCase ? JSON.stringify(testCase) : null;
+    }, [testCase]);
+
+    // Perform save
+    const performSave = useCallback(async (caseToSave: TestCase) => {
+        // Check if there are actual changes
+        const currentJson = JSON.stringify(caseToSave);
+        if (currentJson === lastSavedCaseRef.current) {
+            return; // No changes to save
+        }
+        if (inFlightSaveRef.current === currentJson) {
+            return; // Prevent duplicate concurrent saves for same payload
+        }
+
+        inFlightSaveRef.current = currentJson;
+        setSaveStatus('saving');
+        setError(null);
+        try {
+            const result = await onSave(caseToSave);
+            // If a new case was created, update localCase with the real ID
+            if (result && caseToSave.id.startsWith('new-')) {
+                setLocalCase(prev => prev ? { ...prev, id: result.id } : null);
+                lastSavedCaseRef.current = JSON.stringify({ ...caseToSave, id: result.id });
+            } else {
+                lastSavedCaseRef.current = currentJson;
+            }
+            hasUnsavedChanges.current = false;
+            setSaveStatus('saved');
+            // Reset to idle after showing "Saved" for 2 seconds
+            if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
+            savedTimeoutRef.current = setTimeout(() => {
+                setSaveStatus('idle');
+            }, 2000);
+        } catch (err: unknown) {
+            setSaveStatus('error');
+            setError((err as Error)?.message || 'Failed to save changes');
+        } finally {
+            inFlightSaveRef.current = null;
+        }
+    }, [onSave]);
+
+    // Save on blur (when field loses focus)
+    const handleFieldBlur = useCallback(() => {
+        if (localCase && hasUnsavedChanges.current) {
+            performSave(localCase);
+        }
+    }, [localCase, performSave]);
+
+    // Track changes (mark as dirty but don't save immediately)
+    useEffect(() => {
+        // Skip initial load
+        if (isInitialLoad.current) {
+            isInitialLoad.current = false;
+            return;
+        }
+
+        if (!localCase) return;
+
+        // Mark as having unsaved changes
+        hasUnsavedChanges.current = true;
+    }, [localCase]);
+
+    // Periodic auto-save every 15 seconds (for safety)
+    useEffect(() => {
+        autoSaveIntervalRef.current = setInterval(() => {
+            if (localCase && hasUnsavedChanges.current) {
+                performSave(localCase);
+            }
+        }, 15000); // 15 seconds
+
+        return () => {
+            if (autoSaveIntervalRef.current) {
+                clearInterval(autoSaveIntervalRef.current);
+            }
+        };
+    }, [localCase, performSave]);
+
+    // Cleanup timeouts on unmount and save any pending changes
+    useEffect(() => {
+        return () => {
+            if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
+            if (autoSaveIntervalRef.current) clearInterval(autoSaveIntervalRef.current);
+        };
+    }, []);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (areaRef.current && !areaRef.current.contains(event.target as Node)) {
+                setIsAreaDropdownOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    if (!testCase || !localCase) return null;
+
+    const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        setLocalCase(prev => prev ? ({ ...prev, title: value }) : null);
+        emitFieldChange('title', value);
+    };
+
+    const handleExpectedResultChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const value = e.target.value;
+        setLocalCase(prev => prev ? ({ ...prev, expectedResult: value }) : null);
+        emitFieldChange('expectedResult', value);
+    };
+
+    const handleTestDescriptionChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const value = e.target.value;
+        setLocalCase(prev => prev ? ({ ...prev, testDescription: value }) : null);
+        emitFieldChange('testDescription', value);
+    };
+
+    const handleRestoreFromHistory = (historyEntry: HistoryEntry) => {
+        if (!localCase) return;
+
+        // Restore the snapshot from history
+        setLocalCase(prev => prev ? ({
+            ...prev,
+            ...historyEntry.snapshot,
+            id: prev.id, // Keep the same ID
+        }) : null);
+
+        // Clear any selected preview
+        setSelectedPreview(null);
+    };
+
+    // Helper to get display value for a snapshot field
+    const getSnapshotFieldValue = (snapshot: Partial<TestCase>, field: string): string => {
+        const key = field.toLowerCase() as keyof TestCase;
+        const value = snapshot[key];
+        if (value === undefined || value === null) return 'Not set';
+        if (typeof value === 'string') {
+            // For HTML content, strip tags for preview
+            if (key === 'stepsContent' || key === 'comments') {
+                const stripped = value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                return stripped.length > 100 ? stripped.slice(0, 100) + '...' : stripped || 'Empty';
+            }
+            return value || 'Empty';
+        }
+        if (typeof value === 'object' && value !== null && 'name' in value) {
+            return (value as { name: string }).name; // For Tester objects
+        }
+        return String(value);
+    };
+
+    // Filter areas for dropdown
+    const filteredAreas = availableAreas.filter(a =>
+        a.toLowerCase().includes((localCase.area || '').toLowerCase())
+    );
+
+    const getStatusColor = (status: Status) => {
+        switch (status) {
+            case Status.Draft: return 'text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
+            case Status.InReview: return 'text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800';
+            case Status.Ready: return 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800';
+            case Status.Updated: return 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800';
+            case Status.Archived: return 'text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
+            default: return 'text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
+        }
+    };
+
+    const getPriorityColor = (priority: Priority) => {
+        switch (priority) {
+            case Priority.Low: return 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800';
+            case Priority.Medium: return 'text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800';
+            case Priority.High: return 'text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 border-orange-200 dark:border-orange-800';
+            case Priority.Critical: return 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800';
+            default: return 'text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-0 sm:p-4">
+            <div
+                className="absolute inset-0 bg-white/40 dark:bg-black/60 backdrop-blur-sm transition-opacity"
+                onClick={onClose}
+            />
+
+            <div className="relative w-full h-full sm:h-auto sm:max-w-6xl bg-white dark:bg-gray-800 sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col sm:flex-row sm:max-h-[90vh] animate-[scaleIn_0.2s_ease-out]">
+                {/* Main Content Wrapper */}
+                <div className="flex-1 flex flex-col min-w-0 min-h-0">
+                    {/* Modal Header */}
+                    <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
+                        <div className="flex items-center gap-3">
+                            {localCase.id.startsWith('new-') ? (
+                                <span className="text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1 rounded-md">New Case</span>
+                            ) : (
+                                <IdDisplay
+                                    id={localCase.id}
+                                    className="text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-md"
+                                />
+                            )}
+                            {/* Auto-save status indicator */}
+                            <div className="flex items-center gap-1.5 text-xs font-medium">
+                                {saveStatus === 'saving' && (
+                                    <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1 rounded-full">
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                        Saving...
+                                    </span>
+                                )}
+                                {saveStatus === 'saved' && (
+                                    <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-2.5 py-1 rounded-full animate-in fade-in duration-200">
+                                        <Check className="h-3 w-3" />
+                                        Saved
+                                    </span>
+                                )}
+                                {saveStatus === 'error' && (
+                                    <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-2.5 py-1 rounded-full">
+                                        Save failed
+                                    </span>
+                                )}
+                                {saveStatus === 'idle' && (
+                                    <span className="flex items-center gap-1.5 text-gray-400 dark:text-gray-500">
+                                        <Cloud className="h-3.5 w-3.5" />
+                                    </span>
+                                )}
+                            </div>
+                            {/* Collaborating users indicator */}
+                            {isCollaborating && collaboratingUsers.length > 0 && (
+                                <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-200 dark:border-gray-700">
+                                    <div className="flex -space-x-2">
+                                        {collaboratingUsers.slice(0, 3).map((u) => (
+                                            u.avatar ? (
+                                                <img
+                                                    key={u.id}
+                                                    src={u.avatar}
+                                                    alt={u.name}
+                                                    title={u.name}
+                                                    className="w-6 h-6 rounded-full object-cover border-2 border-white dark:border-gray-800"
+                                                />
+                                            ) : (
+                                                <div
+                                                    key={u.id}
+                                                    className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white dark:border-gray-800"
+                                                    title={u.name}
+                                                >
+                                                    {u.name.charAt(0).toUpperCase()}
+                                                </div>
+                                            )
+                                        ))}
+                                        {collaboratingUsers.length > 3 && (
+                                            <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-[10px] font-bold text-gray-600 dark:text-gray-400 border-2 border-white dark:border-gray-800">
+                                                +{collaboratingUsers.length - 3}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">
+                                        {collaboratingUsers.length === 1
+                                            ? `${collaboratingUsers[0].name} is editing`
+                                            : `${collaboratingUsers.length} users editing`}
+                                    </span>
+                                </div>
+                            )}
+                            {/* Remote editing indicator */}
+                            {remoteEditingField && (
+                                <div className="ml-2 text-xs text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 px-2 py-1 rounded-full animate-pulse">
+                                    {remoteEditingField.userName} editing {remoteEditingField.field}
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setShowHistory(!showHistory)}
+                                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${showHistory
+                                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                                    }`}
+                                title="View History"
+                            >
+                                <History className="h-4 w-4" />
+                                History
+                            </button>
+                            <button
+                                onClick={onClose}
+                                className="p-1.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400 transition-colors"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Modal Content */}
+                    <div className="flex-1 overflow-y-auto p-4 md:p-6">
+                        <div className="mb-5">
+                            <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Title</label>
+                            <input
+                                type="text"
+                                value={localCase.title}
+                                onChange={handleTitleChange}
+                                onBlur={handleFieldBlur}
+                                className="w-full text-2xl font-semibold text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-300 dark:placeholder:text-gray-600 bg-white dark:bg-gray-800"
+                                placeholder="Test Case Title"
+                            />
+                        </div>
+                        {/* Project & Suite selectors - Always visible */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Project</label>
+                                <select
+                                    value={localCase.projectId || ''}
+                                    onChange={(e) => {
+                                        const projectId = e.target.value;
+                                        setLocalCase(prev => prev ? ({ ...prev, projectId, suite: '' }) : null);
+                                        if (projectId) fetchTestSuites?.(projectId);
+                                    }}
+                                    onBlur={handleFieldBlur}
+                                    className="w-full rounded-lg py-2 px-3 text-sm font-medium border bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
+                                >
+                                    <option value="">Select project...</option>
+                                    {projects.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Test Suite</label>
+                                <select
+                                    value={localCase.suite || ''}
+                                    onChange={(e) => setLocalCase(prev => prev ? ({ ...prev, suite: e.target.value }) : null)}
+                                    onBlur={handleFieldBlur}
+                                    className="w-full rounded-lg py-2 px-3 text-sm font-medium border bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
+                                >
+                                    <option value="">Select suite...</option>
+                                    {testSuites.filter(s => s.projectId === localCase.projectId).map(s => (
+                                        <option key={s.id} value={s.name}>{s.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+                            {/* Assignee */}
+                            {!hiddenFields.assignedTester && (
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Assignee</label>
+                                    <div className="flex items-center gap-3 p-1.5 rounded-lg bg-gray-50/50 dark:bg-gray-800/50 border border-transparent">
+                                        <img src={localCase.assignedTester.avatar} className="h-6 w-6 rounded-full" alt="avatar" />
+                                        <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">{localCase.assignedTester.name}</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Priority (Editable) */}
+                            {!hiddenFields.priority && (
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Priority</label>
+                                    <div className="relative">
+                                        <select
+                                            value={localCase.priority}
+                                            onChange={(e) => {
+                                                const value = e.target.value as Priority;
+                                                setLocalCase(prev => prev ? ({ ...prev, priority: value }) : null);
+                                                emitFieldChange('priority', value);
+                                            }}
+                                            onBlur={handleFieldBlur}
+                                            className={`w-full appearance-none rounded-lg py-2 pl-3 pr-8 text-sm font-medium outline-none transition-all cursor-pointer border hover:opacity-80 focus:ring-2 focus:ring-offset-1 focus:ring-blue-100 ${getPriorityColor(localCase.priority)}`}
+                                        >
+                                            {Object.values(Priority).map(p => (
+                                                <option key={p} value={p}>{p}</option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400 dark:text-gray-500 pointer-events-none opacity-50" />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Status (Editable) */}
+                            {!hiddenFields.status && (
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Status</label>
+                                    <div className="relative">
+                                        <select
+                                            value={localCase.status}
+                                            onChange={(e) => {
+                                                const value = e.target.value as Status;
+                                                setLocalCase(prev => prev ? ({ ...prev, status: value }) : null);
+                                                emitFieldChange('status', value);
+                                            }}
+                                            onBlur={handleFieldBlur}
+                                            className={`w-full appearance-none rounded-lg py-2 pl-3 pr-8 text-sm font-medium outline-none transition-all cursor-pointer border hover:opacity-80 focus:ring-2 focus:ring-offset-1 focus:ring-blue-100 ${getStatusColor(localCase.status)}`}
+                                        >
+                                            {Object.values(Status).map(s => (
+                                                <option key={s} value={s}>{s}</option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400 dark:text-gray-500 pointer-events-none opacity-50" />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Searchable Page/Area Input - Moved below grid */}
+                        {!hiddenFields.area && (
+                            <div className="mb-5">
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Page / Area</label>
+                                <div className="relative" ref={areaRef}>
+                                    <div className="flex items-center gap-2">
+                                        <div className="relative w-full group">
+                                            <input
+                                                type="text"
+                                                value={localCase.area || ''}
+                                                onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    setLocalCase(prev => prev ? ({ ...prev, area: value }) : null);
+                                                    setIsAreaDropdownOpen(true);
+                                                    emitFieldChange('area', value);
+                                                }}
+                                                onFocus={() => setIsAreaDropdownOpen(true)}
+                                                onBlur={() => {
+                                                    setTimeout(() => {
+                                                        setIsAreaDropdownOpen(false);
+                                                        handleFieldBlur();
+                                                    }, 150);
+                                                }}
+                                                placeholder="Select or type..."
+                                                className="w-full text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700/80 rounded-lg py-2 pl-3 pr-8 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-300 dark:placeholder:text-gray-600 bg-white dark:bg-gray-800 outline-none transition-all"
+                                            />
+                                            <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400 dark:text-gray-500 pointer-events-none group-hover:text-gray-500 dark:group-hover:text-gray-500 transition-colors" />
+                                        </div>
+
+                                        <button
+                                            onClick={() => {
+                                                setLocalCase(prev => prev ? ({ ...prev, area: '' }) : null);
+                                                setIsAreaDropdownOpen(true);
+                                            }}
+                                            className="p-2 bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                                            title="New / Clear"
+                                        >
+                                            <Plus className="h-4 w-4" />
+                                        </button>
+                                    </div>
+
+                                    {/* Dropdown Menu */}
+                                    {isAreaDropdownOpen && (
+                                        <div className="absolute z-50 left-0 right-0 top-full mt-2 bg-white dark:bg-[#2a2a2a] rounded-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.2)] dark:shadow-[0_10px_40px_-10px_rgba(0,0,0,0.5)] border border-gray-100 dark:border-gray-700 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                                            <div className="max-h-[200px] overflow-y-auto py-1 custom-scrollbar">
+                                                {filteredAreas.length === 0 ? (
+                                                    <div className="px-4 py-3 text-xs text-gray-400 dark:text-gray-500 italic text-center">
+                                                        Type to create "{localCase.area}"
+                                                    </div>
+                                                ) : (
+                                                    filteredAreas.map(area => (
+                                                        <button
+                                                            key={area}
+                                                            onClick={() => {
+                                                                setLocalCase(prev => prev ? ({ ...prev, area: area }) : null);
+                                                                setIsAreaDropdownOpen(false);
+                                                            }}
+                                                            className="w-full text-left px-4 py-2.5 text-sm text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center justify-between group/item"
+                                                        >
+                                                            <span>{area}</span>
+                                                            {localCase.area === area && <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />}
+                                                        </button>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Test Description (between Page/Area and Steps) */}
+                        {!hiddenFields.testDescription && (
+                            <div className="mb-2">
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Test Description</label>
+                                <textarea
+                                    value={localCase.testDescription || ''}
+                                    onChange={handleTestDescriptionChange}
+                                    onBlur={handleFieldBlur}
+                                    className="w-full text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-transparent dark:border-gray-700/80 border rounded-lg focus:border-blue-300 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-700 focus:ring-0 p-3 transition-colors resize-none"
+                                    rows={3}
+                                    placeholder="Short description of what this test verifies"
+                                />
+                            </div>
+                        )}
+
+                        {!hiddenFields.stepsContent && (
+                            <div className="mb-4">
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Test Steps</label>
+
+                                {error && (
+                                    <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 text-red-600 dark:text-red-400 text-sm rounded-lg flex items-center gap-2">
+                                        <span className="font-bold">Error:</span> {error}
+                                    </div>
+                                )}
+
+                                <div className="mb-5">
+                                    <RichTextEditor
+                                        content={localCase.stepsContent || ''}
+                                        onChange={(html) => {
+                                            setLocalCase(prev => prev ? ({ ...prev, stepsContent: html }) : null);
+                                            emitFieldChange('stepsContent', html);
+                                        }}
+                                        onBlur={handleFieldBlur}
+                                        placeholder="Describe the test steps here. You can use lists, bold text, etc."
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Moved Expected Result to bottom */}
+                        {!hiddenFields.expectedResult && (
+                            <div className="mb-2">
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Expected Result (Summary)</label>
+                                <textarea
+                                    value={localCase.expectedResult || ''}
+                                    onChange={handleExpectedResultChange}
+                                    onBlur={handleFieldBlur}
+                                    className="w-full text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-transparent dark:border-gray-700/80 border rounded-lg focus:border-blue-300 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-700 focus:ring-0 p-3 transition-colors resize-none"
+                                    rows={3}
+                                    placeholder="What is the high-level expected outcome of this test case?"
+                                />
+                            </div>
+                        )}
+
+                        {/* Comments Section */}
+                        {!hiddenFields.comments && (
+                            <div className="mb-2">
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Comments</label>
+                                <RichTextEditor
+                                    content={localCase.comments || ''}
+                                    onChange={(html) => {
+                                        setLocalCase(prev => prev ? ({ ...prev, comments: html }) : null);
+                                        emitFieldChange('comments', html);
+                                    }}
+                                    onBlur={handleFieldBlur}
+                                    placeholder="Add comments, notes, or additional information about this test case..."
+                                />
+                            </div>
+                        )}
+
+                        {/* Custom Fields */}
+                        {customFields.filter(f => !f.deleted).length > 0 && (
+                            <div className="mt-6 space-y-4">
+                                <div className="border-t border-gray-200 dark:border-gray-700 pt-5">
+                                    <h3 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">Custom Fields</h3>
+                                    {customFields.filter(f => !f.deleted).map((field) => {
+                                        const value = localCase.customFields?.[field.id] || '';
+                                        return (
+                                            <div key={field.id} className="mb-4">
+                                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">
+                                                    {field.label}
+                                                    {field.required && <span className="text-red-500 dark:text-red-400 ml-1">*</span>}
+                                                </label>
+                                                {field.type === 'text' && (
+                                                    <input
+                                                        type="text"
+                                                        value={value}
+                                                        onChange={(e) => {
+                                                            const newValue = e.target.value;
+                                                            setLocalCase(prev => prev ? ({
+                                                                ...prev,
+                                                                customFields: { ...(prev.customFields || {}), [field.id]: newValue }
+                                                            }) : null);
+                                                            emitFieldChange(`customFields.${field.id}`, newValue);
+                                                        }}
+                                                        onBlur={handleFieldBlur}
+                                                        className="w-full text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-transparent rounded-lg focus:border-blue-300 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-700 focus:ring-0 p-3 transition-colors"
+                                                        placeholder={`Enter ${field.label.toLowerCase()}`}
+                                                    />
+                                                )}
+                                                {field.type === 'long_text' && (
+                                                    <textarea
+                                                        value={value}
+                                                        onChange={(e) => {
+                                                            const newValue = e.target.value;
+                                                            setLocalCase(prev => prev ? ({
+                                                                ...prev,
+                                                                customFields: { ...(prev.customFields || {}), [field.id]: newValue }
+                                                            }) : null);
+                                                            emitFieldChange(`customFields.${field.id}`, newValue);
+                                                        }}
+                                                        onBlur={handleFieldBlur}
+                                                        className="w-full text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-transparent rounded-lg focus:border-blue-300 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-700 focus:ring-0 p-3 transition-colors resize-none"
+                                                        rows={4}
+                                                        placeholder={`Enter ${field.label.toLowerCase()}`}
+                                                    />
+                                                )}
+                                                {field.type === 'dropdown' && (
+                                                    <select
+                                                        value={value}
+                                                        onChange={(e) => {
+                                                            const newValue = e.target.value;
+                                                            setLocalCase(prev => prev ? ({
+                                                                ...prev,
+                                                                customFields: { ...(prev.customFields || {}), [field.id]: newValue }
+                                                            }) : null);
+                                                            emitFieldChange(`customFields.${field.id}`, newValue);
+                                                        }}
+                                                        onBlur={handleFieldBlur}
+                                                        className="w-full rounded-lg py-2 px-3 text-sm font-medium border bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
+                                                    >
+                                                        <option value="">Select {field.label.toLowerCase()}...</option>
+                                                        {(field.options || []).map(opt => (
+                                                            <option key={opt.id} value={opt.id}>{opt.label}</option>
+                                                        ))}
+                                                    </select>
+                                                )}
+                                                {field.type === 'wysiwyg' && (
+                                                    <RichTextEditor
+                                                        content={value}
+                                                        onChange={(html) => {
+                                                            setLocalCase(prev => prev ? ({
+                                                                ...prev,
+                                                                customFields: { ...(prev.customFields || {}), [field.id]: html }
+                                                            }) : null);
+                                                            emitFieldChange(`customFields.${field.id}`, html);
+                                                        }}
+                                                        onBlur={handleFieldBlur}
+                                                        placeholder={`Enter ${field.label.toLowerCase()}...`}
+                                                    />
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                    </div>
+
+                    {/* Modal Footer */}
+                    <div className="flex items-center justify-between px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
+                        <p className="text-xs text-gray-400 dark:text-gray-500">
+                            Changes are saved automatically
+                        </p>
+                        <button
+                            onClick={() => {
+                                // If onBack provided, call it with current local case to return to view mode
+                                if (localCase && typeof onBack === 'function') {
+                                    onBack(localCase);
+                                } else {
+                                    onClose();
+                                }
+                            }}
+                            className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        >
+                            Back
+                        </button>
+                    </div>
+                </div>
+                {/* End of Main Content Wrapper */}
+
+                {/* History Panel */}
+                {showHistory && (
+                    <div className="hidden sm:flex w-80 border-l border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex-col overflow-hidden">
+                        <div className="px-4 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-start justify-between gap-3">
+                            <div>
+                                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Edit History</h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">View and restore previous versions</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowHistory(false)}
+                                className="mt-0.5 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-300"
+                                title="Collapse history"
+                                aria-label="Collapse history"
+                            >
+                                <ChevronRight className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-4">
+                            {!localCase.history || localCase.history.length === 0 ? (
+                                <div className="text-center py-8">
+                                    <History className="h-12 w-12 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">No edit history yet</p>
+                                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Changes will appear here</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {localCase.history.map((entry) => (
+                                        <div
+                                            key={entry.id}
+                                            className="bg-white dark:bg-[#2a2a2a] rounded-lg border border-gray-200 dark:border-gray-700 p-3 hover:shadow-sm transition-shadow"
+                                        >
+                                            <div className="flex items-start justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <img
+                                                        src={entry.user.avatar}
+                                                        alt={entry.user.name}
+                                                        className="h-6 w-6 rounded-full"
+                                                    />
+                                                    <div>
+                                                        <p className="text-xs font-medium text-gray-900 dark:text-gray-100">{entry.user.name}</p>
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                            {new Date(entry.timestamp).toLocaleString('en-US', {
+                                                                month: 'short',
+                                                                day: 'numeric',
+                                                                hour: 'numeric',
+                                                                minute: '2-digit',
+                                                                hour12: true
+                                                            })}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {entry.changedFields.length > 0 && (
+                                                <div className="mb-2">
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Changed:</p>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {entry.changedFields.map((field) => (
+                                                            <button
+                                                                key={field}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setSelectedPreview(
+                                                                        selectedPreview?.entryId === entry.id && selectedPreview?.field === field
+                                                                            ? null
+                                                                            : { entryId: entry.id, field }
+                                                                    );
+                                                                }}
+                                                                className={`inline-block px-2 py-0.5 text-xs rounded-md font-medium transition-colors cursor-pointer border ${selectedPreview?.entryId === entry.id && selectedPreview?.field === field
+                                                                    ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 border-blue-300 dark:border-blue-700 ring-1 ring-blue-200 dark:ring-blue-800'
+                                                                    : 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-transparent hover:bg-blue-100 dark:hover:bg-blue-900/40 hover:border-blue-200 dark:hover:border-blue-700'
+                                                                    }`}
+                                                            >
+                                                                {field}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    {/* Field value preview */}
+                                                    {selectedPreview?.entryId === entry.id && (
+                                                        <div className="mt-2 p-2 bg-gray-100 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700 animate-in fade-in slide-in-from-top-1 duration-150">
+                                                            <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                                                                {selectedPreview.field} value:
+                                                            </p>
+                                                            <p className="text-xs text-gray-700 dark:text-gray-300 break-words">
+                                                                {getSnapshotFieldValue(entry.snapshot, selectedPreview.field)}
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            <button
+                                                onClick={() => handleRestoreFromHistory(entry)}
+                                                className="w-full mt-2 px-3 py-1.5 bg-gray-50 dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-700 dark:text-gray-300 hover:text-blue-700 dark:hover:text-blue-400 text-xs font-medium rounded-md transition-colors border border-gray-200 dark:border-gray-700 hover:border-blue-200 dark:hover:border-blue-800"
+                                            >
+                                                Restore this version
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default TestCaseModal;
