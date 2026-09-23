@@ -118,14 +118,14 @@ const LoginPage: React.FC = () => {
 							<motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
 								<div className="inline-flex items-center gap-2 rounded-full border border-blue-800 bg-blue-950/50 text-blue-300 px-4 py-1.5 text-xs font-semibold mb-5">
 									<span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-									IT Software Solutions & Services
+									<Building2 size={12} className="text-blue-400" /> Manage Client
 								</div>
 								<h2 className="text-[30px] lg:text-[38px] xl:text-[42px] font-bold leading-[0.95] tracking-tight text-white">
-									IT Software Solutions<br />
-									<span className="text-blue-400">Built for Real Business Impact</span>
+									Super Admin<br />
+									<span className="text-blue-400">Manage Client</span>
 								</h2>
 								<p className="mt-6 max-w-xl text-[14px] lg:text-[15px] leading-7 text-gray-400">
-									<span className="font-extrabold tracking-tight"><span className="text-amber-400">Tech</span><span style={{ color: "rgb(46,92,116)" }}>Signific</span></span> delivers custom software, <span className="font-extrabold tracking-tight"><span className="text-amber-400">TS</span><span style={{ color: "rgb(46,92,116)" }}>Product</span></span> platforms, testing services, and digital marketing — helping businesses operate with more clarity, efficiency, and confidence.
+									Centralized control for all clients — create <span className="font-bold text-white">CLT-0001</span>, manage seats, plans, and Client Admins with isolated workspaces.
 								</p>
 							</motion.div>
 
@@ -216,11 +216,11 @@ const LoginPage: React.FC = () => {
 									<span className="text-amber-400">TS</span>
 									<span style={{ color: "rgb(46,92,116)" }}>TestManager</span>
 								</h1>
-								<p className="mt-1 text-[10px] font-semibold tracking-[0.16em] uppercase text-gray-400">QA & Testing Workspace</p>
+								<p className="mt-1 text-[10px] font-semibold tracking-[0.16em] uppercase text-gray-400">Manage Client</p>
 								<div className="mt-2 flex items-center justify-center">
 									<span className="text-[10px] font-medium tracking-wide text-white/60 flex items-center gap-1.5">
-										<img src="/logo.png" alt="TechSignific" className="w-3 h-3 rounded-sm object-contain opacity-80" />
-										<span><span className="text-amber-400">Tech</span><span style={{ color: "rgb(46,92,116)" }}>Signific</span></span>
+										<Building2 size={10} className="opacity-80" />
+										Super Admin • Manage Client
 									</span>
 								</div>
 							</div>
@@ -228,8 +228,8 @@ const LoginPage: React.FC = () => {
 							<div className="bg-white dark:bg-gray-900 rounded-2xl shadow-[0_16px_40px_-16px_rgba(0,0,0,0.15)] dark:shadow-[0_16px_40px_-16px_rgba(0,0,0,0.5)] border border-gray-200 dark:border-gray-800 overflow-hidden transition-colors duration-300">
 								<div className="px-6 pt-6 pb-5">
 									<div className="mb-4">
-										<h2 className="text-[20px] font-bold tracking-tight text-gray-900 dark:text-white">Welcome back</h2>
-										<p className="text-xs text-gray-600 dark:text-gray-400 mt-1">Sign in to your TSTestManager workspace</p>
+										<h2 className="text-[20px] font-bold tracking-tight text-gray-900 dark:text-white">Super Admin</h2>
+										<p className="text-xs text-gray-600 dark:text-gray-400 mt-1">Manage Client — CLT-0001, seats, plans & Client Admins</p>
 									</div>
 
 									<form onSubmit={handleLogin} className="space-y-0">

@@ -113,11 +113,11 @@ const ClientLoginPage: React.FC = () => {
 							<motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
 								<div className="inline-flex items-center gap-2 rounded-full border border-blue-800 bg-blue-950/50 text-blue-300 px-4 py-1.5 text-xs font-semibold mb-5">
 									<span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-									Client Workspace Login
+									<ClipboardCheck size={12} className="text-blue-400" /> QA & Testing Workspace
 								</div>
 								<h2 className="text-[30px] lg:text-[38px] xl:text-[42px] font-bold leading-[0.95] tracking-tight text-white">
-									Secure Client<br />
-									<span className="text-blue-400">Workspace Access</span>
+									QA & Testing<br />
+									<span className="text-blue-400">Workspace</span>
 								</h2>
 								<p className="mt-6 max-w-xl text-[14px] lg:text-[15px] leading-7 text-gray-400">
 									Sign in with your <span className="font-bold text-white">Client ID</span> (e.g. CLT-0001), email and password. Same email can be used across multiple clients as isolated accounts.
@@ -191,11 +191,11 @@ const ClientLoginPage: React.FC = () => {
 									<span className="text-amber-400">TS</span>
 									<span style={{ color: "rgb(46,92,116)" }}>TestManager</span>
 								</h1>
-								<p className="mt-1 text-[10px] font-semibold tracking-[0.16em] uppercase text-gray-400">Client Workspace</p>
+								<p className="mt-1 text-[10px] font-semibold tracking-[0.16em] uppercase text-gray-400">QA & Testing Workspace</p>
 								<div className="mt-2 flex items-center justify-center">
 									<span className="text-[10px] font-medium tracking-wide text-white/60 flex items-center gap-1.5">
-										<Building2 size={12} className="opacity-80" />
-										Client Login
+										<ClipboardCheck size={10} className="opacity-80" />
+										QA & Testing Workspace
 									</span>
 								</div>
 							</div>
@@ -204,7 +204,7 @@ const ClientLoginPage: React.FC = () => {
 								<div className="px-6 pt-6 pb-5">
 									<div className="mb-4">
 										<h2 className="text-[20px] font-bold tracking-tight text-gray-900 dark:text-white">Client Login</h2>
-										<p className="text-xs text-gray-600 dark:text-gray-400 mt-1">Enter your Client ID, email and password</p>
+										<p className="text-xs text-gray-600 dark:text-gray-400 mt-1">QA & Testing Workspace — Client ID required</p>
 									</div>
 
 									<form onSubmit={handleLogin} className="space-y-0">
