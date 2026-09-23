@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { getClientUsage, getClientUsers, createClientAdmin, resetClientAdminPassword, deactivateUser, restoreUser, updateClient, getClients, updateClientUser } from '../../services/clientApi';
+import { useAuthStore } from '../../store/authStore';
 import { connectJira, disconnectJira, getJiraConfig } from '../../services/jiraApi';
 import { SeatUsage, ClientUser, Client } from '../../types/client';
 import toast from 'react-hot-toast';
@@ -12,7 +13,7 @@ const ClientDetailPage: React.FC = () => {
   const [client, setClient] = useState<Client | null>(null);
   const [tab, setTab] = useState<'users'|'jira'|'settings'>('users');
   const [jira, setJira] = useState<any>(null);
-  const [invite, setInvite] = useState({ email: '', firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false, tempPassword: '' });
+  const [invite, setInvite] = useState({ email: '', firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false, tempPassword: '', role: 'client_admin' as 'client_admin'|'member'|'viewer' });
   const [jiraForm, setJiraForm] = useState({ domain: '', email: '', apiToken: '', projectKey: '' });
   const [editMax, setEditMax] = useState<number | ''>('');
   const [showResetModal, setShowResetModal] = useState(false);
@@ -23,6 +24,10 @@ const ClientDetailPage: React.FC = () => {
   const [editForm, setEditForm] = useState({ clientName: '', firstName: '', lastName: '', description: '', plan: 'starter', mobile: '', whatsapp: '', whatsappSameAsMobile: false });
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const { user } = useAuthStore();
+  const isSuperAdmin = (user as any)?.role === 'super_admin';
+  const isClientAdmin = (user as any)?.role === 'client_admin';
+  const isValidPhone = (v: string) => !v || /^\+?[0-9]{10,15}$/.test(v.replace(/[\s\-\(\)]/g, ""));
   const [editUserTarget, setEditUserTarget] = useState<ClientUser | null>(null);
   const [editUserForm, setEditUserForm] = useState({ firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false });
   const navigate = useNavigate();
@@ -55,21 +60,25 @@ const ClientDetailPage: React.FC = () => {
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!invite.firstName || !invite.lastName) { toast.error('First Name & Last Name required'); return; }
+    if (!invite.firstName.trim() || !invite.lastName.trim()) { toast.error('First Name & Last Name required'); return; }
+    if (!isValidPhone(invite.mobile)) { toast.error('Mobile must be 10-15 digits, optional +'); return; }
+    const wp = invite.whatsappSameAsMobile ? invite.mobile : invite.whatsapp;
+    if (!isValidPhone(wp)) { toast.error('Whatsapp must be 10-15 digits, optional +'); return; }
     try {
       const payload: any = {
         email: invite.email,
-        firstName: invite.firstName,
-        lastName: invite.lastName,
+        firstName: invite.firstName.trim(),
+        lastName: invite.lastName.trim(),
         name: `${invite.firstName} ${invite.lastName}`.trim(),
         mobile: invite.mobile || undefined,
         whatsapp: invite.whatsappSameAsMobile ? invite.mobile : (invite.whatsapp || undefined),
         whatsappSameAsMobile: invite.whatsappSameAsMobile,
         tempPassword: invite.tempPassword || undefined,
+        role: invite.role,
       };
       await createClientAdmin(displayId!, payload);
-      toast.success('Client admin created');
-      setInvite({ email:'', firstName:'', lastName:'', mobile:'', whatsapp:'', whatsappSameAsMobile:false, tempPassword:'' });
+      toast.success('User invited as ' + invite.role);
+      setInvite({ email:'', firstName:'', lastName:'', mobile:'', whatsapp:'', whatsappSameAsMobile:false, tempPassword:'', role: 'client_admin' });
       setShowInviteModal(false);
       load();
     } catch(e:any){ toast.error(e.message); }
@@ -95,6 +104,9 @@ const ClientDetailPage: React.FC = () => {
   };
   const handleSaveClientEdit = async () => {
     if (!editForm.clientName.trim() || !editForm.firstName.trim() || !editForm.lastName.trim()) { toast.error('Client Name, First & Last required'); return; }
+    if (!isValidPhone(editForm.mobile)) { toast.error('Mobile must be 10-15 digits'); return; }
+    const ewp = editForm.whatsappSameAsMobile ? editForm.mobile : editForm.whatsapp;
+    if (!isValidPhone(ewp)) { toast.error('Whatsapp must be 10-15 digits'); return; }
     try {
       await updateClient(displayId!, {
         name: editForm.clientName.trim(),
@@ -129,6 +141,9 @@ const ClientDetailPage: React.FC = () => {
   const handleEditUserSave = async () => {
     if (!editUserTarget) return;
     if (!editUserForm.firstName.trim() || !editUserForm.lastName.trim()) { toast.error('First & Last required'); return; }
+    if (!isValidPhone(editUserForm.mobile)) { toast.error('Mobile must be 10-15 digits'); return; }
+    const uw = editUserForm.whatsappSameAsMobile ? editUserForm.mobile : editUserForm.whatsapp;
+    if (!isValidPhone(uw)) { toast.error('Whatsapp must be 10-15 digits'); return; }
     try {
       await updateClientUser(displayId!, editUserTarget._id, {
         firstName: editUserForm.firstName.trim(),
@@ -203,7 +218,7 @@ const ClientDetailPage: React.FC = () => {
 
       <div className="flex gap-4 border-b border-gray-200 dark:border-gray-700">
         <button onClick={()=>setTab('users')} className={`pb-2 px-1 text-sm font-medium ${tab==='users'?'border-b-2 border-blue-600 text-blue-600': 'text-gray-500'}`}>Users ({active}/{usage?.max===-1?'∞':usage?.max})</button>
-        <button onClick={()=>setTab('jira')} className={`pb-2 px-1 text-sm font-medium ${tab==='jira'?'border-b-2 border-blue-600 text-blue-600': 'text-gray-500'}`}>JIRA</button>
+        {isClientAdmin && <button onClick={()=>setTab('jira')} className={`pb-2 px-1 text-sm font-medium ${tab==='jira'?'border-b-2 border-blue-600 text-blue-600': 'text-gray-500'}`}>JIRA</button>}
         <button onClick={()=>setTab('settings')} className={`pb-2 px-1 text-sm font-medium ${tab==='settings'?'border-b-2 border-blue-600 text-blue-600': 'text-gray-500'}`}>Settings</button>
       </div>
 
@@ -261,28 +276,44 @@ const ClientDetailPage: React.FC = () => {
       )}
 
       {tab==='jira' && (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-4">
-          <h3 className="font-semibold">JIRA Integration (per-client)</h3>
-          <div className="text-sm text-gray-500">Current: {jira?.enabled ? `${jira.domain} / ${jira.projectKey} connected` : 'Not connected'}</div>
-          <form onSubmit={handleJiraConnect} className="space-y-2">
-            <input placeholder="Domain (xxx.atlassian.net)" value={jiraForm.domain} onChange={e=>setJiraForm({...jiraForm,domain:e.target.value})} className="w-full border p-2 rounded" required />
-            <input placeholder="Email" value={jiraForm.email} onChange={e=>setJiraForm({...jiraForm,email:e.target.value})} className="w-full border p-2 rounded" required />
-            <input placeholder="API Token" value={jiraForm.apiToken} onChange={e=>setJiraForm({...jiraForm,apiToken:e.target.value})} className="w-full border p-2 rounded" required />
-            <input placeholder="Project Key (e.g. TSM)" value={jiraForm.projectKey} onChange={e=>setJiraForm({...jiraForm,projectKey:e.target.value})} className="w-full border p-2 rounded" required />
-            <button className="bg-blue-600 text-white px-4 py-2 rounded">Connect / Update</button>
-            {jira?.enabled && <button type="button" onClick={async()=>{await disconnectJira(displayId!); toast.success('Disconnected'); load();}} className="ml-2 border px-4 py-2 rounded">Disconnect</button>}
-          </form>
-        </div>
+        isClientAdmin ? (
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-4">
+            <h3 className="font-semibold">JIRA Integration (per-client)</h3>
+            <div className="text-sm text-gray-500">Current: {jira?.enabled ? `${jira.domain} / ${jira.projectKey} connected` : 'Not connected'}</div>
+            <form onSubmit={handleJiraConnect} className="space-y-2">
+              <input placeholder="Domain (xxx.atlassian.net)" value={jiraForm.domain} onChange={e=>setJiraForm({...jiraForm,domain:e.target.value})} className="w-full border p-2 rounded" required />
+              <input placeholder="Email" value={jiraForm.email} onChange={e=>setJiraForm({...jiraForm,email:e.target.value})} className="w-full border p-2 rounded" required />
+              <input placeholder="API Token" value={jiraForm.apiToken} onChange={e=>setJiraForm({...jiraForm,apiToken:e.target.value})} className="w-full border p-2 rounded" required />
+              <input placeholder="Project Key (e.g. TSM)" value={jiraForm.projectKey} onChange={e=>setJiraForm({...jiraForm,projectKey:e.target.value})} className="w-full border p-2 rounded" required />
+              <button className="bg-blue-600 text-white px-4 py-2 rounded">Connect / Update</button>
+              {jira?.enabled && <button type="button" onClick={async()=>{await disconnectJira(displayId!); toast.success('Disconnected'); load();}} className="ml-2 border px-4 py-2 rounded">Disconnect</button>}
+            </form>
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 text-sm text-gray-500">Only Client Admin can configure JIRA for this client.</div>
+        )
       )}
 
       {tab==='settings' && (
         <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-3">
           <h3 className="font-semibold">Seat Limit</h3>
-          <div className="flex gap-2">
-            <input type="number" value={editMax} placeholder={String(usage?.max ?? '')} onChange={e=>setEditMax(e.target.value===''?'':parseInt(e.target.value))} className="border p-2 rounded" />
-            <button onClick={handleSaveMax} className="bg-blue-600 text-white px-4 py-2 rounded">Save</button>
-          </div>
-          <p className="text-xs text-gray-500">-1 = unlimited. Reducing below active count requires deactivating users first.</p>
+          {isSuperAdmin ? (
+            <>
+              <div className="flex gap-2">
+                <input type="number" value={editMax} placeholder={String(usage?.max ?? '')} onChange={e=>setEditMax(e.target.value===''?'':parseInt(e.target.value))} className="border p-2 rounded" />
+                <button onClick={handleSaveMax} className="bg-blue-600 text-white px-4 py-2 rounded">Save</button>
+              </div>
+              <p className="text-xs text-gray-500">-1 = unlimited. Reducing below active count requires deactivating users first.</p>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex gap-2 items-center">
+                <span className="border p-2 rounded bg-gray-100 dark:bg-gray-700">{usage?.max===-1?'Unlimited':usage?.max}</span>
+                <span className="text-xs text-gray-500">Only Super Admin can change maxUsers. You can edit other client details in header.</span>
+              </div>
+              <p className="text-xs text-gray-500">Current usage: {usage ? `${usage.active}/${usage.max===-1?'∞':usage.max}` : '—'}</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -345,6 +376,14 @@ const ClientDetailPage: React.FC = () => {
                 <input placeholder="Whatsapp (optional)" value={invite.whatsappSameAsMobile ? invite.mobile : invite.whatsapp} onChange={e=>setInvite({...invite,whatsapp:e.target.value})} disabled={invite.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-100" />
               </div>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={invite.whatsappSameAsMobile} onChange={e=>setInvite({...invite,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
+              <div>
+                <label className="text-xs font-medium text-gray-600">Role *</label>
+                <select value={invite.role} onChange={e=>setInvite({...invite, role: e.target.value as any})} className="w-full border p-2 rounded">
+                  <option value="client_admin">Client Admin</option>
+                  <option value="member">Member</option>
+                  <option value="viewer">Viewer</option>
+                </select>
+              </div>
               <input placeholder="Temp Password (optional, auto if blank)" value={invite.tempPassword} onChange={e=>setInvite({...invite,tempPassword:e.target.value})} className="w-full border p-2 rounded" />
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={()=>setShowInviteModal(false)} className="px-4 py-2 border rounded">Cancel</button>
