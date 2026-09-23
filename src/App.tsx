@@ -75,18 +75,20 @@ const RedirectAuthenticatedUser: React.FC<RedirectAuthenticatedUserProps> = ({ c
 // Public route layout
 const PublicRoute: React.FC = () => {
   const { isDarkMode, toggleTheme } = useThemeStore();
+  const location = useLocation();
+  const isLogin = location.pathname === "/login";
   
   return (
-	<div className='min-h-screen bg-background dark:bg-background-dark flex items-center justify-center p-4 relative'>
+	<div className={`min-h-screen bg-white dark:bg-gray-950 flex flex-col relative ${isLogin ? "" : "items-center justify-center p-4 bg-background dark:bg-background-dark"}`}>
 		<button
 			onClick={toggleTheme}
-			className="absolute top-4 right-4 p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+			className={`${isLogin ? "absolute top-4 right-4 z-50 bg-white/90 dark:bg-gray-800/90 backdrop-blur shadow-md" : "absolute top-4 right-4"} p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors rounded-full hover:bg-black/5 dark:hover:bg-white/10`}
 			aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
 			title={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
 		>
 			{isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
 		</button>
-		<Outlet />
+		{isLogin ? <Outlet /> : <Outlet />}
 	</div>
   );
 };

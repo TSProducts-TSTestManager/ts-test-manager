@@ -11,7 +11,7 @@ interface ThemeState {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
-      isDarkMode: false,
+      isDarkMode: true,
 
       toggleTheme: () => {
         const newValue = !get().isDarkMode;
@@ -49,6 +49,8 @@ export const useThemeStore = create<ThemeState>()(
               set({ isDarkMode: parsed.state.isDarkMode });
               if (parsed.state.isDarkMode) {
                 document.documentElement.classList.add('dark');
+              } else {
+                document.documentElement.classList.remove('dark');
               }
               return;
             }
@@ -56,11 +58,9 @@ export const useThemeStore = create<ThemeState>()(
             console.error('Failed to parse theme from localStorage');
           }
         }
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        set({ isDarkMode: prefersDark });
-        if (prefersDark) {
-          document.documentElement.classList.add('dark');
-        }
+        // Default to dark theme always (as per requirement)
+        set({ isDarkMode: true });
+        document.documentElement.classList.add('dark');
       },
     }),
     {
