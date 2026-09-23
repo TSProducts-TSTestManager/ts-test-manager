@@ -23,7 +23,12 @@ const RUN_STATUS_COLORS: Record<TestRunStatus, string> = {
     [TestRunStatus.Abandoned]: '#EF4444',
 };
 
-const ProjectOverviewSection: React.FC = () => {
+interface ProjectOverviewSectionProps {
+    /** When true, always render (project selector + empty state) even if no active project */
+    alwaysShow?: boolean;
+}
+
+const ProjectOverviewSection: React.FC<ProjectOverviewSectionProps> = ({ alwaysShow = false }) => {
     const navigate = useNavigate();
     const activeProject = useTestManagerStore((state) => state.activeProject);
     const projects = useTestManagerStore((state) => state.projects);
@@ -62,7 +67,7 @@ const ProjectOverviewSection: React.FC = () => {
         };
     }, [activeProject]);
 
-    if (!activeProject) return null;
+    if (!activeProject && !alwaysShow) return null;
 
     const activeProjectMeta = projects.find((project) => project.id === activeProject);
     const ticketsTotal = stats?.ticketsByStatus.reduce((sum, item) => sum + item.count, 0) ?? 0;
@@ -88,42 +93,63 @@ const ProjectOverviewSection: React.FC = () => {
 
     return (
         <motion.section
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.05 }}
-            className="space-y-6"
+            className="space-y-5"
         >
             {/* Project header + switcher */}
-            <div className="p-4 sm:p-6 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-none">
+            <div className="p-4 sm:p-5 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-[0_1px_4px_rgba(0,0,0,0.04)] dark:shadow-none">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     <div className="flex items-center gap-3 min-w-0">
                         <div className={`h-11 w-11 rounded-xl ${activeProjectMeta?.color || 'bg-blue-500'} flex items-center justify-center text-white flex-shrink-0 shadow-sm`}>
                             <Folder className="h-5 w-5" />
                         </div>
                         <div className="min-w-0">
-                            <h2 className="text-lg font-semibold text-gray-900 tracking-tight dark:text-gray-100 truncate">
-                                {activeProjectMeta?.name || stats?.projectName || 'Project Overview'}
-                            </h2>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <h2 className="text-lg font-semibold text-gray-900 tracking-tight dark:text-gray-100 truncate">
+                                    {activeProjectMeta?.name || stats?.projectName || 'Select a Project'}
+                                </h2>
+                                {activeProjectMeta?.displayId && (
+                                    <span className="font-mono text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full">
+                                        {activeProjectMeta.displayId}
+                                    </span>
+                                )}
+                            </div>
                             <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                                {activeProjectMeta?.description || 'Selected project overview'}
+                                {activeProjectMeta?.description || (activeProject ? 'Project overview' : 'Choose a project to view tickets, runs & coverage')}
                             </p>
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
                         <ProjectSelector stayOnPage />
-                        <button
-                            onClick={() => navigate('/test-manager/suites')}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-[#007AFF] hover:bg-[#0062cc] dark:bg-system-darkBlue dark:hover:bg-[#0056b3] text-white rounded-lg transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
-                        >
-                            Open Project
-                            <ArrowRight className="h-4 w-4" />
-                        </button>
+                        {activeProject && (
+                            <button
+                                onClick={() => navigate('/test-manager/suites')}
+                                className="flex items-center gap-1.5 px-4 py-2 bg-[#007AFF] hover:bg-[#0062cc] text-white rounded-lg transition-colors text-sm font-medium shadow-sm whitespace-nowrap"
+                            >
+                                Open Project
+                                <ArrowRight className="h-4 w-4" />
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
 
+            {/* Empty state when no project selected */}
+            {!activeProject && !loading && (
+                <div className="bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-200 dark:border-gray-700 p-10 text-center">
+                    <Folder className="h-10 w-10 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">No project selected</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Use the project switcher above to load tickets, runs, suites and test cases.
+                    </p>
+                </div>
+            )}
+
             {/* Stat tiles */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
+            {activeProject && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 {loading || !stats ? (
                     Array(4)
                         .fill(0)
@@ -281,9 +307,10 @@ const ProjectOverviewSection: React.FC = () => {
                     </>
                 )}
             </div>
+            )}
 
             {/* Ticket status breakdown */}
-            {!loading && stats && (
+            {activeProject && !loading && stats && (
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
