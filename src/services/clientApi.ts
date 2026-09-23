@@ -58,4 +58,9 @@ export const restoreUser = async (displayId: string, userId: string) => {
   return res.data;
 };
 
+export const updateClientUser = async (displayId: string, userId: string, data: { firstName?: string; lastName?: string; mobile?: string; whatsapp?: string; whatsappSameAsMobile?: boolean; role?: string }) => {
+  const res = await axios.patch(`${API_URL}/clients/${displayId}/users/${userId}`, data);
+  return res.data.data;
+};
+
 export const getClientsError = getErrorMessage;

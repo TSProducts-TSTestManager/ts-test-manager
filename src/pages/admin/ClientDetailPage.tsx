@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { getClientUsage, getClientUsers, createClientAdmin, resetClientAdminPassword, deactivateUser, restoreUser, updateClient, getClients } from '../../services/clientApi';
+import { getClientUsage, getClientUsers, createClientAdmin, resetClientAdminPassword, deactivateUser, restoreUser, updateClient, getClients, updateClientUser } from '../../services/clientApi';
 import { connectJira, disconnectJira, getJiraConfig } from '../../services/jiraApi';
 import { SeatUsage, ClientUser, Client } from '../../types/client';
 import toast from 'react-hot-toast';
@@ -22,6 +22,9 @@ const ClientDetailPage: React.FC = () => {
   const [editingClient, setEditingClient] = useState(false);
   const [editForm, setEditForm] = useState({ clientName: '', firstName: '', lastName: '', description: '', plan: 'starter', mobile: '', whatsapp: '', whatsappSameAsMobile: false });
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const [editUserTarget, setEditUserTarget] = useState<ClientUser | null>(null);
+  const [editUserForm, setEditUserForm] = useState({ firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false });
   const navigate = useNavigate();
 
   const load = async () => {
@@ -111,6 +114,34 @@ const ClientDetailPage: React.FC = () => {
   const handleJiraConnect = async (e: React.FormEvent) => {
     e.preventDefault();
     try { await connectJira(displayId!, jiraForm); toast.success('JIRA connected'); load(); } catch(e:any){ toast.error(e.message); }
+  };
+  const openEditUser = (u: ClientUser) => {
+    setEditUserTarget(u);
+    setEditUserForm({
+      firstName: u.firstName || u.name.split(' ')[0] || '',
+      lastName: u.lastName || u.name.split(' ').slice(1).join(' ') || '',
+      mobile: u.mobile || '',
+      whatsapp: u.whatsapp || '',
+      whatsappSameAsMobile: !!u.whatsappSameAsMobile,
+    });
+    setShowEditUserModal(true);
+  };
+  const handleEditUserSave = async () => {
+    if (!editUserTarget) return;
+    if (!editUserForm.firstName.trim() || !editUserForm.lastName.trim()) { toast.error('First & Last required'); return; }
+    try {
+      await updateClientUser(displayId!, editUserTarget._id, {
+        firstName: editUserForm.firstName.trim(),
+        lastName: editUserForm.lastName.trim(),
+        mobile: editUserForm.mobile || undefined,
+        whatsapp: editUserForm.whatsappSameAsMobile ? editUserForm.mobile : (editUserForm.whatsapp || undefined),
+        whatsappSameAsMobile: editUserForm.whatsappSameAsMobile,
+      });
+      toast.success('User updated');
+      setShowEditUserModal(false);
+      setEditUserTarget(null);
+      load();
+    } catch(e:any){ toast.error(e.message); }
   };
 
   if (!displayId) return <div className="bg-white dark:bg-gray-900 min-h-full p-6">Missing client</div>;
@@ -215,6 +246,7 @@ const ClientDetailPage: React.FC = () => {
                     <td className="p-3 align-middle whitespace-nowrap"><span className={`px-2 py-1 rounded-full text-xs font-medium ${u.status==='active'?'bg-green-100 text-green-700':'bg-gray-200 text-gray-600'}`}>{u.status}</span></td>
                     <td className="p-3 align-middle whitespace-nowrap">
                       <div className="flex gap-1 justify-end">
+                        <button onClick={()=>openEditUser(u)} className="text-gray-700 text-xs border px-2 py-1 rounded hover:bg-gray-50 whitespace-nowrap">Edit</button>
                         {u.status==='active' ? <button onClick={()=>setShowDeactivateConfirm(u)} className="text-red-600 text-xs border px-2 py-1 rounded hover:bg-red-50 whitespace-nowrap">Deactivate</button> : <button onClick={()=>handleRestore(u._id)} className="text-green-600 text-xs border px-2 py-1 rounded hover:bg-green-50 whitespace-nowrap">Restore</button>}
                         <button onClick={()=>openResetModal(u)} className="text-blue-600 text-xs border px-2 py-1 rounded hover:bg-blue-50 whitespace-nowrap">Reset Pwd</button>
                       </div>
@@ -319,6 +351,32 @@ const ClientDetailPage: React.FC = () => {
                 <button type="submit" disabled={!!full} className={`px-4 py-2 rounded text-white ${full?'bg-gray-400':'bg-blue-600'}`}>Invite</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showEditUserModal && editUserTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={()=>setShowEditUserModal(false)} />
+          <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-4">
+            <h3 className="text-lg font-semibold">Edit Client Admin</h3>
+            <div className="text-xs text-gray-500 bg-gray-50 dark:bg-gray-700/50 p-3 rounded space-y-1">
+              <div><span className="font-medium">Client:</span> {displayId} — {client?.name}</div>
+              <div><span className="font-medium">Email:</span> {editUserTarget.email} <span className="text-gray-400">(cannot be changed)</span></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="First Name *" value={editUserForm.firstName} onChange={e=>setEditUserForm({...editUserForm,firstName:e.target.value})} className="border p-2 rounded" />
+              <input placeholder="Last Name *" value={editUserForm.lastName} onChange={e=>setEditUserForm({...editUserForm,lastName:e.target.value})} className="border p-2 rounded" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="Mobile (optional)" value={editUserForm.mobile} onChange={e=>setEditUserForm({...editUserForm,mobile:e.target.value})} className="border p-2 rounded" />
+              <input placeholder="Whatsapp (optional)" value={editUserForm.whatsappSameAsMobile ? editUserForm.mobile : editUserForm.whatsapp} onChange={e=>setEditUserForm({...editUserForm,whatsapp:e.target.value})} disabled={editUserForm.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-100" />
+            </div>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editUserForm.whatsappSameAsMobile} onChange={e=>setEditUserForm({...editUserForm,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
+            <div className="flex justify-end gap-2">
+              <button onClick={()=>setShowEditUserModal(false)} className="px-4 py-2 border rounded">Cancel</button>
+              <button onClick={handleEditUserSave} className="bg-blue-600 text-white px-4 py-2 rounded">Save</button>
+            </div>
           </div>
         </div>
       )}
