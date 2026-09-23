@@ -50,7 +50,7 @@ const ProjectCreateModal: React.FC<Props> = ({ isOpen, onClose }) => {
             // Set active project and refresh list
             setActiveProject(created.id);
             await fetchProjects();
-            toast.success('Project created successfully');
+            toast.success(created.displayId ? `Project created — ${created.displayId}` : 'Project created successfully');
             onClose();
         } catch (err: unknown) {
             const errorMessage = (err as Error)?.message || 'Could not create project';
@@ -90,6 +90,9 @@ const ProjectCreateModal: React.FC<Props> = ({ isOpen, onClose }) => {
                             placeholder="e.g. Authentication Tests"
                             maxLength={100}
                         />
+                        <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                            Project ID (e.g. <span className="font-mono font-medium">PRJ-0001</span>) is assigned automatically when you create the project.
+                        </p>
                     </div>
 
                     <div>

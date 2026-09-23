@@ -152,6 +152,14 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
                                     </div>
                                 </div>
 
+                                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                    {project.displayId && (
+                                        <span className="font-mono text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full" title="Project ID">
+                                            {project.displayId}
+                                        </span>
+                                    )}
+                                </div>
+
                                 <h3 className="font-semibold text-gray-900 dark:text-white text-xl tracking-tight mb-2">{project.name}</h3>
                                 <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mb-6 leading-relaxed">{project.description}</p>
                             </div>

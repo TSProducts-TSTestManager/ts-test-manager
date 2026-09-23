@@ -208,7 +208,12 @@ const ContextBreadcrumb: React.FC<ContextBreadcrumbProps> = ({ showSuiteSelector
                                             className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${activeProject === project.id ? 'text-blue-500 dark:text-blue-400 bg-blue-500/10 dark:bg-blue-400/20' : 'text-gray-700 dark:text-gray-300'}`}
                                         >
                                             <Folder size={14} className={activeProject === project.id ? 'text-blue-500 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} />
-                                            <span className="truncate flex-1">{project.name}</span>
+                                            <span className="truncate flex-1">
+                                                {project.displayId && (
+                                                    <span className="font-mono text-xs text-gray-400 dark:text-gray-500 mr-1.5">{project.displayId}</span>
+                                                )}
+                                                {project.name}
+                                            </span>
                                             {activeProject === project.id && <Check size={14} />}
                                         </button>
                                     ))}

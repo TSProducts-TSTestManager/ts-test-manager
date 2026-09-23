@@ -187,6 +187,10 @@ const GeneralTab: React.FC<{ project: Project }> = ({ project }) => {
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Project Information</h3>
             <div className="space-y-4">
                 <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Project ID</label>
+                    <p className="font-mono text-gray-900 dark:text-white">{project.displayId || '—'}</p>
+                </div>
+                <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Project Name</label>
                     <p className="text-gray-900 dark:text-white">{project.name}</p>
                 </div>

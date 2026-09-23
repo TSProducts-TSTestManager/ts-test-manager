@@ -56,6 +56,9 @@ const initialFilters: TestCaseFilters = {
 // Helper to convert API response to frontend types
 export const mapProjectResponse = (p: ProjectResponse): Project => ({
     id: p.id,
+    displayId: p.displayId,
+    seq: p.seq,
+    clientId: p.clientId,
     name: p.name,
     description: p.description || '',
     color: p.color,

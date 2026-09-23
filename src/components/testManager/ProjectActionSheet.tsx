@@ -164,7 +164,12 @@ const ProjectActionSheet: React.FC<Props> = ({
                             {project.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate">{project.name}</h3>
+                            <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate">
+                                {project.displayId && (
+                                    <span className="font-mono text-xs text-gray-400 dark:text-gray-500 mr-1.5">{project.displayId}</span>
+                                )}
+                                {project.name}
+                            </h3>
                             <p className="text-xs text-gray-500 dark:text-gray-400">
                                 {project.stats.members} member{project.stats.members !== 1 ? 's' : ''}
                             </p>

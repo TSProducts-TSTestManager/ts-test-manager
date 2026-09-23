@@ -58,6 +58,9 @@ export interface ProjectStats {
 // Project API Response
 export interface ProjectResponse {
   id: string;
+  displayId?: string;
+  seq?: number;
+  clientId?: string;
   name: string;
   description?: string;
   color: string;
