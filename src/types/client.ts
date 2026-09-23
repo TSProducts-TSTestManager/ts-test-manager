@@ -12,6 +12,14 @@ export interface Client {
   mobile?: string;
   whatsapp?: string;
   whatsappSameAsMobile?: boolean;
+  address?: {
+    addressLine1: string;
+    addressLine2?: string;
+    city: string;
+    state: string;
+    country: string;
+    pinCode: string;
+  };
   createdBy: string;
   createdAt: string;
   updatedAt: string;

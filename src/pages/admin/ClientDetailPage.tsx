@@ -21,13 +21,21 @@ const ClientDetailPage: React.FC = () => {
   const [resetPwd, setResetPwd] = useState('');
   const [showDeactivateConfirm, setShowDeactivateConfirm] = useState<ClientUser | null>(null);
   const [editingClient, setEditingClient] = useState(false);
-  const [editForm, setEditForm] = useState({ clientName: '', firstName: '', lastName: '', description: '', plan: 'starter', mobile: '', whatsapp: '', whatsappSameAsMobile: false });
+  const [editForm, setEditForm] = useState({ clientName: '', firstName: '', lastName: '', description: '', plan: 'starter', mobile: '', whatsapp: '', whatsappSameAsMobile: false, addressLine1: '', addressLine2: '', city: '', state: '', country: 'India', pinCode: '' });
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showEditUserModal, setShowEditUserModal] = useState(false);
   const { user } = useAuthStore();
   const isSuperAdmin = (user as any)?.role === 'super_admin';
   const isClientAdmin = (user as any)?.role === 'client_admin';
-  const isValidPhone = (v: string) => !v || /^\+?[0-9]{10,15}$/.test(v.replace(/[\s\-\(\)]/g, ""));
+  const indianStates = ["Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal","Delhi","Jammu and Kashmir","Ladakh","Puducherry","Chandigarh","Andaman and Nicobar Islands","Dadra and Nagar Haveli and Daman and Diu","Lakshadweep"];
+  const isValidEmail = (v: string) => /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(v);
+  const isValidPhone = (v: string) => {
+    if (!v) return true;
+    const d = v.replace(/[\s\-\(\)]/g, "");
+    const norm = d.startsWith("+91") ? d.slice(3) : d.startsWith("91") && d.length === 12 ? d.slice(2) : d.startsWith("0") ? d.slice(1) : d;
+    return /^[6-9]\d{9}$/.test(norm);
+  };
+  const isValidPin = (v: string) => /^[1-9][0-9]{5}$/.test(v.trim());
   const [editUserTarget, setEditUserTarget] = useState<ClientUser | null>(null);
   const [editUserForm, setEditUserForm] = useState({ firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false });
   const navigate = useNavigate();
@@ -51,6 +59,12 @@ const ClientDetailPage: React.FC = () => {
           mobile: c.mobile || '',
           whatsapp: c.whatsapp || '',
           whatsappSameAsMobile: !!c.whatsappSameAsMobile,
+          addressLine1: (c as any).address?.addressLine1 || '',
+          addressLine2: (c as any).address?.addressLine2 || '',
+          city: (c as any).address?.city || '',
+          state: (c as any).address?.state || '',
+          country: (c as any).address?.country || 'India',
+          pinCode: (c as any).address?.pinCode || '',
         });
         setEditMax(c.maxUsers);
       }
@@ -60,10 +74,12 @@ const ClientDetailPage: React.FC = () => {
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!invite.email.trim() || !isValidEmail(invite.email.trim())) { toast.error('Valid Email required'); return; }
     if (!invite.firstName.trim() || !invite.lastName.trim()) { toast.error('First Name & Last Name required'); return; }
-    if (!isValidPhone(invite.mobile)) { toast.error('Mobile must be 10-15 digits, optional +'); return; }
+    if (invite.firstName.trim().length < 2 || invite.lastName.trim().length < 2) { toast.error('First/Last Name min 2 chars'); return; }
+    if (invite.mobile && !isValidPhone(invite.mobile)) { toast.error('Mobile must be 10 digits (India, 6-9 start)'); return; }
     const wp = invite.whatsappSameAsMobile ? invite.mobile : invite.whatsapp;
-    if (!isValidPhone(wp)) { toast.error('Whatsapp must be 10-15 digits, optional +'); return; }
+    if (wp && !isValidPhone(wp)) { toast.error('Whatsapp must be 10 digits (India)'); return; }
     try {
       const payload: any = {
         email: invite.email,
@@ -104,9 +120,12 @@ const ClientDetailPage: React.FC = () => {
   };
   const handleSaveClientEdit = async () => {
     if (!editForm.clientName.trim() || !editForm.firstName.trim() || !editForm.lastName.trim()) { toast.error('Client Name, First & Last required'); return; }
-    if (!isValidPhone(editForm.mobile)) { toast.error('Mobile must be 10-15 digits'); return; }
+    if (editForm.firstName.trim().length < 2 || editForm.lastName.trim().length < 2) { toast.error('First/Last min 2 chars'); return; }
+    if (editForm.mobile && !isValidPhone(editForm.mobile)) { toast.error('Mobile must be 10 digits (India, 6-9 start)'); return; }
     const ewp = editForm.whatsappSameAsMobile ? editForm.mobile : editForm.whatsapp;
-    if (!isValidPhone(ewp)) { toast.error('Whatsapp must be 10-15 digits'); return; }
+    if (ewp && !isValidPhone(ewp)) { toast.error('Whatsapp must be 10 digits (India)'); return; }
+    if (!editForm.addressLine1.trim() || !editForm.city.trim() || !editForm.state.trim() || !editForm.country.trim() || !editForm.pinCode.trim()) { toast.error('Address Line 1, City, State, Country, Pin required'); return; }
+    if (!isValidPin(editForm.pinCode)) { toast.error('Pin Code must be 6 digits (India)'); return; }
     try {
       await updateClient(displayId!, {
         name: editForm.clientName.trim(),
@@ -117,6 +136,14 @@ const ClientDetailPage: React.FC = () => {
         mobile: editForm.mobile || undefined,
         whatsapp: editForm.whatsappSameAsMobile ? editForm.mobile : (editForm.whatsapp || undefined),
         whatsappSameAsMobile: editForm.whatsappSameAsMobile,
+        address: {
+          addressLine1: editForm.addressLine1.trim(),
+          addressLine2: editForm.addressLine2?.trim(),
+          city: editForm.city.trim(),
+          state: editForm.state.trim(),
+          country: editForm.country.trim() || 'India',
+          pinCode: editForm.pinCode.trim(),
+        },
       } as any);
       toast.success('Client updated');
       setEditingClient(false);
@@ -141,9 +168,10 @@ const ClientDetailPage: React.FC = () => {
   const handleEditUserSave = async () => {
     if (!editUserTarget) return;
     if (!editUserForm.firstName.trim() || !editUserForm.lastName.trim()) { toast.error('First & Last required'); return; }
-    if (!isValidPhone(editUserForm.mobile)) { toast.error('Mobile must be 10-15 digits'); return; }
+    if (editUserForm.firstName.trim().length < 2 || editUserForm.lastName.trim().length < 2) { toast.error('First/Last min 2 chars'); return; }
+    if (editUserForm.mobile && !isValidPhone(editUserForm.mobile)) { toast.error('Mobile must be 10 digits (India, 6-9 start)'); return; }
     const uw = editUserForm.whatsappSameAsMobile ? editUserForm.mobile : editUserForm.whatsapp;
-    if (!isValidPhone(uw)) { toast.error('Whatsapp must be 10-15 digits'); return; }
+    if (uw && !isValidPhone(uw)) { toast.error('Whatsapp must be 10 digits (India)'); return; }
     try {
       await updateClientUser(displayId!, editUserTarget._id, {
         firstName: editUserForm.firstName.trim(),
@@ -184,6 +212,12 @@ const ClientDetailPage: React.FC = () => {
               <div><div className="text-gray-400 uppercase tracking-wider">Created</div><div className="font-medium">{client ? new Date(client.createdAt).toLocaleDateString() : '—'}</div></div>
               <div><div className="text-gray-400 uppercase tracking-wider">Seats</div><div className="font-medium">{usage ? `${usage.active}/${usage.max===-1?'∞':usage.max} (${usage.pct}%)` : '—'}</div></div>
             </div>
+            {(client as any)?.address && (
+              <div className="text-xs pt-2">
+                <div className="text-gray-400 uppercase tracking-wider">Address</div>
+                <div className="font-medium">{(client as any).address.addressLine1}{(client as any).address.addressLine2 ? `, ${(client as any).address.addressLine2}` : ''}, {(client as any).address.city}, {(client as any).address.state}, {(client as any).address.country} - {(client as any).address.pinCode}</div>
+              </div>
+            )}
           </div>
           <div className="flex gap-2 shrink-0">
             <button onClick={()=>setEditingClient(true)} className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg">Edit Client</button>
@@ -205,6 +239,19 @@ const ClientDetailPage: React.FC = () => {
               <input placeholder="Whatsapp (optional)" value={editForm.whatsappSameAsMobile ? editForm.mobile : editForm.whatsapp} onChange={e=>setEditForm({...editForm,whatsapp:e.target.value})} disabled={editForm.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-100" />
             </div>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editForm.whatsappSameAsMobile} onChange={e=>setEditForm({...editForm,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Address *</div>
+            <input placeholder="Address Line 1 *" value={editForm.addressLine1} onChange={e=>setEditForm({...editForm,addressLine1:e.target.value})} className="w-full border p-2 rounded" />
+            <input placeholder="Address Line 2 (optional)" value={editForm.addressLine2} onChange={e=>setEditForm({...editForm,addressLine2:e.target.value})} className="w-full border p-2 rounded" />
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="City *" value={editForm.city} onChange={e=>setEditForm({...editForm,city:e.target.value})} className="border p-2 rounded" />
+              <select value={editForm.state} onChange={e=>setEditForm({...editForm,state:e.target.value})} className="border p-2 rounded">
+                <option value="">State *</option>{indianStates.map(s=><option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="Country *" value={editForm.country} onChange={e=>setEditForm({...editForm,country:e.target.value})} className="border p-2 rounded" />
+              <input placeholder="Pin Code * (6 digits)" value={editForm.pinCode} onChange={e=>setEditForm({...editForm,pinCode:e.target.value})} className="border p-2 rounded" maxLength={6} />
+            </div>
             <div className="flex gap-2">
               <select value={editForm.plan} onChange={e=>setEditForm({...editForm,plan:e.target.value})} className="border p-2 rounded"><option value="free">free</option><option value="starter">starter</option><option value="pro">pro</option><option value="enterprise">enterprise</option></select>
               <div className="ml-auto flex gap-2">

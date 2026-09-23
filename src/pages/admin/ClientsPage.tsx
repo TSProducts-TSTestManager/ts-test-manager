@@ -8,9 +8,17 @@ const ClientsPage: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ firstName: '', lastName: '', name: '', description: '', plan: 'starter', maxUsers: 10, mobile: '', whatsapp: '', whatsappSameAsMobile: false });
+  const [form, setForm] = useState({ firstName: '', lastName: '', name: '', description: '', plan: 'starter', maxUsers: 10, mobile: '', whatsapp: '', whatsappSameAsMobile: false, addressLine1: '', addressLine2: '', city: '', state: '', country: 'India', pinCode: '' });
   const [usageMap, setUsageMap] = useState<Record<string, SeatUsage>>({});
   const navigate = useNavigate();
+  const indianStates = ["Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal","Delhi","Jammu and Kashmir","Ladakh","Puducherry","Chandigarh","Andaman and Nicobar Islands","Dadra and Nagar Haveli and Daman and Diu","Lakshadweep"];
+  const isValidPhone = (v: string) => {
+    if (!v) return true; // optional
+    const d = v.replace(/[\s\-\(\)]/g, "");
+    const norm = d.startsWith("+91") ? d.slice(3) : d.startsWith("91") && d.length === 12 ? d.slice(2) : d.startsWith("0") ? d.slice(1) : d;
+    return /^[6-9]\d{9}$/.test(norm);
+  };
+  const isValidPin = (v: string) => /^[1-9][0-9]{5}$/.test(v.trim());
 
   const load = async () => {
     setLoading(true);
@@ -27,6 +35,10 @@ const ClientsPage: React.FC = () => {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim() || !form.firstName.trim() || !form.lastName.trim()) { toast.error('Client Name, First Name & Last Name required'); return; }
+    if (form.mobile && !isValidPhone(form.mobile)) { toast.error('Mobile must be 10 digits (India, 6-9 start)'); return; }
+    if (!isValidPhone(form.whatsappSameAsMobile ? form.mobile : form.whatsapp)) { toast.error('Whatsapp must be 10 digits (India)'); return; }
+    if (!form.addressLine1.trim() || !form.city.trim() || !form.state.trim() || !form.country.trim() || !form.pinCode.trim()) { toast.error('Address Line 1, City, State, Country, Pin Code required'); return; }
+    if (!isValidPin(form.pinCode)) { toast.error('Pin Code must be 6 digits (India, e.g. 110001)'); return; }
     try {
       const payload: any = {
         name: form.name.trim(),
@@ -38,11 +50,19 @@ const ClientsPage: React.FC = () => {
         mobile: form.mobile || undefined,
         whatsapp: form.whatsappSameAsMobile ? form.mobile : (form.whatsapp || undefined),
         whatsappSameAsMobile: form.whatsappSameAsMobile,
+        address: {
+          addressLine1: form.addressLine1.trim(),
+          addressLine2: form.addressLine2.trim() || undefined,
+          city: form.city.trim(),
+          state: form.state.trim(),
+          country: form.country.trim() || 'India',
+          pinCode: form.pinCode.trim(),
+        }
       };
       await createClient(payload);
       toast.success('Client created: ' + payload.name);
       setShowCreate(false);
-      setForm({ firstName: '', lastName: '', name: '', description: '', plan: 'starter', maxUsers: 10, mobile: '', whatsapp: '', whatsappSameAsMobile: false });
+      setForm({ firstName: '', lastName: '', name: '', description: '', plan: 'starter', maxUsers: 10, mobile: '', whatsapp: '', whatsappSameAsMobile: false, addressLine1: '', addressLine2: '', city: '', state: '', country: 'India', pinCode: '' });
       load();
     } catch (e: any) { toast.error(e.message); }
   };
@@ -97,6 +117,19 @@ const ClientsPage: React.FC = () => {
               <input placeholder="Whatsapp (optional)" value={form.whatsappSameAsMobile ? form.mobile : form.whatsapp} onChange={e => setForm({ ...form, whatsapp: e.target.value })} disabled={form.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-100" />
             </div>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.whatsappSameAsMobile} onChange={e => setForm({ ...form, whatsappSameAsMobile: e.target.checked })} /> Whatsapp same as Mobile</label>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Address *</div>
+            <input placeholder="Address Line 1 *" value={form.addressLine1} onChange={e => setForm({ ...form, addressLine1: e.target.value })} className="w-full border p-2 rounded" required />
+            <input placeholder="Address Line 2 (optional)" value={form.addressLine2} onChange={e => setForm({ ...form, addressLine2: e.target.value })} className="w-full border p-2 rounded" />
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="City *" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} className="border p-2 rounded" required />
+              <select value={form.state} onChange={e => setForm({ ...form, state: e.target.value })} className="border p-2 rounded" required>
+                <option value="">State *</option>{indianStates.map(s=><option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="Country *" value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} className="border p-2 rounded" required />
+              <input placeholder="Pin Code * (6 digits)" value={form.pinCode} onChange={e => setForm({ ...form, pinCode: e.target.value })} className="border p-2 rounded" required maxLength={6} />
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value })} className="border p-2 rounded">
                 <option value="free">free (3)</option><option value="starter">starter (10)</option><option value="pro">pro (25)</option><option value="enterprise">enterprise (∞)</option>

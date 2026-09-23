@@ -15,7 +15,7 @@ export const getClients = async (): Promise<Client[]> => {
   return res.data.data || [];
 };
 
-export const createClient = async (data: { name?: string; description?: string; plan?: string; maxUsers: number; firstName?: string; lastName?: string; mobile?: string; whatsapp?: string; whatsappSameAsMobile?: boolean }): Promise<Client> => {
+export const createClient = async (data: { name?: string; description?: string; plan?: string; maxUsers: number; firstName?: string; lastName?: string; mobile?: string; whatsapp?: string; whatsappSameAsMobile?: boolean; address?: { addressLine1: string; addressLine2?: string; city: string; state: string; country: string; pinCode: string } }): Promise<Client> => {
   const res = await axios.post<ApiResponse<Client>>(`${API_URL}/clients`, data);
   if (!res.data.data) throw new Error('No data');
   return res.data.data;
