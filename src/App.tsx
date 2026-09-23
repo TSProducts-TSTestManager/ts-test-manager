@@ -26,6 +26,7 @@ const ClientsPage = React.lazy(() => import("./pages/admin/ClientsPage"));
 const ClientDetailPage = React.lazy(() => import("./pages/admin/ClientDetailPage"));
 const ClientDashboardPage = React.lazy(() => import("./pages/admin/ClientDashboardPage"));
 const ClientAnalyticsPage = React.lazy(() => import("./pages/admin/ClientAnalyticsPage"));
+const MyClientPage = React.lazy(() => import("./pages/client/MyClientPage"));
 
 // Non-lazy imports (needed immediately)
 import AppLayout from "./components/AppLayout";
@@ -234,6 +235,9 @@ function App() {
               <Route path='admin/clients' element={<SuperAdminRoute><ClientsPage /></SuperAdminRoute>} />
               <Route path='admin/clients/:displayId' element={<SuperAdminRoute><ClientDetailPage /></SuperAdminRoute>} />
               <Route path='admin/analytics' element={<SuperAdminRoute><ClientAnalyticsPage /></SuperAdminRoute>} />
+
+              {/* Client — My Client management */}
+              <Route path='my-client' element={<ClientRoute><MyClientPage /></ClientRoute>} />
             </Route>
 
             <Route path='*' element={<Navigate to='/' replace />} />

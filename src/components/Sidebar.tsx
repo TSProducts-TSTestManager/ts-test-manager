@@ -106,6 +106,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
           subItems: []
         },
         {
+          icon: <Building2 size={18} />,
+          label: 'My Client',
+          to: '/my-client',
+          subItems: []
+        },
+        {
           icon: <Folder size={18} />,
           label: 'Projects',
           to: '/test-manager/projects',
