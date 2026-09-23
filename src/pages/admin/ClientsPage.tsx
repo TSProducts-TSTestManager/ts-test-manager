@@ -26,19 +26,19 @@ const ClientsPage: React.FC = () => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.name.trim() || !form.firstName.trim() || !form.lastName.trim()) { toast.error('Client Name, First Name & Last Name required'); return; }
     try {
       const payload: any = {
+        name: form.name.trim(),
         description: form.description,
         plan: form.plan,
         maxUsers: form.maxUsers,
-        firstName: form.firstName,
-        lastName: form.lastName,
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
         mobile: form.mobile || undefined,
         whatsapp: form.whatsappSameAsMobile ? form.mobile : (form.whatsapp || undefined),
         whatsappSameAsMobile: form.whatsappSameAsMobile,
       };
-      payload.name = `${form.firstName} ${form.lastName}`.trim() || form.name;
-      if (!payload.name) { toast.error('First Name & Last Name required'); return; }
       await createClient(payload);
       toast.success('Client created: ' + payload.name);
       setShowCreate(false);
@@ -68,8 +68,9 @@ const ClientsPage: React.FC = () => {
                 <span className="font-mono text-sm bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">{c.displayId}</span>
                 <span className={`text-xs px-2 py-1 rounded ${c.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{c.status}</span>
               </div>
-              <h3 className="font-semibold mt-2">{c.name}</h3>
-              <p className="text-sm text-gray-500">{c.description || '—'}</p>
+              <h3 className="font-semibold mt-2 truncate" title={c.name}>{c.name}</h3>
+              {(c as any).contactFirstName && <p className="text-xs text-gray-600 dark:text-gray-400 truncate">Contact: {(c as any).contactFirstName} {(c as any).contactLastName || ''} {(c as any).mobile ? `• ${ (c as any).mobile}` : ''}</p>}
+              <p className="text-sm text-gray-500 truncate">{c.description || '—'}</p>
               <div className="mt-3">
                 <div className="text-xs flex justify-between"><span>Seats</span><span>{u ? `${u.active}/${u.max === -1 ? '∞' : u.max}` : `${c.maxUsers}`}</span></div>
                 <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded mt-1"><div className={`h-2 rounded ${barColor}`} style={{ width: `${Math.min(100, pct)}%` }} /></div>
@@ -84,6 +85,8 @@ const ClientsPage: React.FC = () => {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <form onSubmit={handleCreate} className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-bold">Create Client</h2>
+            <input placeholder="Client Name *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full border p-2 rounded" required />
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact Person</div>
             <div className="grid grid-cols-2 gap-3">
               <input placeholder="First Name *" value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} className="border p-2 rounded" required />
               <input placeholder="Last Name *" value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} className="border p-2 rounded" required />

@@ -20,7 +20,7 @@ const ClientDetailPage: React.FC = () => {
   const [resetPwd, setResetPwd] = useState('');
   const [showDeactivateConfirm, setShowDeactivateConfirm] = useState<ClientUser | null>(null);
   const [editingClient, setEditingClient] = useState(false);
-  const [editForm, setEditForm] = useState({ firstName: '', lastName: '', description: '', plan: 'starter', mobile: '', whatsapp: '', whatsappSameAsMobile: false });
+  const [editForm, setEditForm] = useState({ clientName: '', firstName: '', lastName: '', description: '', plan: 'starter', mobile: '', whatsapp: '', whatsappSameAsMobile: false });
   const navigate = useNavigate();
 
   const load = async () => {
@@ -34,8 +34,9 @@ const ClientDetailPage: React.FC = () => {
       setClient(c);
       if (c) {
         setEditForm({
-          firstName: c.contactFirstName || c.name.split(' ')[0] || '',
-          lastName: c.contactLastName || c.name.split(' ').slice(1).join(' ') || '',
+          clientName: c.name || '',
+          firstName: c.contactFirstName || '',
+          lastName: c.contactLastName || '',
           description: c.description || '',
           plan: c.plan,
           mobile: c.mobile || '',
@@ -88,14 +89,14 @@ const ClientDetailPage: React.FC = () => {
     try { await updateClient(displayId!, { maxUsers: Number(editMax) } as any); toast.success('Max users updated'); load(); } catch(e:any){ toast.error(e.message); }
   };
   const handleSaveClientEdit = async () => {
-    if (!editForm.firstName || !editForm.lastName) { toast.error('First & Last required'); return; }
+    if (!editForm.clientName.trim() || !editForm.firstName.trim() || !editForm.lastName.trim()) { toast.error('Client Name, First & Last required'); return; }
     try {
       await updateClient(displayId!, {
-        name: `${editForm.firstName} ${editForm.lastName}`.trim(),
+        name: editForm.clientName.trim(),
         description: editForm.description,
         plan: editForm.plan as any,
-        contactFirstName: editForm.firstName,
-        contactLastName: editForm.lastName,
+        contactFirstName: editForm.firstName.trim(),
+        contactLastName: editForm.lastName.trim(),
         mobile: editForm.mobile || undefined,
         whatsapp: editForm.whatsappSameAsMobile ? editForm.mobile : (editForm.whatsapp || undefined),
         whatsappSameAsMobile: editForm.whatsappSameAsMobile,
@@ -125,11 +126,13 @@ const ClientDetailPage: React.FC = () => {
               <span className={`text-xs px-2 py-1 rounded-full ${client?.status==='active'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{client?.status || 'active'}</span>
               <span className="text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-1 rounded-full">{client?.plan || '—'}</span>
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight truncate">{client ? `${client.contactFirstName || client.name.split(' ')[0] || ''} ${client.contactLastName || client.name.split(' ').slice(1).join(' ') || ''}`.trim() || client.name : `Client ${displayId}`}</h1>
-            {client?.description && <p className="text-sm text-gray-600 dark:text-gray-400">{client.description}</p>}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight truncate" title={client?.name}>{client?.name || `Client ${displayId}`}</h1>
+            {client && <p className="text-sm text-gray-600 dark:text-gray-400">Contact: {client.contactFirstName || '—'} {client.contactLastName || ''} {(client.mobile || client.whatsapp) ? `• ${client.mobile || client.whatsapp}` : ''}</p>}
+            {client?.description && <p className="text-sm text-gray-500 dark:text-gray-400 italic">{client.description}</p>}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs pt-2">
+              <div><div className="text-gray-400 uppercase tracking-wider">Client Name</div><div className="font-medium truncate">{client?.name || '—'}</div></div>
               <div><div className="text-gray-400 uppercase tracking-wider">Mobile</div><div className="font-medium">{client?.mobile || '—'}</div></div>
-              <div><div className="text-gray-400 uppercase tracking-wider">Whatsapp</div><div className="font-medium">{client?.whatsapp || '—'} {client?.whatsappSameAsMobile && <span className="text-gray-400">(same as mobile)</span>}</div></div>
+              <div><div className="text-gray-400 uppercase tracking-wider">Whatsapp</div><div className="font-medium">{client?.whatsapp || '—'} {client?.whatsappSameAsMobile && <span className="text-gray-400">(same)</span>}</div></div>
               <div><div className="text-gray-400 uppercase tracking-wider">Created</div><div className="font-medium">{client ? new Date(client.createdAt).toLocaleDateString() : '—'}</div></div>
               <div><div className="text-gray-400 uppercase tracking-wider">Seats</div><div className="font-medium">{usage ? `${usage.active}/${usage.max===-1?'∞':usage.max} (${usage.pct}%)` : '—'}</div></div>
             </div>
@@ -142,6 +145,8 @@ const ClientDetailPage: React.FC = () => {
         {/* Edit Client Modal inline */}
         {editingClient && (
           <div className="mt-4 border-t pt-4 space-y-3">
+            <input placeholder="Client Name *" value={editForm.clientName} onChange={e=>setEditForm({...editForm,clientName:e.target.value})} className="w-full border p-2 rounded" />
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact Person</div>
             <div className="grid grid-cols-2 gap-3">
               <input placeholder="First Name *" value={editForm.firstName} onChange={e=>setEditForm({...editForm,firstName:e.target.value})} className="border p-2 rounded" />
               <input placeholder="Last Name *" value={editForm.lastName} onChange={e=>setEditForm({...editForm,lastName:e.target.value})} className="border p-2 rounded" />
