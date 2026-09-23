@@ -4,7 +4,7 @@ import { getClientUsage, getClientUsers, createClientAdmin, resetClientAdminPass
 import { useAuthStore } from '../../store/authStore';
 import { connectJira, disconnectJira, getJiraConfig } from '../../services/jiraApi';
 import { SeatUsage, ClientUser, Client } from '../../types/client';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, ShieldCheck, User as UserIcon, Eye as EyeIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const ClientDetailPage: React.FC = () => {
@@ -26,6 +26,15 @@ const ClientDetailPage: React.FC = () => {
   const [editForm, setEditForm] = useState({ clientName: '', firstName: '', lastName: '', description: '', plan: 'starter', mobile: '', whatsapp: '', whatsappSameAsMobile: false, addressLine1: '', addressLine2: '', city: '', state: '', country: 'India', pinCode: '' });
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const [userPage, setUserPage] = useState(1);
+  const pageSize = 10;
+  const paginatedUsers = users.slice((userPage - 1) * pageSize, userPage * pageSize);
+  const totalPages = Math.ceil(users.length / pageSize) || 1;
+  const getRoleBadge = (role: string) => {
+    if (role === 'client_admin') return { label: 'Admin', cls: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800', Icon: ShieldCheck };
+    if (role === 'member') return { label: 'Member', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800', Icon: UserIcon };
+    return { label: 'Viewer', cls: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800', Icon: EyeIcon };
+  };
   const { user } = useAuthStore();
   const isSuperAdmin = (user as any)?.role === 'super_admin';
   const isClientAdmin = (user as any)?.role === 'client_admin';
@@ -78,6 +87,7 @@ const ClientDetailPage: React.FC = () => {
     } catch {}
   };
   useEffect(() => { load(); }, [displayId]);
+  useEffect(() => { setUserPage(1); }, [users.length]);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -307,42 +317,65 @@ const ClientDetailPage: React.FC = () => {
             <button onClick={()=>setShowInviteModal(true)} disabled={!!full} title={full?'Deactivate a user first':''} className={`px-4 py-2 rounded text-white text-sm ${full?'bg-gray-400':'bg-blue-600 hover:bg-blue-700'}`}>+ Invite Client Admin</button>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 dark:bg-gray-700/50">
-                <tr className="text-left">
-                  <th className="p-3 font-semibold whitespace-nowrap">Email</th>
-                  <th className="p-3 font-semibold whitespace-nowrap">First Name</th>
-                  <th className="p-3 font-semibold whitespace-nowrap">Last Name</th>
-                  <th className="p-3 font-semibold whitespace-nowrap">Mobile</th>
-                  <th className="p-3 font-semibold whitespace-nowrap">Whatsapp</th>
-                  <th className="p-3 font-semibold whitespace-nowrap">Role</th>
-                  <th className="p-3 font-semibold whitespace-nowrap">Status</th>
-                  <th className="p-3 font-semibold text-right whitespace-nowrap">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map(u=>(
-                  <tr key={u._id} className="border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                    <td className="p-3 align-middle max-w-[200px] truncate" title={u.email}>{u.email}</td>
-                    <td className="p-3 align-middle whitespace-nowrap">{u.firstName || u.name.split(' ')[0] || '—'}</td>
-                    <td className="p-3 align-middle whitespace-nowrap">{u.lastName || u.name.split(' ').slice(1).join(' ') || '—'}</td>
-                    <td className="p-3 align-middle whitespace-nowrap">{u.mobile || '—'}</td>
-                    <td className="p-3 align-middle whitespace-nowrap">{u.whatsapp || '—'} {u.whatsappSameAsMobile && <span className="text-xs text-gray-400">(same)</span>}</td>
-                    <td className="p-3 align-middle whitespace-nowrap"><span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">{u.role}</span></td>
-                    <td className="p-3 align-middle whitespace-nowrap"><span className={`px-2 py-1 rounded-full text-xs font-medium ${u.status==='active'?'bg-green-100 text-green-700':'bg-gray-200 text-gray-600'}`}>{u.status}</span></td>
-                    <td className="p-3 align-middle whitespace-nowrap">
-                      <div className="flex gap-1 justify-end">
-                        <button onClick={()=>openEditUser(u)} className="text-gray-700 text-xs border px-2 py-1 rounded hover:bg-gray-50 whitespace-nowrap">Edit</button>
-                        {u.status==='active' ? <button onClick={()=>setShowDeactivateConfirm(u)} className="text-red-600 text-xs border px-2 py-1 rounded hover:bg-red-50 whitespace-nowrap">Deactivate</button> : <button onClick={()=>handleRestore(u._id)} className="text-green-600 text-xs border px-2 py-1 rounded hover:bg-green-50 whitespace-nowrap">Restore</button>}
-                        <button onClick={()=>openResetModal(u)} className="text-blue-600 text-xs border px-2 py-1 rounded hover:bg-blue-50 whitespace-nowrap">Reset Pwd</button>
-                      </div>
-                    </td>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700">
+                  <tr className="text-left">
+                    <th className="px-3 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">S.No</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Email</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">First Name</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Last Name</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Mobile</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Whatsapp</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Role</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Status</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap text-right">Actions</th>
                   </tr>
-                ))}
-                {users.length===0 && <tr><td colSpan={8} className="p-6 text-center text-gray-400">No users yet</td></tr>}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                  {paginatedUsers.map((u, idx) => {
+                    const badge = getRoleBadge(u.role);
+                    const serial = (userPage - 1) * pageSize + idx + 1;
+                    const BadgeIcon = badge.Icon;
+                    return (
+                      <tr key={u._id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                        <td className="px-3 py-3 text-center text-xs font-medium text-gray-500">{serial}</td>
+                        <td className="px-4 py-3 align-middle max-w-[200px] truncate font-medium" title={u.email}>{u.email}</td>
+                        <td className="px-4 py-3 align-middle whitespace-nowrap">{u.firstName || u.name.split(' ')[0] || '—'}</td>
+                        <td className="px-4 py-3 align-middle whitespace-nowrap">{u.lastName || u.name.split(' ').slice(1).join(' ') || '—'}</td>
+                        <td className="px-4 py-3 align-middle whitespace-nowrap font-mono text-xs">{u.mobile || '—'}</td>
+                        <td className="px-4 py-3 align-middle whitespace-nowrap font-mono text-xs">{u.whatsapp || '—'} {u.whatsappSameAsMobile && <span className="text-xs text-gray-400">(same)</span>}</td>
+                        <td className="px-4 py-3 align-middle whitespace-nowrap">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${badge.cls}`}>
+                            <BadgeIcon size={12} /> {badge.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 align-middle whitespace-nowrap"><span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border ${u.status==='active' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800' : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-700 dark:text-gray-300'}`}>{u.status === 'active' ? 'Active' : 'Inactive'}</span></td>
+                        <td className="px-4 py-3 align-middle whitespace-nowrap">
+                          <div className="flex gap-1 justify-end">
+                            <button onClick={()=>openEditUser(u)} className="text-gray-700 dark:text-gray-300 text-xs border border-gray-200 dark:border-gray-600 px-2.5 py-1 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 whitespace-nowrap">Edit</button>
+                            {u.status==='active' ? <button onClick={()=>setShowDeactivateConfirm(u)} className="text-red-600 text-xs border border-red-200 px-2.5 py-1 rounded-lg hover:bg-red-50 whitespace-nowrap">Deactivate</button> : <button onClick={()=>handleRestore(u._id)} className="text-green-600 text-xs border border-green-200 px-2.5 py-1 rounded-lg hover:bg-green-50 whitespace-nowrap">Restore</button>}
+                            <button onClick={()=>openResetModal(u)} className="text-blue-600 text-xs border border-blue-200 px-2.5 py-1 rounded-lg hover:bg-blue-50 whitespace-nowrap">Reset Pwd</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {paginatedUsers.length===0 && <tr><td colSpan={9} className="p-6 text-center text-gray-400">No users yet</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            {users.length > pageSize && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                <span className="text-xs text-gray-500">Showing {(userPage - 1) * pageSize + 1}-{Math.min(userPage * pageSize, users.length)} of {users.length} users</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={()=>setUserPage(p=>Math.max(1,p-1))} disabled={userPage===1} className="p-1.5 rounded-lg border bg-white dark:bg-gray-800 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-700"><ChevronLeft size={16}/></button>
+                  <span className="text-xs font-medium px-2">Page {userPage} of {totalPages}</span>
+                  <button onClick={()=>setUserPage(p=>Math.min(totalPages,p+1))} disabled={userPage===totalPages} className="p-1.5 rounded-lg border bg-white dark:bg-gray-800 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-700"><ChevronRight size={16}/></button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}

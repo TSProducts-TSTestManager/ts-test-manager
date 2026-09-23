@@ -3,7 +3,7 @@ import { getClients, getClientUsage, getClientUsers, createClientAdmin, resetCli
 import { connectJira, disconnectJira, getJiraConfig } from '../../services/jiraApi';
 import { useAuthStore } from '../../store/authStore';
 import type { Client, ClientUser, SeatUsage } from '../../types/client';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, ShieldCheck, User as UserIcon, Eye as EyeIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const MyClientPage: React.FC = () => {
@@ -24,6 +24,15 @@ const MyClientPage: React.FC = () => {
   const [showEditUserModal, setShowEditUserModal] = useState(false);
   const [editUserTarget, setEditUserTarget] = useState<ClientUser | null>(null);
   const [editUserForm, setEditUserForm] = useState({ firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false });
+  const [userPage, setUserPage] = useState(1);
+  const pageSize = 10;
+  const paginatedUsers = users.slice((userPage - 1) * pageSize, userPage * pageSize);
+  const totalPages = Math.ceil(users.length / pageSize) || 1;
+  const getRoleBadge = (role: string) => {
+    if (role === 'client_admin') return { label: 'Admin', cls: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800', Icon: ShieldCheck };
+    if (role === 'member') return { label: 'Member', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800', Icon: UserIcon };
+    return { label: 'Viewer', cls: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800', Icon: EyeIcon };
+  };
   const [editingClient, setEditingClient] = useState(false);
   const [editForm, setEditForm] = useState({ clientName: '', firstName: '', lastName: '', description: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false, addressLine1: '', addressLine2: '', city: '', state: '', country: 'India', pinCode: '' });
 
@@ -65,6 +74,7 @@ const MyClientPage: React.FC = () => {
   };
 
   useEffect(() => { load(); }, [user]);
+  useEffect(() => { setUserPage(1); }, [users.length]);
 
   const active = users.filter(u=>u.status==='active').length;
   const full = usage ? (usage.max !== -1 && usage.active >= usage.max) : false;
@@ -225,27 +235,64 @@ const MyClientPage: React.FC = () => {
             <h3 className="font-semibold">Users</h3>
             <button onClick={()=>setShowInviteModal(true)} disabled={!!full} className={`px-3 py-1.5 rounded-lg text-sm text-white ${full?'bg-gray-400':'bg-blue-600'}`}>+ Add User</button>
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-2xl border overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 dark:bg-gray-700/50"><tr><th className="p-3 text-left">Email</th><th className="p-3">First</th><th className="p-3">Last</th><th className="p-3">Mobile</th><th className="p-3">Role</th><th className="p-3">Status</th><th className="p-3 text-right">Actions</th></tr></thead>
-              <tbody>
-                {users.map(u=>(
-                  <tr key={u._id} className="border-t hover:bg-gray-50">
-                    <td className="p-3 truncate max-w-[180px]">{u.email}</td>
-                    <td className="p-3">{u.firstName || '—'}</td>
-                    <td className="p-3">{u.lastName || '—'}</td>
-                    <td className="p-3">{u.mobile || '—'}</td>
-                    <td className="p-3"><span className="text-xs bg-gray-100 px-2 py-1 rounded-full">{u.role}</span></td>
-                    <td className="p-3"><span className={`text-xs px-2 py-1 rounded-full ${u.status==='active'?'bg-green-100 text-green-700':'bg-gray-200'}`}>{u.status}</span></td>
-                    <td className="p-3"><div className="flex gap-1 justify-end">
-                      {isClientAdmin && <button onClick={()=>openEditUser(u)} className="text-xs border px-2 py-1 rounded">Edit</button>}
-                      {u.status==='active' ? <button onClick={()=>setShowDeactivateConfirm(u)} className="text-xs border px-2 py-1 rounded text-red-600">Deactivate</button> : <button onClick={()=>handleRestore(u._id)} className="text-xs border px-2 py-1 rounded text-green-600">Restore</button>}
-                      <button onClick={()=>openReset(u)} className="text-xs border px-2 py-1 rounded text-blue-600">Reset Pwd</button>
-                    </div></td>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700">
+                  <tr className="text-left">
+                    <th className="px-3 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">S.No</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Email</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">First Name</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Last Name</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Mobile</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Whatsapp</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Role</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Status</th>
+                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                  {paginatedUsers.map((u, idx) => {
+                    const badge = getRoleBadge(u.role);
+                    const serial = (userPage - 1) * pageSize + idx + 1;
+                    const BadgeIcon = badge.Icon;
+                    return (
+                    <tr key={u._id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td className="px-3 py-3 text-center text-xs font-medium text-gray-500">{serial}</td>
+                      <td className="px-4 py-3 align-middle max-w-[200px] truncate font-medium" title={u.email}>{u.email}</td>
+                      <td className="px-4 py-3 align-middle whitespace-nowrap">{u.firstName || u.name.split(' ')[0] || '—'}</td>
+                      <td className="px-4 py-3 align-middle whitespace-nowrap">{u.lastName || u.name.split(' ').slice(1).join(' ') || '—'}</td>
+                      <td className="px-4 py-3 align-middle whitespace-nowrap font-mono text-xs">{u.mobile || '—'}</td>
+                      <td className="px-4 py-3 align-middle whitespace-nowrap font-mono text-xs">{u.whatsapp || '—'} {u.whatsappSameAsMobile && <span className="text-xs text-gray-400">(same)</span>}</td>
+                      <td className="px-4 py-3 align-middle whitespace-nowrap">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${badge.cls}`}>
+                          <BadgeIcon size={12} /> {badge.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 align-middle whitespace-nowrap"><span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border ${u.status==='active' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800' : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-700 dark:text-gray-300'}`}>{u.status === 'active' ? 'Active' : 'Inactive'}</span></td>
+                      <td className="px-4 py-3 align-middle whitespace-nowrap">
+                        <div className="flex gap-1 justify-end">
+                          {isClientAdmin && <button onClick={()=>openEditUser(u)} className="text-gray-700 dark:text-gray-300 text-xs border border-gray-200 dark:border-gray-600 px-2.5 py-1 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 whitespace-nowrap">Edit</button>}
+                          {u.status==='active' ? <button onClick={()=>setShowDeactivateConfirm(u)} className="text-red-600 text-xs border border-red-200 px-2.5 py-1 rounded-lg hover:bg-red-50 whitespace-nowrap">Deactivate</button> : <button onClick={()=>handleRestore(u._id)} className="text-green-600 text-xs border border-green-200 px-2.5 py-1 rounded-lg hover:bg-green-50 whitespace-nowrap">Restore</button>}
+                          <button onClick={()=>openReset(u)} className="text-blue-600 text-xs border border-blue-200 px-2.5 py-1 rounded-lg hover:bg-blue-50 whitespace-nowrap">Reset Pwd</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )})}
+                  {paginatedUsers.length===0 && <tr><td colSpan={9} className="p-6 text-center text-gray-400">No users yet</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            {users.length > pageSize && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                <span className="text-xs text-gray-500">Showing {(userPage - 1) * pageSize + 1}-{Math.min(userPage * pageSize, users.length)} of {users.length} users</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={()=>setUserPage(p=>Math.max(1,p-1))} disabled={userPage===1} className="p-1.5 rounded-lg border bg-white dark:bg-gray-800 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-700"><ChevronLeft size={16}/></button>
+                  <span className="text-xs font-medium px-2">Page {userPage} of {totalPages}</span>
+                  <button onClick={()=>setUserPage(p=>Math.min(totalPages,p+1))} disabled={userPage===totalPages} className="p-1.5 rounded-lg border bg-white dark:bg-gray-800 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-700"><ChevronRight size={16}/></button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
