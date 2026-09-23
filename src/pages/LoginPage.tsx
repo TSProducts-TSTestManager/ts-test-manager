@@ -75,10 +75,10 @@ const LoginPage: React.FC = () => {
 				</span>
 			</div>
 
-			{/* Main - left company content as is, login on right, one background no divider */}
-			<div className="relative z-10 flex-1 flex flex-col lg:flex-row w-full max-w-[1280px] mx-auto">
+			{/* Main - left company as is, right login professionally centered */}
+			<div className="relative z-10 flex-1 flex flex-col lg:flex-row lg:items-center w-full max-w-[1280px] mx-auto gap-6 lg:gap-8">
 				{/* LEFT - Company details as is */}
-				<div className="lg:w-[55%] flex flex-col justify-center px-6 py-6 lg:px-8 xl:px-10">
+				<div className="lg:w-[55%] flex flex-col justify-center px-6 py-4 lg:px-8 xl:px-10">
 					<div className="max-w-[640px] mx-auto lg:mx-0 w-full">
 						<div className="inline-flex items-center gap-2 rounded-full border border-blue-800 bg-blue-950/50 text-blue-300 px-3 py-1 text-xs font-semibold mb-4"><span className="h-1.5 w-1.5 rounded-full bg-blue-500" />IT Software Solutions & Services</div>
 						<h2 className="text-[28px] lg:text-[36px] font-bold leading-[0.95] tracking-tight text-white">IT Software Solutions<br /><span className="text-blue-400">Built for Real Business Impact</span></h2>
@@ -117,8 +117,8 @@ const LoginPage: React.FC = () => {
 					</div>
 				</div>
 
-				{/* RIGHT - Login panel - adjusted up from bottom */}
-				<div className="lg:w-[45%] flex flex-col items-center justify-start pt-6 pb-16 px-6 lg:px-8 lg:pt-8 lg:pb-16">
+				{/* RIGHT - Login panel - professionally on right, fully visible, not cut off */}
+				<div className="lg:w-[45%] flex flex-col items-center justify-center px-6 py-4 lg:px-8 lg:py-6 lg:sticky lg:top-4 self-start lg:self-center min-h-0">
 					<div className="w-full max-w-[400px]">
 						<div className="flex flex-col items-center text-center mb-4">
 							<div className="w-12 h-12 rounded-xl bg-gray-800 border border-gray-700 p-2 shadow-md flex items-center justify-center">
