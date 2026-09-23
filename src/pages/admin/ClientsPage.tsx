@@ -22,6 +22,11 @@ const ClientsPage: React.FC = () => {
     return /^[6-9]\d{9}$/.test(norm);
   };
   const isValidPin = (v: string) => /^[1-9][0-9]{5}$/.test(v.trim());
+  const planLimits: Record<string, number> = { free: 3, starter: 10, pro: 25, enterprise: Infinity };
+  const getAllowedMax = (plan: string) => {
+    const lim = planLimits[plan] ?? 10;
+    return lim === Infinity ? Infinity : Math.ceil(lim * 1.5);
+  };
 
   const load = async () => {
     setLoading(true);
@@ -64,6 +69,9 @@ const ClientsPage: React.FC = () => {
     if (!isValidPhone(form.whatsappSameAsMobile ? form.mobile : form.whatsapp)) { toast.error('Whatsapp must be 10 digits (India)'); return; }
     if (!form.addressLine1.trim() || !form.city.trim() || !form.state.trim() || !form.country.trim() || !form.pinCode.trim()) { toast.error('Address Line 1, City, State, Country, Pin Code required'); return; }
     if (!isValidPin(form.pinCode)) { toast.error('Pin Code must be 6 digits (India, e.g. 110001)'); return; }
+    const allowedMax = getAllowedMax(form.plan);
+    if (form.maxUsers !== -1 && form.maxUsers > allowedMax) { toast.error(`Max Users ${form.maxUsers} exceeds ${form.plan} plan limit (${planLimits[form.plan]}) +50% (max ${allowedMax}). Upgrade plan.`); return; }
+    if (form.maxUsers === -1 && form.plan !== 'enterprise') { toast.error('Unlimited (-1) allowed only for Enterprise plan'); return; }
     try {
       const payload: any = {
         name: form.name.trim(),
@@ -235,6 +243,7 @@ const ClientsPage: React.FC = () => {
                 <input type="number" placeholder="Max Users" value={form.maxUsers} onChange={e => setForm({ ...form, maxUsers: parseInt(e.target.value) || 0 })} className="w-full border p-2 rounded" required />
               </div>
             </div>
+            <p className="text-xs text-gray-500">Limit: {planLimits[form.plan] === Infinity ? 'Unlimited' : `${planLimits[form.plan]} Users`} → max {getAllowedMax(form.plan) === Infinity ? 'Unlimited' : `${getAllowedMax(form.plan)} Users`} (+50%). Exceed requires plan upgrade.</p>
             <div className="flex gap-2 justify-end">
               <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border rounded">Cancel</button>
               <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">Create</button>

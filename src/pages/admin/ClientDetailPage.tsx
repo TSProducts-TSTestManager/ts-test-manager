@@ -36,6 +36,11 @@ const ClientDetailPage: React.FC = () => {
     return /^[6-9]\d{9}$/.test(norm);
   };
   const isValidPin = (v: string) => /^[1-9][0-9]{5}$/.test(v.trim());
+  const planLimits: Record<string, number> = { free: 3, starter: 10, pro: 25, enterprise: Infinity };
+  const getAllowedMax = (plan: string) => {
+    const lim = planLimits[plan] ?? 10;
+    return lim === Infinity ? Infinity : Math.ceil(lim * 1.5);
+  };
   const [editUserTarget, setEditUserTarget] = useState<ClientUser | null>(null);
   const [editUserForm, setEditUserForm] = useState({ firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false });
   const navigate = useNavigate();
@@ -116,7 +121,11 @@ const ClientDetailPage: React.FC = () => {
   };
   const handleSaveMax = async () => {
     if (editMax === '') return;
-    try { await updateClient(displayId!, { maxUsers: Number(editMax) } as any); toast.success('Max users updated'); load(); } catch(e:any){ toast.error(e.message); }
+    const num = Number(editMax);
+    if (num === -1 && client?.plan !== 'enterprise') { toast.error('Unlimited (-1) allowed only for Enterprise plan'); return; }
+    const allowed = getAllowedMax(client?.plan || 'starter');
+    if (num !== -1 && allowed !== Infinity && num > allowed) { toast.error(`Max Users ${num} exceeds ${client?.plan} limit (${planLimits[client?.plan || 'starter']}) +50% (max ${allowed}). Upgrade plan.`); return; }
+    try { await updateClient(displayId!, { maxUsers: num } as any); toast.success('Max users updated'); load(); } catch(e:any){ toast.error(e.message); }
   };
   const handleSaveClientEdit = async () => {
     if (!editForm.clientName.trim() || !editForm.firstName.trim() || !editForm.lastName.trim()) { toast.error('Client Name, First & Last required'); return; }
@@ -126,6 +135,14 @@ const ClientDetailPage: React.FC = () => {
     if (ewp && !isValidPhone(ewp)) { toast.error('Whatsapp must be 10 digits (India)'); return; }
     if (!editForm.addressLine1.trim() || !editForm.city.trim() || !editForm.state.trim() || !editForm.country.trim() || !editForm.pinCode.trim()) { toast.error('Address Line 1, City, State, Country, Pin required'); return; }
     if (!isValidPin(editForm.pinCode)) { toast.error('Pin Code must be 6 digits (India)'); return; }
+    // plan + 50% guard for edit inline — if plan changed, maxUsers stays same but must still fit new plan's allowed max
+    const allowedForEdit = getAllowedMax(editForm.plan);
+    const currentMax = client?.maxUsers ?? 10;
+    // if editing client and current maxUsers would exceed new plan's allowed max, block
+    if (currentMax !== -1 && allowedForEdit !== Infinity && currentMax > allowedForEdit) {
+      toast.error(`Current Max Users ${currentMax} exceeds ${editForm.plan} limit +50% (max ${allowedForEdit}). Upgrade plan or reduce seats.`);
+      return;
+    }
     try {
       await updateClient(displayId!, {
         name: editForm.clientName.trim(),
@@ -263,6 +280,7 @@ const ClientDetailPage: React.FC = () => {
                 <button onClick={handleSaveClientEdit} className="bg-blue-600 text-white px-4 py-2 rounded">Save</button>
               </div>
             </div>
+            <p className="text-xs text-gray-500">Plan {editForm.plan} limit {planLimits[editForm.plan] === Infinity ? 'Unlimited' : `${planLimits[editForm.plan]} Users`} → max {getAllowedMax(editForm.plan) === Infinity ? 'Unlimited' : `${getAllowedMax(editForm.plan)} Users`} (+50%). Exceed requires plan upgrade.</p>
           </div>
         )}
       </div>
