@@ -4,6 +4,7 @@ import { getClientUsage, getClientUsers, createClientAdmin, resetClientAdminPass
 import { useAuthStore } from '../../store/authStore';
 import { connectJira, disconnectJira, getJiraConfig } from '../../services/jiraApi';
 import { SeatUsage, ClientUser, Client } from '../../types/client';
+import { Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const ClientDetailPage: React.FC = () => {
@@ -19,6 +20,7 @@ const ClientDetailPage: React.FC = () => {
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetTarget, setResetTarget] = useState<ClientUser | null>(null);
   const [resetPwd, setResetPwd] = useState('');
+  const [showResetPwdEye, setShowResetPwdEye] = useState(false);
   const [showDeactivateConfirm, setShowDeactivateConfirm] = useState<ClientUser | null>(null);
   const [editingClient, setEditingClient] = useState(false);
   const [editForm, setEditForm] = useState({ clientName: '', firstName: '', lastName: '', description: '', plan: 'starter', mobile: '', whatsapp: '', whatsappSameAsMobile: false, addressLine1: '', addressLine2: '', city: '', state: '', country: 'India', pinCode: '' });
@@ -113,6 +115,7 @@ const ClientDetailPage: React.FC = () => {
   const openResetModal = (u: ClientUser) => {
     setResetTarget(u);
     setResetPwd('');
+    setShowResetPwdEye(false);
     setShowResetModal(true);
   };
   const handleResetConfirm = async () => {
@@ -397,7 +400,12 @@ const ClientDetailPage: React.FC = () => {
               <div><span className="font-medium">Mobile:</span> {resetTarget.mobile||'—'} • <span className="font-medium">Whatsapp:</span> {resetTarget.whatsapp||'—'}</div>
               <div><span className="font-medium">Role:</span> {resetTarget.role} • Status: {resetTarget.status}</div>
             </div>
-            <input type="password" placeholder="New temp password (min 6 chars)" value={resetPwd} onChange={e=>setResetPwd(e.target.value)} className="w-full border p-2 rounded" autoFocus />
+            <div className="relative">
+              <input type={showResetPwdEye ? "text" : "password"} placeholder="New temp password (min 6 chars)" value={resetPwd} onChange={e=>setResetPwd(e.target.value)} className="w-full border p-2 rounded pr-10" autoFocus />
+              <button type="button" onClick={() => setShowResetPwdEye(!showResetPwdEye)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300">
+                {showResetPwdEye ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
             <p className="text-xs text-gray-500">User will be forced to change password on next login (mustResetPassword).</p>
             <div className="flex justify-end gap-2">
               <button onClick={()=>setShowResetModal(false)} className="px-4 py-2 border rounded">Cancel</button>
