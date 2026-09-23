@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router';
+import { useParams, useNavigate } from 'react-router';
 import { getClientUsage, getClientUsers, createClientAdmin, resetClientAdminPassword, deactivateUser, restoreUser, updateClient } from '../../services/clientApi';
 import { connectJira, disconnectJira, getJiraConfig } from '../../services/jiraApi';
 import { SeatUsage, ClientUser } from '../../types/client';
@@ -14,6 +14,11 @@ const ClientDetailPage: React.FC = () => {
   const [invite, setInvite] = useState({ email: '', name: '', tempPassword: '' });
   const [jiraForm, setJiraForm] = useState({ domain: '', email: '', apiToken: '', projectKey: '' });
   const [editMax, setEditMax] = useState<number | ''>('');
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetTarget, setResetTarget] = useState<ClientUser | null>(null);
+  const [resetPwd, setResetPwd] = useState('');
+  const [showDeactivateConfirm, setShowDeactivateConfirm] = useState<ClientUser | null>(null);
+  const navigate = useNavigate();
 
   const load = async () => {
     if (!displayId) return;
@@ -33,10 +38,14 @@ const ClientDetailPage: React.FC = () => {
   const handleRestore = async (uid: string) => {
     try { await restoreUser(displayId!, uid); toast.success('Restored'); load(); } catch(e:any){ toast.error(e.message); }
   };
-  const handleReset = async (uid: string) => {
-    const pwd = prompt('New temp password:');
-    if (!pwd) return;
-    try { await resetClientAdminPassword(displayId!, uid, pwd); toast.success('Password reset'); } catch(e:any){ toast.error(e.message); }
+  const openResetModal = (u: ClientUser) => {
+    setResetTarget(u);
+    setResetPwd('');
+    setShowResetModal(true);
+  };
+  const handleResetConfirm = async () => {
+    if (!resetTarget || !resetPwd) { toast.error('Password required'); return; }
+    try { await resetClientAdminPassword(displayId!, resetTarget._id, resetPwd); toast.success(`Password reset for ${resetTarget.email}`); setShowResetModal(false); setResetTarget(null); } catch(e:any){ toast.error(e.message); }
   };
   const handleSaveMax = async () => {
     if (editMax === '') return;
@@ -47,13 +56,19 @@ const ClientDetailPage: React.FC = () => {
     try { await connectJira(displayId!, jiraForm); toast.success('JIRA connected'); load(); } catch(e:any){ toast.error(e.message); }
   };
 
-  if (!displayId) return <div>Missing client</div>;
+  if (!displayId) return <div className="bg-white dark:bg-gray-900 min-h-full p-6">Missing client</div>;
   const active = users.filter(u=>u.status==='active').length;
   const full = usage ? (usage.max !== -1 && usage.active >= usage.max) : false;
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Client {displayId} — Detail</h1>
+    <div className="bg-white dark:bg-gray-900 min-h-full p-4 sm:p-6 space-y-6">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-4 sm:p-6 flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">Client {displayId}</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Seats {usage ? `${usage.active}/${usage.max===-1?'∞':usage.max}` : '—'} • {displayId} detail • manage users & JIRA</p>
+        </div>
+        <button onClick={()=>navigate('/admin/clients')} className="text-sm border px-3 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">Back to Clients</button>
+      </div>
       <div className="flex gap-4 border-b">
         <button onClick={()=>setTab('users')} className={`pb-2 ${tab==='users'?'border-b-2 border-blue-600':''}`}>Users ({active}/{usage?.max===-1?'∞':usage?.max})</button>
         <button onClick={()=>setTab('jira')} className={`pb-2 ${tab==='jira'?'border-b-2 border-blue-600':''}`}>JIRA</button>
@@ -87,8 +102,8 @@ const ClientDetailPage: React.FC = () => {
                     <td className="p-2">{u.email}</td><td>{u.name}</td><td>{u.role}</td>
                     <td><span className={`px-2 py-1 rounded text-xs ${u.status==='active'?'bg-green-100 text-green-800':'bg-gray-200 text-gray-600'}`}>{u.status}</span></td>
                     <td className="p-2 flex gap-2">
-                      {u.status==='active' ? <button onClick={()=>handleDeactivate(u._id)} className="text-red-600 text-xs border px-2 py-1 rounded">Deactivate</button> : <button onClick={()=>handleRestore(u._id)} className="text-green-600 text-xs border px-2 py-1 rounded">Restore</button>}
-                      <button onClick={()=>handleReset(u._id)} className="text-blue-600 text-xs border px-2 py-1 rounded">Reset Pwd</button>
+                      {u.status==='active' ? <button onClick={()=>setShowDeactivateConfirm(u)} className="text-red-600 text-xs border px-2 py-1 rounded hover:bg-red-50">Deactivate</button> : <button onClick={()=>handleRestore(u._id)} className="text-green-600 text-xs border px-2 py-1 rounded hover:bg-green-50">Restore</button>}
+                      <button onClick={()=>openResetModal(u)} className="text-blue-600 text-xs border px-2 py-1 rounded hover:bg-blue-50">Reset Pwd</button>
                     </td>
                   </tr>
                 ))}
@@ -121,6 +136,46 @@ const ClientDetailPage: React.FC = () => {
             <button onClick={handleSaveMax} className="bg-blue-600 text-white px-4 py-2 rounded">Save</button>
           </div>
           <p className="text-xs text-gray-500">-1 = unlimited. Reducing below active count requires deactivating users first.</p>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
+      {showResetModal && resetTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={()=>setShowResetModal(false)} />
+          <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <h3 className="text-lg font-semibold">Reset Password</h3>
+            <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 p-3 rounded">
+              <div><span className="font-medium">Client:</span> {displayId}</div>
+              <div><span className="font-medium">User:</span> {resetTarget.name} ({resetTarget.email})</div>
+              <div><span className="font-medium">Role:</span> {resetTarget.role} • Status: {resetTarget.status}</div>
+            </div>
+            <input type="password" placeholder="New temp password (min 6 chars)" value={resetPwd} onChange={e=>setResetPwd(e.target.value)} className="w-full border p-2 rounded" autoFocus />
+            <p className="text-xs text-gray-500">User will be forced to change password on next login (mustResetPassword).</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={()=>setShowResetModal(false)} className="px-4 py-2 border rounded">Cancel</button>
+              <button onClick={handleResetConfirm} className="bg-blue-600 text-white px-4 py-2 rounded">Reset Password</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deactivate Confirm Modal */}
+      {showDeactivateConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={()=>setShowDeactivateConfirm(null)} />
+          <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <h3 className="text-lg font-semibold">Deactivate User?</h3>
+            <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 p-3 rounded">
+              <div><span className="font-medium">Client:</span> {displayId} — {usage ? `${usage.active}/${usage.max===-1?'∞':usage.max} active` : ''}</div>
+              <div><span className="font-medium">User:</span> {showDeactivateConfirm.name} ({showDeactivateConfirm.email})</div>
+              <div className="text-xs mt-1">This will soft-deactivate (status:inactive), free 1 seat, and keep history. You can restore later if seats available.</div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={()=>setShowDeactivateConfirm(null)} className="px-4 py-2 border rounded">Cancel</button>
+              <button onClick={async()=>{ try{ await handleDeactivate(showDeactivateConfirm._id); setShowDeactivateConfirm(null);}catch{}}} className="bg-red-600 text-white px-4 py-2 rounded">Deactivate</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -35,12 +35,15 @@ const ClientsPage: React.FC = () => {
     } catch (e: any) { toast.error(e.message); }
   };
 
-  if (loading) return <div className="p-6">Loading clients...</div>;
+  if (loading) return <div className="bg-white dark:bg-gray-900 min-h-full p-6">Loading clients...</div>;
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Clients</h1>
-        <button onClick={() => setShowCreate(true)} className="bg-blue-600 text-white px-4 py-2 rounded">Create Client</button>
+    <div className="bg-white dark:bg-gray-900 min-h-full p-4 sm:p-6 space-y-6">
+      <div className="flex justify-between items-center bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-4 sm:p-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">Clients</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Manage CLT-0001, seat limits, and global clients</p>
+        </div>
+        <button onClick={() => setShowCreate(true)} className="bg-system-blue dark:bg-system-darkBlue text-white px-4 py-2 rounded-lg shadow-sm font-medium hover:opacity-90">Create Client</button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {clients.map(c => {
@@ -48,7 +51,7 @@ const ClientsPage: React.FC = () => {
           const pct = u ? u.pct : 0;
           const barColor = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-yellow-500' : 'bg-green-500';
           return (
-            <div key={c._id} onClick={() => navigate(`/admin/clients/${c.displayId}`)} className="border rounded-lg p-4 hover:shadow cursor-pointer bg-white dark:bg-gray-800">
+            <div key={c._id} onClick={() => navigate(`/admin/clients/${c.displayId}`)} className="border border-gray-100 dark:border-gray-700 rounded-2xl p-4 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all cursor-pointer bg-white dark:bg-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
               <div className="flex justify-between">
                 <span className="font-mono text-sm bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">{c.displayId}</span>
                 <span className={`text-xs px-2 py-1 rounded ${c.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{c.status}</span>
