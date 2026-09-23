@@ -117,8 +117,8 @@ const LoginPage: React.FC = () => {
 					</div>
 				</div>
 
-				{/* RIGHT - Login panel */}
-				<div className="lg:w-[45%] flex flex-col items-center justify-center px-6 py-6 lg:px-8 lg:py-8">
+				{/* RIGHT - Login panel - adjusted up from bottom */}
+				<div className="lg:w-[45%] flex flex-col items-center justify-start pt-6 pb-16 px-6 lg:px-8 lg:pt-8 lg:pb-16">
 					<div className="w-full max-w-[400px]">
 						<div className="flex flex-col items-center text-center mb-4">
 							<div className="w-12 h-12 rounded-xl bg-gray-800 border border-gray-700 p-2 shadow-md flex items-center justify-center">
