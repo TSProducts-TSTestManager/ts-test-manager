@@ -75,8 +75,8 @@ const LoginPage: React.FC = () => {
 				</span>
 			</div>
 
-			{/* Main - left company as is, right login - all panels 0.5in below top */}
-			<div className="relative z-10 flex-1 flex flex-col lg:flex-row lg:items-center w-full max-w-[1280px] mx-auto gap-6 lg:gap-8 mt-[0.5in]">
+			{/* Main - all panels 5mm below top */}
+			<div className="relative z-10 flex-1 flex flex-col lg:flex-row lg:items-center w-full max-w-[1280px] mx-auto gap-6 lg:gap-8 mt-[5mm]">
 				{/* LEFT - Company details as is */}
 				<div className="lg:w-[55%] flex flex-col justify-center px-6 py-4 lg:px-8 xl:px-10">
 					<div className="max-w-[640px] mx-auto lg:mx-0 w-full">
