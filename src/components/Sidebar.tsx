@@ -84,6 +84,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
       to: '/dashboard',
       subItems: []
     },
+    ...(isSuperAdmin ? [{ icon: <Building2 size={18} />, label: 'Clients', to: '/admin/clients', subItems: [] as SubMenuItem[] }] : []),
     {
       icon: <Folder size={18} />,
       label: 'Projects',
@@ -124,7 +125,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
       to: '/analytics',
       subItems: []
     },
-    ...(isSuperAdmin ? [{ icon: <Building2 size={18} />, label: 'Clients', to: '/admin/clients', subItems: [] as SubMenuItem[] }] : []),
   ];
 
   return (
