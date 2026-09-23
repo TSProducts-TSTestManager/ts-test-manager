@@ -299,12 +299,19 @@ const LoginPage: React.FC = () => {
 								</div>
 							</div>
 
-							<p className="text-center text-[11px] text-gray-400 mt-3 px-4">
-								Need access? Contact your workspace admin or{" "}
-								<a href="mailto:enquiry@techsignific.com" className="text-blue-400 hover:underline font-medium">
-									enquiry@techsignific.com
-								</a>
-							</p>
+							<div className="text-center mt-3 space-y-1">
+								<p className="text-[11px] text-gray-400 px-4">
+									<Link to="/client-login" className="text-blue-500 hover:text-blue-600 dark:text-blue-400 hover:underline font-medium">Client Login — Sign in with Client ID</Link>
+									<span className="mx-2 text-gray-300">•</span>
+									<Link to="/admin/login" className="text-gray-400 hover:text-gray-600 hover:underline">Super Admin</Link>
+								</p>
+								<p className="text-center text-[11px] text-gray-400 px-4">
+									Need access? Contact your workspace admin or{" "}
+									<a href="mailto:enquiry@techsignific.com" className="text-blue-400 hover:underline font-medium">
+										enquiry@techsignific.com
+									</a>
+								</p>
+							</div>
 						</motion.div>
 					</div>
 				</div>

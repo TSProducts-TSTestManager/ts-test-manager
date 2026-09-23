@@ -4,7 +4,6 @@ import React, { Suspense, useEffect } from "react";
 
 // Lazy-loaded page components for code splitting
 const SignUpPage = React.lazy(() => import("./pages/SignUpPage"));
-const LoginPage = React.lazy(() => import("./pages/LoginPage"));
 const EmailVerificationPage = React.lazy(() => import("./pages/EmailVerificationPage"));
 const DashboardPage = React.lazy(() => import("./pages/DashboardPage"));
 const ForgotPasswordPage = React.lazy(() => import("./pages/ForgotPasswordPage"));
@@ -13,6 +12,8 @@ const SettingsPage = React.lazy(() => import("./pages/SettingsPage"));
 const OAuthRedirect = React.lazy(() => import("./pages/OAuthRedirect"));
 const DriveOAuthRedirect = React.lazy(() => import("./pages/DriveOAuthRedirect"));
 const AnalyticsPage = React.lazy(() => import("./pages/analytics"));
+const ClientLoginPage = React.lazy(() => import("./pages/ClientLoginPage"));
+const SuperAdminLoginPage = React.lazy(() => import("./pages/SuperAdminLoginPage"));
 
 // Test Manager Pages (lazy-loaded)
 const TestManagerLayout = React.lazy(() => import("./pages/testManager/TestManagerLayout"));
@@ -102,7 +103,7 @@ const RedirectAuthenticatedUser: React.FC<RedirectAuthenticatedUserProps> = ({ c
 const PublicRoute: React.FC = () => {
   const { isDarkMode, toggleTheme } = useThemeStore();
   const location = useLocation();
-  const isLogin = location.pathname === "/login";
+  const isLogin = ["/login", "/client-login", "/admin/login"].includes(location.pathname);
   
   return (
 	<div className={`min-h-screen bg-white dark:bg-gray-950 flex flex-col relative ${isLogin ? "" : "items-center justify-center p-4 bg-background dark:bg-background-dark"}`}>
@@ -148,7 +149,23 @@ function App() {
                 path='/login'
                 element={
                   <RedirectAuthenticatedUser>
-                    <LoginPage />
+                    <SuperAdminLoginPage />
+                  </RedirectAuthenticatedUser>
+                }
+              />
+              <Route
+                path='/client-login'
+                element={
+                  <RedirectAuthenticatedUser>
+                    <ClientLoginPage />
+                  </RedirectAuthenticatedUser>
+                }
+              />
+              <Route
+                path='/admin/login'
+                element={
+                  <RedirectAuthenticatedUser>
+                    <SuperAdminLoginPage />
                   </RedirectAuthenticatedUser>
                 }
               />
