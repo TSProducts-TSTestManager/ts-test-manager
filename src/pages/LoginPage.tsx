@@ -127,7 +127,7 @@ const LoginPage: React.FC = () => {
 							<h1 className="mt-3 text-[22px] font-extrabold tracking-tight leading-none"><span className="text-amber-400">TS</span><span style={{ color: "rgb(46,92,116)" }}>TestManager</span></h1>
 							<p className="mt-1 text-[10px] font-semibold tracking-[0.16em] uppercase text-gray-400">QA & Testing Workspace</p>
 							<div className="mt-2 flex items-center justify-center">
-								<span className="text-[10px] font-medium tracking-wide text-gray-400 flex items-center gap-1.5"><img src="/logo.png" alt="TechSignific" className="w-3 h-3 rounded-sm object-contain opacity-80" /><span><span className="text-amber-400">Tech</span><span style={{ color: "rgb(46,92,116)" }}>Signific</span></span></span>
+								<span className="text-[10px] font-medium tracking-wide text-gray-400 flex items-center gap-1.5">A product by <img src="/logo.png" alt="TechSignific" className="w-3 h-3 rounded-sm object-contain opacity-80" /><span><span className="text-amber-400">Tech</span><span style={{ color: "rgb(46,92,116)" }}>Signific</span></span></span>
 							</div>
 						</div>
 						<div className="px-6 pt-6 pb-5">
