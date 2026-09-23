@@ -148,8 +148,8 @@ const LoginPage: React.FC = () => {
 						<div className="px-6 py-2.5 bg-[#0B0F19] border-t border-amber-400/20 flex items-center justify-center gap-2 text-[11px] text-gray-500">
 							<span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> System operational • All services online
 						</div>
-						<p className="text-center text-[11px] text-gray-400 py-3 px-6 bg-[#0B0F19]/50">Need access? Contact your workspace admin or <a href="mailto:enquiry@techsignific.com" className="text-blue-400 hover:underline font-medium">enquiry@techsignific.com</a></p>
 					</div>
+					<p className="text-center text-[11px] text-gray-400 mt-3">Need access? Contact your workspace admin or <a href="mailto:enquiry@techsignific.com" className="text-blue-400 hover:underline font-medium">enquiry@techsignific.com</a></p>
 				</div>
 			</div>
 
