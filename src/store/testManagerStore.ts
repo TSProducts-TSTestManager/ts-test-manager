@@ -71,6 +71,7 @@ export const mapProjectResponse = (p: ProjectResponse): Project => ({
 
 export const mapTestCaseResponse = (tc: TestCaseResponse): TestCase => ({
     id: tc.id,
+    displayId: tc.displayId,
     title: tc.title,
     priority: tc.priority as Priority,
     status: tc.status as Status,

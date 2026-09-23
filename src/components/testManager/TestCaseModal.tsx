@@ -112,10 +112,10 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
         setError(null);
         try {
             const result = await onSave(caseToSave);
-            // If a new case was created, update localCase with the real ID
+            // If a new case was created, update localCase with the real ID + displayId
             if (result && caseToSave.id.startsWith('new-')) {
-                setLocalCase(prev => prev ? { ...prev, id: result.id } : null);
-                lastSavedCaseRef.current = JSON.stringify({ ...caseToSave, id: result.id });
+                setLocalCase(prev => prev ? { ...prev, id: result.id, displayId: result.displayId ?? prev.displayId } : null);
+                lastSavedCaseRef.current = JSON.stringify({ ...caseToSave, id: result.id, displayId: result.displayId });
             } else {
                 lastSavedCaseRef.current = currentJson;
             }
@@ -285,7 +285,7 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                 <span className="text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1 rounded-md">New Case</span>
                             ) : (
                                 <IdDisplay
-                                    id={localCase.id}
+                                    id={localCase.displayId || localCase.id}
                                     className="text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-md"
                                 />
                             )}
@@ -489,6 +489,94 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                             )}
                         </div>
 
+                        {/* Custom Fields */}
+                        {customFields.filter(f => !f.deleted).length > 0 && (
+                            <div className="mb-5 space-y-4">
+                                <div>
+                                    <h3 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">Custom Fields</h3>
+                                    {customFields.filter(f => !f.deleted).map((field) => {
+                                        const value = localCase.customFields?.[field.id] || '';
+                                        return (
+                                            <div key={field.id} className="mb-4">
+                                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">
+                                                    {field.label}
+                                                    {field.required && <span className="text-red-500 dark:text-red-400 ml-1">*</span>}
+                                                </label>
+                                                {field.type === 'text' && (
+                                                    <input
+                                                        type="text"
+                                                        value={value}
+                                                        onChange={(e) => {
+                                                            const newValue = e.target.value;
+                                                            setLocalCase(prev => prev ? ({
+                                                                ...prev,
+                                                                customFields: { ...(prev.customFields || {}), [field.id]: newValue }
+                                                            }) : null);
+                                                            emitFieldChange(`customFields.${field.id}`, newValue);
+                                                        }}
+                                                        onBlur={handleFieldBlur}
+                                                        className="w-full text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-transparent rounded-lg focus:border-blue-300 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-700 focus:ring-0 p-3 transition-colors"
+                                                        placeholder={`Enter ${field.label.toLowerCase()}`}
+                                                    />
+                                                )}
+                                                {field.type === 'long_text' && (
+                                                    <textarea
+                                                        value={value}
+                                                        onChange={(e) => {
+                                                            const newValue = e.target.value;
+                                                            setLocalCase(prev => prev ? ({
+                                                                ...prev,
+                                                                customFields: { ...(prev.customFields || {}), [field.id]: newValue }
+                                                            }) : null);
+                                                            emitFieldChange(`customFields.${field.id}`, newValue);
+                                                        }}
+                                                        onBlur={handleFieldBlur}
+                                                        className="w-full text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-transparent rounded-lg focus:border-blue-300 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-700 focus:ring-0 p-3 transition-colors resize-none"
+                                                        rows={4}
+                                                        placeholder={`Enter ${field.label.toLowerCase()}`}
+                                                    />
+                                                )}
+                                                {field.type === 'dropdown' && (
+                                                    <select
+                                                        value={value}
+                                                        onChange={(e) => {
+                                                            const newValue = e.target.value;
+                                                            setLocalCase(prev => prev ? ({
+                                                                ...prev,
+                                                                customFields: { ...(prev.customFields || {}), [field.id]: newValue }
+                                                            }) : null);
+                                                            emitFieldChange(`customFields.${field.id}`, newValue);
+                                                        }}
+                                                        onBlur={handleFieldBlur}
+                                                        className="w-full rounded-lg py-2 px-3 text-sm font-medium border bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
+                                                    >
+                                                        <option value="">Select {field.label.toLowerCase()}...</option>
+                                                        {(field.options || []).map(opt => (
+                                                            <option key={opt.id} value={opt.id}>{opt.label}</option>
+                                                        ))}
+                                                    </select>
+                                                )}
+                                                {field.type === 'wysiwyg' && (
+                                                    <RichTextEditor
+                                                        content={value}
+                                                        onChange={(html) => {
+                                                            setLocalCase(prev => prev ? ({
+                                                                ...prev,
+                                                                customFields: { ...(prev.customFields || {}), [field.id]: html }
+                                                            }) : null);
+                                                            emitFieldChange(`customFields.${field.id}`, html);
+                                                        }}
+                                                        onBlur={handleFieldBlur}
+                                                        placeholder={`Enter ${field.label.toLowerCase()}...`}
+                                                    />
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Searchable Page/Area Input - Moved below grid */}
                         {!hiddenFields.area && (
                             <div className="mb-5">
@@ -627,94 +715,6 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                     onBlur={handleFieldBlur}
                                     placeholder="Add comments, notes, or additional information about this test case..."
                                 />
-                            </div>
-                        )}
-
-                        {/* Custom Fields */}
-                        {customFields.filter(f => !f.deleted).length > 0 && (
-                            <div className="mt-6 space-y-4">
-                                <div className="border-t border-gray-200 dark:border-gray-700 pt-5">
-                                    <h3 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">Custom Fields</h3>
-                                    {customFields.filter(f => !f.deleted).map((field) => {
-                                        const value = localCase.customFields?.[field.id] || '';
-                                        return (
-                                            <div key={field.id} className="mb-4">
-                                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">
-                                                    {field.label}
-                                                    {field.required && <span className="text-red-500 dark:text-red-400 ml-1">*</span>}
-                                                </label>
-                                                {field.type === 'text' && (
-                                                    <input
-                                                        type="text"
-                                                        value={value}
-                                                        onChange={(e) => {
-                                                            const newValue = e.target.value;
-                                                            setLocalCase(prev => prev ? ({
-                                                                ...prev,
-                                                                customFields: { ...(prev.customFields || {}), [field.id]: newValue }
-                                                            }) : null);
-                                                            emitFieldChange(`customFields.${field.id}`, newValue);
-                                                        }}
-                                                        onBlur={handleFieldBlur}
-                                                        className="w-full text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-transparent rounded-lg focus:border-blue-300 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-700 focus:ring-0 p-3 transition-colors"
-                                                        placeholder={`Enter ${field.label.toLowerCase()}`}
-                                                    />
-                                                )}
-                                                {field.type === 'long_text' && (
-                                                    <textarea
-                                                        value={value}
-                                                        onChange={(e) => {
-                                                            const newValue = e.target.value;
-                                                            setLocalCase(prev => prev ? ({
-                                                                ...prev,
-                                                                customFields: { ...(prev.customFields || {}), [field.id]: newValue }
-                                                            }) : null);
-                                                            emitFieldChange(`customFields.${field.id}`, newValue);
-                                                        }}
-                                                        onBlur={handleFieldBlur}
-                                                        className="w-full text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-transparent rounded-lg focus:border-blue-300 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-700 focus:ring-0 p-3 transition-colors resize-none"
-                                                        rows={4}
-                                                        placeholder={`Enter ${field.label.toLowerCase()}`}
-                                                    />
-                                                )}
-                                                {field.type === 'dropdown' && (
-                                                    <select
-                                                        value={value}
-                                                        onChange={(e) => {
-                                                            const newValue = e.target.value;
-                                                            setLocalCase(prev => prev ? ({
-                                                                ...prev,
-                                                                customFields: { ...(prev.customFields || {}), [field.id]: newValue }
-                                                            }) : null);
-                                                            emitFieldChange(`customFields.${field.id}`, newValue);
-                                                        }}
-                                                        onBlur={handleFieldBlur}
-                                                        className="w-full rounded-lg py-2 px-3 text-sm font-medium border bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
-                                                    >
-                                                        <option value="">Select {field.label.toLowerCase()}...</option>
-                                                        {(field.options || []).map(opt => (
-                                                            <option key={opt.id} value={opt.id}>{opt.label}</option>
-                                                        ))}
-                                                    </select>
-                                                )}
-                                                {field.type === 'wysiwyg' && (
-                                                    <RichTextEditor
-                                                        content={value}
-                                                        onChange={(html) => {
-                                                            setLocalCase(prev => prev ? ({
-                                                                ...prev,
-                                                                customFields: { ...(prev.customFields || {}), [field.id]: html }
-                                                            }) : null);
-                                                            emitFieldChange(`customFields.${field.id}`, html);
-                                                        }}
-                                                        onBlur={handleFieldBlur}
-                                                        placeholder={`Enter ${field.label.toLowerCase()}...`}
-                                                    />
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
                             </div>
                         )}
 

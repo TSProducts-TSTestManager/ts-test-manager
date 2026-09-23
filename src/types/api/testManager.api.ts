@@ -115,6 +115,7 @@ export interface HistoryEntryResponse {
 // Test Case API Response
 export interface TestCaseResponse {
   id: string;
+  displayId?: string;
   title: string;
   priority: Priority;
   status: Status;
