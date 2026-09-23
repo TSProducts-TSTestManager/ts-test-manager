@@ -21,6 +21,7 @@ const ClientDetailPage: React.FC = () => {
   const [showDeactivateConfirm, setShowDeactivateConfirm] = useState<ClientUser | null>(null);
   const [editingClient, setEditingClient] = useState(false);
   const [editForm, setEditForm] = useState({ clientName: '', firstName: '', lastName: '', description: '', plan: 'starter', mobile: '', whatsapp: '', whatsappSameAsMobile: false });
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const navigate = useNavigate();
 
   const load = async () => {
@@ -66,6 +67,7 @@ const ClientDetailPage: React.FC = () => {
       await createClientAdmin(displayId!, payload);
       toast.success('Client admin created');
       setInvite({ email:'', firstName:'', lastName:'', mobile:'', whatsapp:'', whatsappSameAsMobile:false, tempPassword:'' });
+      setShowInviteModal(false);
       load();
     } catch(e:any){ toast.error(e.message); }
   };
@@ -182,23 +184,10 @@ const ClientDetailPage: React.FC = () => {
             {full && <p className="text-sm text-red-600 mt-2">Seat limit reached. Deactivate a user to add new one.</p>}
           </div>
 
-          <form onSubmit={handleInvite} className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-3">
-            <h3 className="font-semibold">Invite Client Admin</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <input placeholder="Email *" value={invite.email} onChange={e=>setInvite({...invite,email:e.target.value})} className="border p-2 rounded" required />
-              <input placeholder="First Name *" value={invite.firstName} onChange={e=>setInvite({...invite,firstName:e.target.value})} className="border p-2 rounded" required />
-              <input placeholder="Last Name *" value={invite.lastName} onChange={e=>setInvite({...invite,lastName:e.target.value})} className="border p-2 rounded" required />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <input placeholder="Mobile (optional)" value={invite.mobile} onChange={e=>setInvite({...invite,mobile:e.target.value})} className="border p-2 rounded" />
-              <input placeholder="Whatsapp (optional)" value={invite.whatsappSameAsMobile ? invite.mobile : invite.whatsapp} onChange={e=>setInvite({...invite,whatsapp:e.target.value})} disabled={invite.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-100" />
-              <input placeholder="Temp Password (optional)" value={invite.tempPassword} onChange={e=>setInvite({...invite,tempPassword:e.target.value})} className="border p-2 rounded" />
-            </div>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={invite.whatsappSameAsMobile} onChange={e=>setInvite({...invite,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
-            <div className="flex justify-end">
-              <button disabled={!!full} title={full?'Deactivate a user first':''} className={`px-4 py-2 rounded text-white ${full?'bg-gray-400':'bg-blue-600'}`}>Invite</button>
-            </div>
-          </form>
+          <div className="flex justify-between items-center">
+            <h3 className="font-semibold">Client Admins</h3>
+            <button onClick={()=>setShowInviteModal(true)} disabled={!!full} title={full?'Deactivate a user first':''} className={`px-4 py-2 rounded text-white text-sm ${full?'bg-gray-400':'bg-blue-600 hover:bg-blue-700'}`}>+ Invite Client Admin</button>
+          </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-x-auto">
             <table className="w-full text-sm">
@@ -301,6 +290,35 @@ const ClientDetailPage: React.FC = () => {
               <button onClick={()=>setShowDeactivateConfirm(null)} className="px-4 py-2 border rounded">Cancel</button>
               <button onClick={async()=>{ try{ await handleDeactivate(showDeactivateConfirm._id); setShowDeactivateConfirm(null);}catch{}}} className="bg-red-600 text-white px-4 py-2 rounded">Deactivate</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showInviteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={()=>setShowInviteModal(false)} />
+          <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold">Invite Client Admin — {displayId}</h3>
+            <div className="text-xs text-gray-500 bg-gray-50 dark:bg-gray-700/50 p-3 rounded">
+              Client: <span className="font-medium">{client?.name}</span> ({displayId}) • Seats {usage ? `${usage.active}/${usage.max===-1?'∞':usage.max}` : ''} {full && <span className="text-red-600">— limit reached, deactivate first</span>}
+            </div>
+            <form onSubmit={handleInvite} className="space-y-3">
+              <input placeholder="Email *" value={invite.email} onChange={e=>setInvite({...invite,email:e.target.value})} className="w-full border p-2 rounded" required />
+              <div className="grid grid-cols-2 gap-3">
+                <input placeholder="First Name *" value={invite.firstName} onChange={e=>setInvite({...invite,firstName:e.target.value})} className="border p-2 rounded" required />
+                <input placeholder="Last Name *" value={invite.lastName} onChange={e=>setInvite({...invite,lastName:e.target.value})} className="border p-2 rounded" required />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input placeholder="Mobile (optional)" value={invite.mobile} onChange={e=>setInvite({...invite,mobile:e.target.value})} className="border p-2 rounded" />
+                <input placeholder="Whatsapp (optional)" value={invite.whatsappSameAsMobile ? invite.mobile : invite.whatsapp} onChange={e=>setInvite({...invite,whatsapp:e.target.value})} disabled={invite.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-100" />
+              </div>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={invite.whatsappSameAsMobile} onChange={e=>setInvite({...invite,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
+              <input placeholder="Temp Password (optional, auto if blank)" value={invite.tempPassword} onChange={e=>setInvite({...invite,tempPassword:e.target.value})} className="w-full border p-2 rounded" />
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={()=>setShowInviteModal(false)} className="px-4 py-2 border rounded">Cancel</button>
+                <button type="submit" disabled={!!full} className={`px-4 py-2 rounded text-white ${full?'bg-gray-400':'bg-blue-600'}`}>Invite</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
