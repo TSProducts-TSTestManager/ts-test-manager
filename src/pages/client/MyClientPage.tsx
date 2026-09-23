@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getClients, getClientUsage, getClientUsers, createClientAdmin, resetClientAdminPassword, deactivateUser, restoreUser, updateClient, updateClientUser } from '../../services/clientApi';
-import { connectJira, disconnectJira, getJiraConfig } from '../../services/jiraApi';
+import { connectJira, disconnectJira, getJiraConfig, connectMyJira, getMyJira, disconnectMyJira, connectProjectJira, getProjectJira, disconnectProjectJira } from '../../services/jiraApi';
+import { getProjects } from '../../services/testManagerApi';
 import { useAuthStore } from '../../store/authStore';
 import type { Client, ClientUser, SeatUsage } from '../../types/client';
 import { Eye, EyeOff, ShieldCheck, User as UserIcon, Eye as EyeIcon, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -11,8 +12,13 @@ const MyClientPage: React.FC = () => {
   const [client, setClient] = useState<Client | null>(null);
   const [usage, setUsage] = useState<SeatUsage | null>(null);
   const [users, setUsers] = useState<ClientUser[]>([]);
-  const [tab, setTab] = useState<'overview' | 'users' | 'jira'>('overview');
+  const [tab, setTab] = useState<'overview' | 'users' | 'jira' | 'myJira' | 'projectJira'>('overview');
   const [jira, setJira] = useState<any>(null);
+  const [myJira, setMyJira] = useState<any>(null);
+  const [myJiraForm, setMyJiraForm] = useState({ email: '', apiToken: '' });
+  const [projects, setProjects] = useState<any[]>([]);
+  const [projectJiras, setProjectJiras] = useState<Record<string, any>>({});
+  const [projectJiraForms, setProjectJiraForms] = useState<Record<string, { domain: string; projectKey: string }>>({});
   const [invite, setInvite] = useState({ email: '', firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false, tempPassword: '', role: 'client_admin' as 'client_admin'|'member'|'viewer' });
   const [jiraForm, setJiraForm] = useState({ domain: '', email: '', apiToken: '', projectKey: '' });
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -70,6 +76,14 @@ const MyClientPage: React.FC = () => {
       try { setUsage(await getClientUsage(c.displayId)); } catch {}
       try { setUsers(await getClientUsers(c.displayId, 'all')); } catch (e:any) { toast.error(e.message); }
       try { setJira(await getJiraConfig(c.displayId)); } catch {}
+      try { setMyJira(await getMyJira()); } catch {}
+      try {
+        const projs = await getProjects();
+        setProjects(projs as any);
+        for (const p of (projs as any)) {
+          try { const pj = await getProjectJira((p as any).id || (p as any)._id); setProjectJiras(m => ({ ...m, [(p as any).id || (p as any)._id]: pj })); } catch {}
+        }
+      } catch {}
     } catch (e:any) { toast.error(e.message); }
   };
 
@@ -150,7 +164,16 @@ const MyClientPage: React.FC = () => {
   };
   const handleJiraConnect = async (e: React.FormEvent) => {
     e.preventDefault(); if (!client) return;
-    try { await connectJira(client.displayId, jiraForm); toast.success('JIRA connected'); load(); } catch(e:any){ toast.error(e.message); }
+    try { await connectJira(client.displayId, jiraForm); toast.success('JIRA connected (client fallback)'); load(); } catch(e:any){ toast.error(e.message); }
+  };
+  const handleMyJiraConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try { await connectMyJira({ email: (myJiraForm as any).email, apiToken: (myJiraForm as any).apiToken }); toast.success('My JIRA connected'); load(); } catch(e:any){ toast.error(e.message); }
+  };
+  const handleProjectJiraConnect = async (projectId: string) => {
+    const f = projectJiraForms[projectId];
+    if (!f?.domain?.trim() || !f?.projectKey?.trim()) { toast.error('Domain and Project Key required (every project)'); return; }
+    try { await connectProjectJira(projectId, { domain: f.domain.trim(), projectKey: f.projectKey.trim() }); toast.success('Project JIRA mapped'); load(); } catch(e:any){ toast.error(e.message); }
   };
 
   if (!client) return <div className="bg-white dark:bg-gray-900 min-h-full p-6">Loading your client...</div>;
@@ -210,10 +233,12 @@ const MyClientPage: React.FC = () => {
         )}
       </div>
 
-      <div className="flex gap-4 border-b">
-        <button onClick={()=>setTab('overview')} className={`pb-2 text-sm ${tab==='overview'?'border-b-2 border-blue-600 text-blue-600':''}`}>Overview</button>
-        <button onClick={()=>setTab('users')} className={`pb-2 text-sm ${tab==='users'?'border-b-2 border-blue-600 text-blue-600':''}`}>Users ({active})</button>
-        <button onClick={()=>setTab('jira')} className={`pb-2 text-sm ${tab==='jira'?'border-b-2 border-blue-600 text-blue-600':''}`}>JIRA</button>
+      <div className="flex gap-4 border-b overflow-x-auto">
+        <button onClick={()=>setTab('overview')} className={`pb-2 text-sm whitespace-nowrap ${tab==='overview'?'border-b-2 border-blue-600 text-blue-600':''}`}>Overview</button>
+        <button onClick={()=>setTab('users')} className={`pb-2 text-sm whitespace-nowrap ${tab==='users'?'border-b-2 border-blue-600 text-blue-600':''}`}>Users ({active})</button>
+        <button onClick={()=>setTab('myJira')} className={`pb-2 text-sm whitespace-nowrap ${tab==='myJira'?'border-b-2 border-blue-600 text-blue-600':''}`}>My JIRA</button>
+        <button onClick={()=>setTab('projectJira')} className={`pb-2 text-sm whitespace-nowrap ${tab==='projectJira'?'border-b-2 border-blue-600 text-blue-600':''}`}>Project JIRA</button>
+        <button onClick={()=>setTab('jira')} className={`pb-2 text-sm whitespace-nowrap ${tab==='jira'?'border-b-2 border-blue-600 text-blue-600':''}`}>Client Fallback</button>
       </div>
 
       {tab==='overview' && (
@@ -297,20 +322,70 @@ const MyClientPage: React.FC = () => {
         </>
       )}
 
+      {tab==='myJira' && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border p-4 space-y-3">
+          <h3 className="font-semibold">My JIRA — Per-User (own cred, every user, real-time)</h3>
+          <p className="text-xs text-gray-500">Your personal Atlassian email + API token (same token can be reused with different email if needed). Used together with Project's domain/projectKey when you create/link bugs.</p>
+          <div className="text-xs">Current: {myJira?.enabled ? `${myJira.email} • Connected` : 'Not connected'}</div>
+          <form onSubmit={handleMyJiraConnect} className="space-y-2">
+            <input placeholder="Atlassian Email (you@company.com)" value={myJiraForm.email} onChange={e=>setMyJiraForm({...myJiraForm, email:e.target.value})} className="w-full border p-2 rounded" required />
+            <input placeholder="API Token (id.atlassian.com — same token can be used with different email)" value={myJiraForm.apiToken} onChange={e=>setMyJiraForm({...myJiraForm, apiToken:e.target.value})} className="w-full border p-2 rounded" required />
+            <div className="flex gap-2">
+              <button className="bg-blue-600 text-white px-3 py-1.5 rounded">Connect My JIRA</button>
+              {myJira?.enabled && <button type="button" onClick={async()=>{await disconnectMyJira(); toast.success('My JIRA disconnected'); load();}} className="border px-3 py-1.5 rounded">Disconnect</button>}
+            </div>
+          </form>
+        </div>
+      )}
+
+      {tab==='projectJira' && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border p-4 space-y-3">
+          <h3 className="font-semibold">Project JIRA — Every Project Level (domain + projectKey)</h3>
+          <p className="text-xs text-gray-500">Each project maps to its own JIRA project. When you log a bug, your own email/token + this project's domain/projectKey is used (verified via /rest/api/3/myself in real time).</p>
+          <div className="space-y-4">
+            {projects.map(p=> {
+              const pid = (p as any).id || (p as any)._id;
+              const pj = projectJiras[pid];
+              const form = projectJiraForms[pid] || { domain: '', projectKey: '' };
+              return (
+                <div key={pid} className="border rounded-xl p-3 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium text-sm">{(p as any).name} <span className="font-mono text-xs text-gray-500">{(p as any).displayId || ''}</span></span>
+                    <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700">{pj?.enabled ? `${pj.domain} / ${pj.projectKey}` : 'Not mapped'}</span>
+                  </div>
+                  {isClientAdmin ? (
+                    <div className="flex gap-2">
+                      <input placeholder="Domain (xxx.atlassian.net)" value={form.domain} onChange={e=>setProjectJiraForms(m=>({...m, [pid]: {...(m[pid]||{domain:'',projectKey:''}), domain:e.target.value}}))} className="flex-1 border p-2 rounded text-sm" />
+                      <input placeholder="Project Key (ACME)" value={form.projectKey} onChange={e=>setProjectJiraForms(m=>({...m, [pid]: {...(m[pid]||{domain:'',projectKey:''}), projectKey:e.target.value.toUpperCase()}}))} className="flex-1 border p-2 rounded text-sm font-mono uppercase" />
+                      <button onClick={()=>handleProjectJiraConnect(pid)} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm whitespace-nowrap">Map</button>
+                      {pj?.enabled && <button onClick={async()=>{await disconnectProjectJira(pid); toast.success('Project JIRA cleared'); load();}} className="border px-3 py-1.5 rounded text-sm">Clear</button>}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">Only Client Admin can map. Current: {pj?.enabled ? `${pj.domain} / ${pj.projectKey}` : '—'}</p>
+                  )}
+                </div>
+              );
+            })}
+            {projects.length===0 && <p className="text-sm text-gray-400">No projects yet — create a project first</p>}
+          </div>
+        </div>
+      )}
+
       {tab==='jira' && (
         <div className="bg-white dark:bg-gray-800 rounded-2xl border p-4 space-y-3">
-          <h3 className="font-semibold">JIRA — {isClientAdmin ? 'Configure' : 'View'}</h3>
-          <div className="text-xs text-gray-500">Current: {jira?.enabled ? `${jira.domain} / ${jira.projectKey}` : 'Not connected'}</div>
+          <h3 className="font-semibold">Client JIRA — Fallback for Old Tickets (kept)</h3>
+          <p className="text-xs text-gray-500">Kept for backward compat. New tickets use My JIRA + Project JIRA above. Old tickets linked via client fallback still sync.</p>
+          <div className="text-xs text-gray-500">Current: {jira?.enabled ? `${jira.domain} / ${jira.projectKey}` : 'Not connected (fallback)'}</div>
           {isClientAdmin ? (
             <form onSubmit={handleJiraConnect} className="space-y-2">
               <input placeholder="Domain (xxx.atlassian.net)" value={jiraForm.domain} onChange={e=>setJiraForm({...jiraForm,domain:e.target.value})} className="w-full border p-2 rounded" required />
               <input placeholder="Email" value={jiraForm.email} onChange={e=>setJiraForm({...jiraForm,email:e.target.value})} className="w-full border p-2 rounded" required />
               <input placeholder="API Token" value={jiraForm.apiToken} onChange={e=>setJiraForm({...jiraForm,apiToken:e.target.value})} className="w-full border p-2 rounded" required />
               <input placeholder="Project Key" value={jiraForm.projectKey} onChange={e=>setJiraForm({...jiraForm,projectKey:e.target.value})} className="w-full border p-2 rounded" required />
-              <button className="bg-blue-600 text-white px-3 py-1.5 rounded">Connect / Update</button>
-              {jira?.enabled && <button type="button" onClick={async()=>{await disconnectJira(client.displayId); load();}} className="ml-2 border px-3 py-1.5 rounded">Disconnect</button>}
+              <button className="bg-blue-600 text-white px-3 py-1.5 rounded">Connect / Update (fallback)</button>
+              {jira?.enabled && <button type="button" onClick={async()=>{await disconnectJira(client.displayId); toast.success('Client JIRA disconnected'); load();}} className="ml-2 border px-3 py-1.5 rounded">Disconnect</button>}
             </form>
-          ) : <p className="text-xs text-gray-500">Only Client Admin can configure JIRA.</p>}
+          ) : <p className="text-xs text-gray-500">Only Client Admin can configure fallback.</p>}
         </div>
       )}
 
