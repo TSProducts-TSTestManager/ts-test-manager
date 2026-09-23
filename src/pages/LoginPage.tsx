@@ -55,16 +55,16 @@ const LoginPage: React.FC = () => {
 	};
 
 	return (
-		<div className="w-full min-h-screen flex flex-col bg-gray-950 relative overflow-hidden">
-			{/* One background for entire page - no division */}
-			<div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-900" />
-			<div className="absolute -top-32 -left-32 w-[800px] h-[800px] bg-blue-900/10 rounded-full blur-[120px] pointer-events-none" />
-			<div className="absolute -bottom-40 -right-40 w-[900px] h-[900px] bg-indigo-900/10 rounded-full blur-[120px] pointer-events-none" />
+		<div className="w-full min-h-screen flex flex-col bg-[#0B0F19] relative overflow-hidden" style={{ backgroundImage: "radial-gradient(circle at top center, #1a2235, #0B0F19)", backgroundAttachment: "fixed" }}>
+			{/* One background for entire page - TSProducts pattern */}
+			<div className="absolute inset-0 bg-[#0B0F19]" style={{ backgroundImage: "radial-gradient(circle at top center, #1a2235, #0B0F19)" }} />
+			<div className="absolute -top-32 -left-32 w-[800px] h-[800px] bg-[#6366f1]/10 rounded-full blur-[120px] pointer-events-none" />
+			<div className="absolute -bottom-40 -right-40 w-[900px] h-[900px] bg-[#38bdf8]/5 rounded-full blur-[120px] pointer-events-none" />
 
 			{/* Top bar */}
 			<div className="relative z-10 w-full max-w-[1280px] mx-auto px-6 py-4 flex items-center justify-between">
 				<div className="flex items-center gap-3">
-					<img src="/logo.png" alt="TechSignific" className="w-9 h-9 rounded-lg bg-gray-800 border border-gray-700 p-1.5 object-contain" />
+					<img src="/logo.png" alt="TechSignific" className="w-9 h-9 rounded-lg bg-[#1a2235] border border-[#334155] p-1.5 object-contain" />
 					<div>
 						<div className="font-bold text-[16px] leading-none"><span className="text-amber-400">Tech</span><span style={{ color: "rgb(46,92,116)" }}>Signific</span></div>
 						<div className="text-gray-400 text-[10px] tracking-[0.16em] font-medium uppercase">IT Services Pvt Ltd</div>
@@ -85,7 +85,7 @@ const LoginPage: React.FC = () => {
 						<p className="mt-4 text-sm leading-6 text-gray-400"><span className="font-extrabold"><span className="text-amber-400">Tech</span><span style={{ color: "rgb(46,92,116)" }}>Signific</span></span> delivers custom software, <span className="font-extrabold"><span className="text-amber-400">TS</span><span style={{ color: "rgb(46,92,116)" }}>Product</span></span> platforms and testing services.</p>
 						<div className="grid grid-cols-4 gap-3 mt-6">
 							{stats.map((s) => (
-								<div key={s.label} className="rounded-xl bg-gray-900 border border-gray-800 p-3 text-center">
+								<div key={s.label} className="rounded-xl bg-[#1a2235] border border-[#334155] p-3 text-center">
 									<s.icon size={14} className="mx-auto text-blue-400 mb-1 hidden sm:block" />
 									<div className="text-white font-bold text-[16px] leading-none">{s.value}</div>
 									<div className="text-gray-400 text-[10px] leading-tight mt-1 font-medium">{s.label}</div>
@@ -99,7 +99,7 @@ const LoginPage: React.FC = () => {
 						<div className="mt-3 overflow-hidden rounded-xl">
 							<motion.div className="flex gap-3 w-max" animate={{ x: ["0%", "-50%"] }} transition={{ duration: 28, repeat: Infinity, ease: "linear" }}>
 								{[...products, ...products].map((p, idx) => (
-									<div key={`${p.name}-${idx}`} className="w-[240px] shrink-0 rounded-xl bg-gray-900 border border-gray-800 p-3">
+									<div key={`${p.name}-${idx}`} className="w-[240px] shrink-0 rounded-xl bg-[#1a2235] border border-[#334155] p-3">
 										<div className="flex items-center gap-2.5">
 											<div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${p.gradient} flex items-center justify-center shrink-0`}><p.icon size={16} className="text-white" /></div>
 											<div><div className="text-white font-bold text-xs leading-none"><span className="text-amber-400">TS</span><span style={{ color: p.accent }}>{p.name.slice(2)}</span></div><div className="text-[10px] font-semibold uppercase text-gray-400">{p.subtitle}</div></div>
@@ -121,7 +121,7 @@ const LoginPage: React.FC = () => {
 				<div className="lg:w-[45%] flex flex-col items-center justify-center px-6 py-4 lg:px-8 lg:py-6 lg:sticky lg:top-4 self-start lg:self-center min-h-0">
 					<div className="w-full max-w-[400px]">
 						<div className="flex flex-col items-center text-center mb-4">
-							<div className="w-12 h-12 rounded-xl bg-gray-800 border border-gray-700 p-2 shadow-md flex items-center justify-center">
+							<div className="w-12 h-12 rounded-xl bg-[#1a2235] border border-[#334155] p-2 shadow-md flex items-center justify-center">
 								<img src="/logo.png" alt="TSTestManager Logo" className="w-full h-full object-contain" />
 							</div>
 							<h1 className="mt-2.5 text-[22px] font-extrabold tracking-tight leading-none"><span className="text-amber-400">TS</span><span style={{ color: "rgb(46,92,116)" }}>TestManager</span></h1>
@@ -130,7 +130,7 @@ const LoginPage: React.FC = () => {
 								<span className="text-[10px] font-medium tracking-wide text-gray-400 flex items-center gap-1.5"><img src="/logo.png" alt="TechSignific" className="w-3 h-3 rounded-sm object-contain opacity-80" /><span><span className="text-amber-400">Tech</span><span style={{ color: "rgb(46,92,116)" }}>Signific</span></span></span>
 							</div>
 						</div>
-						<div className="bg-gray-900 rounded-2xl shadow-[0_16px_40px_-16px_rgba(0,0,0,0.5)] border-2 border-amber-400/60 shadow-[0_0_0_1px_rgba(251,191,36,0.1),0_8px_32px_rgba(251,191,36,0.15),0_16px_40px_-16px_rgba(0,0,0,0.5)] overflow-hidden">
+						<div className="bg-[#1a2235] rounded-2xl shadow-[0_16px_40px_-16px_rgba(0,0,0,0.5)] border-2 border-amber-400/60 shadow-[0_0_0_1px_rgba(251,191,36,0.1),0_8px_32px_rgba(251,191,36,0.15),0_16px_40px_-16px_rgba(0,0,0,0.5)] overflow-hidden">
 							<div className="px-6 pt-6 pb-5">
 								<div className="mb-4 text-center">
 									<h2 className="text-[20px] font-bold tracking-tight text-white">Welcome back</h2>
@@ -150,7 +150,7 @@ const LoginPage: React.FC = () => {
 									<p className="text-center text-[11px] text-gray-500">By signing in you agree to our Terms & Privacy Policy</p>
 								</form>
 							</div>
-							<div className="px-6 py-2.5 bg-gray-950 border-t border-gray-800 flex items-center justify-center gap-2 text-[11px] text-gray-500">
+							<div className="px-6 py-2.5 bg-[#0B0F19] border-t border-[#334155] flex items-center justify-center gap-2 text-[11px] text-gray-500">
 								<span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> System operational • All services online
 							</div>
 						</div>
@@ -159,8 +159,8 @@ const LoginPage: React.FC = () => {
 				</div>
 			</div>
 
-			{/* Footer - same background */}
-			<footer className="relative z-10 border-t border-gray-800 bg-gray-950">
+			{/* Footer - same TSProducts pattern */}
+			<footer className="relative z-10 border-t border-[#334155] bg-[#0B0F19]">
 				<div className="max-w-[1280px] mx-auto px-6 py-8">
 					<div className="grid grid-cols-1 lg:grid-cols-[1.4fr_0.9fr_0.9fr_0.9fr_0.9fr] gap-8">
 						<div>
@@ -192,11 +192,11 @@ const LoginPage: React.FC = () => {
 							<li><a href="https://techsignific.com/terms-conditions" target="_blank" rel="noopener noreferrer" className="hover:text-blue-400">Terms & Conditions</a></li>
 							<li><a href="https://techsignific.com/cancellation-refund-policy" target="_blank" rel="noopener noreferrer" className="hover:text-blue-400">Cancellation & Refund</a></li></ul></div>
 						<div className="hidden lg:block"><h4 className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">Connect</h4><p className="text-sm text-gray-400">Follow our journey.</p><div className="mt-3 flex gap-2">
-							<a href="https://www.linkedin.com/in/tech-signific-6246071a9/" target="_blank" rel="noopener noreferrer" className="w-8 h-8 rounded-lg bg-gray-900 border border-gray-800 flex items-center justify-center text-gray-400 hover:text-blue-400"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>
+							<a href="https://www.linkedin.com/in/tech-signific-6246071a9/" target="_blank" rel="noopener noreferrer" className="w-8 h-8 rounded-lg bg-[#1a2235] border border-[#334155] flex items-center justify-center text-gray-400 hover:text-blue-400"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>
 							<a href="https://wa.me/12142720254" target="_blank" rel="noopener noreferrer" className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center text-white"><MessageCircle size={14} /></a></div></div>
 					</div>
 				</div>
-				<div className="border-t border-gray-800">
+				<div className="border-t border-[#334155]">
 					<div className="max-w-[1280px] mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
 						<p className="text-xs text-gray-500">© 2026 Tech Signific IT Services Pvt Ltd. All rights reserved.</p>
 						<div className="flex gap-3 text-gray-500">
