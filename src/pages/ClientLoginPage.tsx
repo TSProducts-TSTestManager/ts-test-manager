@@ -95,11 +95,6 @@ const ClientLoginPage: React.FC = () => {
 		<div className="w-full min-h-screen flex flex-col bg-gray-950 transition-colors duration-300">
 			<div className="flex flex-1 flex-col lg:flex-row w-full">
 				<div className="lg:w-[58%] relative overflow-hidden bg-gray-950 flex flex-col">
-					<div className="absolute inset-0">
-						<div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-900" />
-						<div className="absolute -top-32 -left-32 w-[600px] h-[600px] bg-blue-900/10 rounded-full blur-[100px]" />
-						<div className="absolute -bottom-40 -right-40 w-[700px] h-[700px] bg-indigo-900/10 rounded-full blur-[100px]" />
-					</div>
 					<div className="relative z-10 flex flex-col flex-1 px-6 py-8 lg:px-10 xl:px-14 lg:py-10">
 						<div className="flex items-center justify-between mb-8 lg:mb-10">
 							<div className="flex items-center gap-3">
@@ -180,11 +175,7 @@ const ClientLoginPage: React.FC = () => {
 				</div>
 
 				<div className="lg:w-[42%] relative overflow-hidden bg-gray-950 flex flex-col transition-colors duration-300">
-					<div className="absolute inset-0">
-						<div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-900" />
-						<div className="absolute -top-32 -left-32 w-[500px] h-[500px] bg-blue-900/10 rounded-full blur-[100px]" />
-						<div className="absolute -bottom-32 -right-32 w-[600px] h-[600px] bg-indigo-900/10 rounded-full blur-[100px]" />
-					</div>
+
 					<div className="relative z-10 flex flex-1 items-center justify-center p-4 lg:p-6">
 						<motion.div
 							initial={{ opacity: 0, y: 20 }}
