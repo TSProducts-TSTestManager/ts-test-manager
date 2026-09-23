@@ -200,7 +200,7 @@ const ClientDetailPage: React.FC = () => {
             <div className="flex items-center gap-3 flex-wrap">
               <span className="font-mono text-sm bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full">{displayId}</span>
               <span className={`text-xs px-2 py-1 rounded-full ${client?.status==='active'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{client?.status || 'active'}</span>
-              <span className="text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-1 rounded-full">{client?.plan || '—'}</span>
+              <span className="text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-1 rounded-full capitalize">{client?.plan || '—'}</span>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight truncate" title={client?.name}>{client?.name || `Client ${displayId}`}</h1>
             {client && <p className="text-sm text-gray-600 dark:text-gray-400">Contact: {client.contactFirstName || '—'} {client.contactLastName || ''} {(client.mobile || client.whatsapp) ? `• ${client.mobile || client.whatsapp}` : ''}</p>}
@@ -236,7 +236,7 @@ const ClientDetailPage: React.FC = () => {
             <input placeholder="Description" value={editForm.description} onChange={e=>setEditForm({...editForm,description:e.target.value})} className="w-full border p-2 rounded" />
             <div className="grid grid-cols-2 gap-3">
               <input placeholder="Mobile (optional)" value={editForm.mobile} onChange={e=>setEditForm({...editForm,mobile:e.target.value})} className="border p-2 rounded" />
-              <input placeholder="Whatsapp (optional)" value={editForm.whatsappSameAsMobile ? editForm.mobile : editForm.whatsapp} onChange={e=>setEditForm({...editForm,whatsapp:e.target.value})} disabled={editForm.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-100" />
+              <input placeholder="Whatsapp (optional)" value={editForm.whatsappSameAsMobile ? editForm.mobile : editForm.whatsapp} onChange={e=>setEditForm({...editForm,whatsapp:e.target.value})} disabled={editForm.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-500 dark:disabled:text-gray-400" />
             </div>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editForm.whatsappSameAsMobile} onChange={e=>setEditForm({...editForm,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Address *</div>
@@ -252,8 +252,12 @@ const ClientDetailPage: React.FC = () => {
               <input placeholder="Country *" value={editForm.country} onChange={e=>setEditForm({...editForm,country:e.target.value})} className="border p-2 rounded" />
               <input placeholder="Pin Code * (6 digits)" value={editForm.pinCode} onChange={e=>setEditForm({...editForm,pinCode:e.target.value})} className="border p-2 rounded" maxLength={6} />
             </div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Plan Details *</div>
             <div className="flex gap-2">
-              <select value={editForm.plan} onChange={e=>setEditForm({...editForm,plan:e.target.value})} className="border p-2 rounded"><option value="free">free</option><option value="starter">starter</option><option value="pro">pro</option><option value="enterprise">enterprise</option></select>
+              <div className="flex-1">
+                <label className="text-xs text-gray-500">Plan</label>
+                <select value={editForm.plan} onChange={e=>setEditForm({...editForm,plan:e.target.value})} className="w-full border p-2 rounded"><option value="free">Free [3 Users]</option><option value="starter">Starter [10 Users]</option><option value="pro">Pro [25 Users]</option><option value="enterprise">Enterprise [Unlimited]</option></select>
+              </div>
               <div className="ml-auto flex gap-2">
                 <button onClick={()=>setEditingClient(false)} className="border px-4 py-2 rounded">Cancel</button>
                 <button onClick={handleSaveClientEdit} className="bg-blue-600 text-white px-4 py-2 rounded">Save</button>
@@ -420,7 +424,7 @@ const ClientDetailPage: React.FC = () => {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <input placeholder="Mobile (optional)" value={invite.mobile} onChange={e=>setInvite({...invite,mobile:e.target.value})} className="border p-2 rounded" />
-                <input placeholder="Whatsapp (optional)" value={invite.whatsappSameAsMobile ? invite.mobile : invite.whatsapp} onChange={e=>setInvite({...invite,whatsapp:e.target.value})} disabled={invite.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-100" />
+                <input placeholder="Whatsapp (optional)" value={invite.whatsappSameAsMobile ? invite.mobile : invite.whatsapp} onChange={e=>setInvite({...invite,whatsapp:e.target.value})} disabled={invite.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-500 dark:disabled:text-gray-400" />
               </div>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={invite.whatsappSameAsMobile} onChange={e=>setInvite({...invite,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
               <div>
@@ -456,7 +460,7 @@ const ClientDetailPage: React.FC = () => {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <input placeholder="Mobile (optional)" value={editUserForm.mobile} onChange={e=>setEditUserForm({...editUserForm,mobile:e.target.value})} className="border p-2 rounded" />
-              <input placeholder="Whatsapp (optional)" value={editUserForm.whatsappSameAsMobile ? editUserForm.mobile : editUserForm.whatsapp} onChange={e=>setEditUserForm({...editUserForm,whatsapp:e.target.value})} disabled={editUserForm.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-100" />
+              <input placeholder="Whatsapp (optional)" value={editUserForm.whatsappSameAsMobile ? editUserForm.mobile : editUserForm.whatsapp} onChange={e=>setEditUserForm({...editUserForm,whatsapp:e.target.value})} disabled={editUserForm.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-500 dark:disabled:text-gray-400" />
             </div>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editUserForm.whatsappSameAsMobile} onChange={e=>setEditUserForm({...editUserForm,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
             <div className="flex justify-end gap-2">

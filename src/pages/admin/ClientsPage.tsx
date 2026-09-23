@@ -73,7 +73,7 @@ const ClientsPage: React.FC = () => {
       <div className="flex justify-between items-center bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-4 sm:p-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">Clients</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Manage CLT-0001, seat limits, and global clients</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Manage Client details</p>
         </div>
         <button onClick={() => setShowCreate(true)} className="bg-system-blue dark:bg-system-darkBlue text-white px-4 py-2 rounded-lg shadow-sm font-medium hover:opacity-90">Create Client</button>
       </div>
@@ -94,7 +94,7 @@ const ClientsPage: React.FC = () => {
               <div className="mt-3">
                 <div className="text-xs flex justify-between"><span>Seats</span><span>{u ? `${u.active}/${u.max === -1 ? '∞' : u.max}` : `${c.maxUsers}`}</span></div>
                 <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded mt-1"><div className={`h-2 rounded ${barColor}`} style={{ width: `${Math.min(100, pct)}%` }} /></div>
-                <div className="text-xs text-gray-400">{c.plan} • max {c.maxUsers === -1 ? 'unlimited' : c.maxUsers}</div>
+                <div className="text-xs text-gray-400 capitalize">{c.plan} • max {c.maxUsers === -1 ? 'Unlimited' : `${c.maxUsers} Users`}</div>
               </div>
             </div>
           );
@@ -114,7 +114,7 @@ const ClientsPage: React.FC = () => {
             <input placeholder="Description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="w-full border p-2 rounded" />
             <div className="grid grid-cols-2 gap-3">
               <input placeholder="Mobile (optional)" value={form.mobile} onChange={e => setForm({ ...form, mobile: e.target.value })} className="border p-2 rounded" />
-              <input placeholder="Whatsapp (optional)" value={form.whatsappSameAsMobile ? form.mobile : form.whatsapp} onChange={e => setForm({ ...form, whatsapp: e.target.value })} disabled={form.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-100" />
+              <input placeholder="Whatsapp (optional)" value={form.whatsappSameAsMobile ? form.mobile : form.whatsapp} onChange={e => setForm({ ...form, whatsapp: e.target.value })} disabled={form.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-500 dark:disabled:text-gray-400" />
             </div>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.whatsappSameAsMobile} onChange={e => setForm({ ...form, whatsappSameAsMobile: e.target.checked })} /> Whatsapp same as Mobile</label>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Address *</div>
@@ -130,11 +130,18 @@ const ClientsPage: React.FC = () => {
               <input placeholder="Country *" value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} className="border p-2 rounded" required />
               <input placeholder="Pin Code * (6 digits)" value={form.pinCode} onChange={e => setForm({ ...form, pinCode: e.target.value })} className="border p-2 rounded" required maxLength={6} />
             </div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Plan Details *</div>
             <div className="grid grid-cols-2 gap-3">
-              <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value })} className="border p-2 rounded">
-                <option value="free">free (3)</option><option value="starter">starter (10)</option><option value="pro">pro (25)</option><option value="enterprise">enterprise (∞)</option>
-              </select>
-              <input type="number" placeholder="Max Users" value={form.maxUsers} onChange={e => setForm({ ...form, maxUsers: parseInt(e.target.value) || 0 })} className="border p-2 rounded" required />
+              <div>
+                <label className="text-xs text-gray-500">Plan</label>
+                <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value })} className="w-full border p-2 rounded">
+                  <option value="free">Free [3 Users]</option><option value="starter">Starter [10 Users]</option><option value="pro">Pro [25 Users]</option><option value="enterprise">Enterprise [Unlimited]</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Max Users</label>
+                <input type="number" placeholder="Max Users" value={form.maxUsers} onChange={e => setForm({ ...form, maxUsers: parseInt(e.target.value) || 0 })} className="w-full border p-2 rounded" required />
+              </div>
             </div>
             <div className="flex gap-2 justify-end">
               <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border rounded">Cancel</button>

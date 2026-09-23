@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { NavLink, useNavigate } from 'react-router';
 import { useAuthStore } from '../store/authStore';
 import { useTestManagerStore } from '../store/testManagerStore';
+import { getClients } from '../services/clientApi';
+import type { Client } from '../types/client';
 import {
   LayoutDashboard,
   Settings,
@@ -43,6 +45,20 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
   const [activeSubMenu, setActiveSubMenu] = useState<string | null>(null);
 
   const currentProject = projects.find(p => p.id === activeProject);
+  const [clients, setClients] = useState<Client[]>([]);
+  useEffect(() => {
+    getClients().then(setClients).catch(() => {});
+  }, [activeProject, user]);
+  const currentClient = (() => {
+    if (!clients.length) return null;
+    if (currentProject && (currentProject as any).clientId) {
+      const cid = (currentProject as any).clientId as string;
+      return clients.find(c => c._id === cid || c.displayId === cid) || null;
+    }
+    // fallback: if user is client_admin and has single client, show it
+    if (!isSuperAdmin && clients.length === 1) return clients[0];
+    return null;
+  })();
 
   const handleLogout = () => {
     logout();
@@ -129,6 +145,22 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3">
+        {/* Active Client Indicator — above Project */}
+        {!isCollapsed && currentClient && (
+          <div className="mb-3">
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:bg-blue-900/20 dark:border-blue-800 dark:shadow-none">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-md bg-blue-600 flex items-center justify-center shadow-sm">
+                  <Building2 size={14} className="text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] uppercase tracking-wider text-blue-600 font-semibold dark:text-blue-300">Active Client</p>
+                  <p className="text-sm font-medium text-blue-900 truncate dark:text-blue-100" title={`${currentClient.displayId} • ${currentClient.name}`}>{currentClient.displayId} • {currentClient.name}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Active Project Indicator */}
         {!isCollapsed && activeProject && currentProject && (
           <div className="mb-4">
