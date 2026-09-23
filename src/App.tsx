@@ -21,6 +21,8 @@ const TestCasesPage = React.lazy(() => import("./pages/testManager/TestCasesPage
 const TestSuitesPage = React.lazy(() => import("./pages/testManager/TestSuitesPage"));
 const TestRunsPage = React.lazy(() => import("./pages/testManager/TestRunsPage"));
 const TicketsPage = React.lazy(() => import("./pages/testManager/TicketsPage"));
+const ClientsPage = React.lazy(() => import("./pages/admin/ClientsPage"));
+const ClientDetailPage = React.lazy(() => import("./pages/admin/ClientDetailPage"));
 
 // Non-lazy imports (needed immediately)
 import AppLayout from "./components/AppLayout";
@@ -51,6 +53,14 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     return <Navigate to='/verify-email' replace />;
   }
 
+  return <>{children}</>;
+};
+
+const SuperAdminRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
+  const { isAuthenticated, user } = useAuthStore();
+  if (!isAuthenticated) return <Navigate to='/login' replace />;
+  if (!user?.isVerified) return <Navigate to='/verify-email' replace />;
+  if ((user as any)?.role !== 'super_admin') return <Navigate to='/' replace />;
   return <>{children}</>;
 };
 
@@ -185,6 +195,10 @@ function App() {
                 <Route path='runs' element={<TestRunsPage />} />
                 <Route path='tickets' element={<TicketsPage />} />
               </Route>
+
+              {/* Super Admin */}
+              <Route path='admin/clients' element={<SuperAdminRoute><ClientsPage /></SuperAdminRoute>} />
+              <Route path='admin/clients/:displayId' element={<SuperAdminRoute><ClientDetailPage /></SuperAdminRoute>} />
             </Route>
 
             <Route path='*' element={<Navigate to='/' replace />} />

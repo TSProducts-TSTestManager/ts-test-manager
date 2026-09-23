@@ -18,6 +18,7 @@ import { useTestManagerStore } from '../../../store/testManagerStore';
 import { useAuthStore } from '../../../store/authStore';
 import { useProjectSettings } from '../../../hooks/useTestManagerSelectors';
 import VideoEvidenceSection from '../../../components/testManager/drive/VideoEvidenceSection';
+import { linkJira, createJiraFromTicket, syncJira, unlinkJira } from '../../../services/jiraApi';
 import toast from 'react-hot-toast';
 
 type FieldValue = string | number | boolean | null;
@@ -75,6 +76,8 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
     const [returnReason, setReturnReason] = useState<ReturnReason>(ReturnReason.MissingSteps);
     const [isReturning, setIsReturning] = useState(false);
     const [showDivergence, setShowDivergence] = useState(false);
+    const [jiraKeyInput, setJiraKeyInput] = useState('');
+    const [jiraBusy, setJiraBusy] = useState(false);
     const navigate = useNavigate();
 
     const applyRemoteTicketUpdate = useTestManagerStore((state) => state.applyRemoteTicketUpdate);
@@ -411,6 +414,25 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
                                     </p>
                                 </div>
                             )}
+
+                            {/* JIRA */}
+                            <div className="mb-5 p-3 rounded-lg border bg-gray-50 dark:bg-gray-800/50 dark:border-gray-700">
+                                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">JIRA</h3>
+                                {(ticket as any).jiraIssueKey ? (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <a href={(ticket as any).jiraUrl} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded text-xs font-mono border border-blue-200 dark:border-blue-800">{(ticket as any).jiraIssueKey}</a>
+                                        {(ticket as any).jiraStatus && <span className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">{(ticket as any).jiraStatus}</span>}
+                                        <button disabled={jiraBusy} onClick={async()=>{setJiraBusy(true); try{const u=await syncJira(ticket.id); applyRemoteTicketUpdate(u); toast.success('JIRA synced');}catch(e:any){toast.error(e.message);}finally{setJiraBusy(false);}}} className="text-xs border px-2 py-1 rounded hover:bg-white">Sync</button>
+                                        <button disabled={jiraBusy} onClick={async()=>{setJiraBusy(true); try{const u=await unlinkJira(ticket.id); applyRemoteTicketUpdate(u); toast.success('Unlinked');}catch(e:any){toast.error(e.message);}finally{setJiraBusy(false);}}} className="text-xs border px-2 py-1 rounded hover:bg-white">Unlink</button>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-wrap gap-2">
+                                        <input placeholder="PROJ-123" value={jiraKeyInput} onChange={e=>setJiraKeyInput(e.target.value.toUpperCase())} className="border rounded px-2 py-1 text-xs flex-1 min-w-[120px]" />
+                                        <button disabled={jiraBusy || !jiraKeyInput} onClick={async()=>{setJiraBusy(true); try{const u=await linkJira(ticket.id, jiraKeyInput); applyRemoteTicketUpdate(u); toast.success('Linked '+u.jiraIssueKey); setJiraKeyInput('');}catch(e:any){toast.error(e.message);}finally{setJiraBusy(false);}}} className="text-xs bg-blue-600 text-white px-3 py-1 rounded disabled:opacity-50">Link</button>
+                                        <button disabled={jiraBusy} onClick={async()=>{setJiraBusy(true); try{const u=await createJiraFromTicket(ticket.id); applyRemoteTicketUpdate(u); toast.success('Created '+u.jiraIssueKey);}catch(e:any){toast.error(e.message);}finally{setJiraBusy(false);}}} className="text-xs border px-3 py-1 rounded hover:bg-white">Create JIRA</button>
+                                    </div>
+                                )}
+                            </div>
 
                             {/* Details grid */}
                             <div className="mb-5">

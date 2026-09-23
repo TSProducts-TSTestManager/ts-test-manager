@@ -14,6 +14,7 @@ import {
   Layers,
   ClipboardList,
   Bug,
+  Building2,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -35,8 +36,9 @@ interface SubMenuItem {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
-  const { logout } = useAuthStore();
+  const { logout, user } = useAuthStore();
   const { activeProject, projects, setActiveSuite, setActiveSuiteId, setActiveArea, clearFilters } = useTestManagerStore();
+  const isSuperAdmin = (user as any)?.role === 'super_admin';
   const navigate = useNavigate();
   const [activeSubMenu, setActiveSubMenu] = useState<string | null>(null);
 
@@ -106,6 +108,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
       to: '/analytics',
       subItems: []
     },
+    ...(isSuperAdmin ? [{ icon: <Building2 size={18} />, label: 'Clients', to: '/admin/clients', subItems: [] as SubMenuItem[] }] : []),
   ];
 
   return (

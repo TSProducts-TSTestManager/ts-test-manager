@@ -8,6 +8,10 @@ export interface User {
   name: string;
   googleId?: string;
   profilePicture?: string;
+  role?: 'super_admin' | 'client_admin' | 'member' | 'viewer';
+  clientId?: string | null;
+  status?: 'active' | 'inactive';
+  mustResetPassword?: boolean;
   isVerified: boolean;
   lastLogin: Date | string; // Can be Date or ISO string from API
   createdAt: Date | string;

@@ -23,8 +23,9 @@ const IdDisplay: React.FC<IdDisplayProps> = ({
         setTimeout(() => setCopied(false), 2000);
     };
 
-    // Show last N chars, prefixed with ellipsis if longer
-    const displayId = id.length > truncateLength ? '..' + id.slice(-truncateLength) : id;
+    // If sequential ID (CLT/PRJ/STE/TC/TR/TK) show full, else truncate ObjectId
+    const isSeq = /^(CLT|PRJ|STE|TC|TR|TK|DISC)-/.test(id);
+    const displayId = isSeq ? id : (id.length > truncateLength ? '..' + id.slice(-truncateLength) : id);
 
     return (
         <div className={`flex items-center gap-2 group/id relative ${className}`}>
