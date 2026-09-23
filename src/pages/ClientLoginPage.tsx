@@ -14,6 +14,8 @@ import {
 	Users,
 	Award,
 	Sparkles,
+	Phone,
+	MapPin,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import Input from "../components/Input";
@@ -296,16 +298,46 @@ const ClientLoginPage: React.FC = () => {
 					</div>
 				</div>
 			</div>
-			<footer className="border-t border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-950 transition-colors duration-300">
-				<div className="max-w-[1280px] mx-auto px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-					<p className="text-sm text-gray-500 dark:text-gray-500">© 2026 Tech Signific IT Services Pvt Ltd. All rights reserved.</p>
-					<div className="flex items-center gap-3">
-						<Link to="/login" className="text-xs text-gray-400 hover:text-blue-600">Super Admin</Link>
-						<span className="text-gray-300">•</span>
-						<span className="text-xs text-blue-600 font-medium">Client Login</span>
+			
+			{/* FOOTER - Professional: Logo | About Us | Contact */}
+			<footer className="border-t border-gray-800 bg-gray-950">
+				<div className="max-w-[1280px] mx-auto px-6 lg:px-8 py-10 grid grid-cols-1 md:grid-cols-3 gap-8">
+					<div>
+						<a href="https://techsignific.com/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
+							<img src="/logo.png" alt="TechSignific" className="h-9 w-auto bg-white rounded-lg p-1" />
+							<span className="font-extrabold tracking-tight text-lg"><span className="text-amber-400">Tech</span><span className="text-white">Signific</span></span>
+						</a>
+						<p className="mt-4 text-sm leading-6 text-gray-400 max-w-xs">
+							Building reliable software for real business impact — from custom products to QA and digital growth.
+						</p>
+					</div>
+					<div>
+						<h4 className="text-sm font-semibold text-white mb-4">About Us</h4>
+						<p className="text-sm leading-6 text-gray-400">
+							TechSignific IT Services Pvt Ltd, Pune — 6+ years, 120+ projects, 50+ clients. We craft efficient, scalable solutions with clarity and confidence.
+						</p>
+						<a href="https://techsignific.com/about" target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex text-sm text-blue-400 hover:text-blue-300">Learn more →</a>
+					</div>
+					<div>
+						<h4 className="text-sm font-semibold text-white mb-4">Contact</h4>
+						<div className="space-y-3 text-sm text-gray-400">
+							<a href="mailto:enquiry@techsignific.com" className="flex items-center gap-2 hover:text-white"><Mail size={14} /> enquiry@techsignific.com</a>
+							<a href="tel:+918421774604" className="flex items-center gap-2 hover:text-white"><Phone size={14} /> +91 8421774604</a>
+							<span className="flex items-center gap-2"><MapPin size={14} /> Pune, INDIA (HQ)</span>
+						</div>
+					</div>
+				</div>
+				<div className="border-t border-gray-800">
+					<div className="max-w-[1280px] mx-auto px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
+						<p>© 2026 Tech Signific IT Services Pvt Ltd. All rights reserved.</p>
+						<div className="flex items-center gap-4">
+							<a href="https://techsignific.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="hover:text-white">Privacy</a>
+							<a href="https://techsignific.com/terms-conditions" target="_blank" rel="noopener noreferrer" className="hover:text-white">Terms</a>
+						</div>
 					</div>
 				</div>
 			</footer>
+
 		</div>
 	);
 };
