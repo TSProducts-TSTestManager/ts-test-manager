@@ -140,6 +140,9 @@ export interface DriveUploadSession {
 
 export interface Project {
     id: string;
+    displayId?: string;
+    seq?: number;
+    clientId?: string;
     name: string;
     description: string;
     color: string;
@@ -156,10 +159,12 @@ export interface Project {
 
 export interface TestSuite {
     id: string;
+    displayId?: string;
+    projectId: string;
+    clientId?: string;
     name: string;
     description?: string;
     tags?: string[];
-    projectId: string;
     caseCount?: number;
     createdAt: string;
     updatedAt: string;
@@ -175,6 +180,8 @@ export interface HistoryEntry {
 
 export interface TestCase {
     id: string;
+    displayId?: string;
+    clientId?: string;
     title: string;
     priority: Priority;
     status: Status; // Unified status
@@ -592,6 +599,8 @@ export interface TicketDivergence {
 
 export interface Ticket {
     id: string;
+    displayId?: string;
+    clientId?: string;
     title: string;
     description?: string;
     projectId: string;
@@ -614,6 +623,9 @@ export interface Ticket {
     divergence?: TicketDivergence;
     attachments: TicketAttachment[];
     tags: string[];
+    jiraIssueKey?: string | null;
+    jiraUrl?: string | null;
+    jiraStatus?: string | null;
     createdAt: string;
     updatedAt: string;
 }

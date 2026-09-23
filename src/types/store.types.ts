@@ -15,7 +15,9 @@ export interface AuthStoreState {
 
   // Actions
   signup: (email: string, password: string, name: string) => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, clientCode?: string) => Promise<void>;
+  loginAsSuperAdmin: (email: string, password: string) => Promise<void>;
+  loginAsClient: (email: string, password: string, clientCode: string) => Promise<void>;
   logout: () => Promise<void>;
   verifyEmail: (code: string) => Promise<{ user: User; success: boolean }>;
   resendVerificationCode: () => Promise<void>;

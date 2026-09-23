@@ -14,8 +14,8 @@ import {
 	Users,
 	Award,
 	Sparkles,
-	MapPin,
 	Phone,
+	MapPin,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import Input from "../components/Input";
@@ -71,7 +71,8 @@ const stats = [
 	{ value: "80+", label: "Team Members", icon: Sparkles },
 ];
 
-const LoginPage: React.FC = () => {
+const ClientLoginPage: React.FC = () => {
+	const [clientCode, setClientCode] = useState<string>("");
 	const [email, setEmail] = useState<string>("");
 	const [password, setPassword] = useState<string>("");
 	const navigate = useNavigate();
@@ -80,7 +81,7 @@ const LoginPage: React.FC = () => {
 	const handleLogin = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
 		e.preventDefault();
 		try {
-			await login(email, password);
+			await login(email, password, clientCode.toUpperCase().trim());
 			const { user } = useAuthStore.getState();
 			if (user && !user.isVerified) {
 				navigate("/verify-email");
@@ -92,13 +93,9 @@ const LoginPage: React.FC = () => {
 
 	return (
 		<div className="w-full min-h-screen flex flex-col bg-gray-950 transition-colors duration-300">
-			{/* Main split - same dark theme full width, no divider */}
 			<div className="flex flex-1 flex-col lg:flex-row w-full">
-				{/* LEFT - same dark theme */}
 				<div className="lg:w-[58%] relative overflow-hidden bg-gray-950 flex flex-col">
-					{/* Content */}
 					<div className="relative z-10 flex flex-col flex-1 px-6 py-8 lg:px-10 xl:px-14 lg:py-10">
-						{/* Header */}
 						<div className="flex items-center justify-between mb-8 lg:mb-10">
 							<div className="flex items-center gap-3">
 								<img src="/logo.png" alt="TechSignific" className="w-10 h-10 rounded-xl bg-gray-800 border border-gray-700 p-1.5 shadow-sm object-contain" />
@@ -112,24 +109,20 @@ const LoginPage: React.FC = () => {
 								Established 2020
 							</span>
 						</div>
-
-						{/* Hero */}
 						<div className="flex-1 flex flex-col justify-center max-w-[640px]">
 							<motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
 								<div className="inline-flex items-center gap-2 rounded-full border border-blue-800 bg-blue-950/50 text-blue-300 px-4 py-1.5 text-xs font-semibold mb-5">
 									<span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-									<Building2 size={12} className="text-blue-400" /> Manage Client
+									<ClipboardCheck size={12} className="text-blue-400" /> QA & Testing Workspace
 								</div>
 								<h2 className="text-[30px] lg:text-[38px] xl:text-[42px] font-bold leading-[0.95] tracking-tight text-white">
-									Super Admin<br />
-									<span className="text-blue-400">Manage Client</span>
+									QA & Testing<br />
+									<span className="text-blue-400">Workspace</span>
 								</h2>
 								<p className="mt-6 max-w-xl text-[14px] lg:text-[15px] leading-7 text-gray-400">
-									Unified Super Admin console to onboard clients, manage subscriptions, and oversee secure isolated workspaces with full control.
+									Sign in with your <span className="font-bold text-white">Client ID</span> (e.g. CLT-0001), email and password. Same email can be used across multiple clients as isolated accounts.
 								</p>
 							</motion.div>
-
-							{/* Stats — same dark theme */}
 							<motion.div
 								initial={{ opacity: 0, y: 16 }}
 								animate={{ opacity: 1, y: 0 }}
@@ -144,14 +137,7 @@ const LoginPage: React.FC = () => {
 									</div>
 								))}
 							</motion.div>
-
-							<div className="mt-9 flex items-center gap-2">
-								<p className="text-gray-400 text-xs font-semibold tracking-widest uppercase">Industry-Focused Platforms</p>
-								<span className="text-gray-500 text-[11px]">TSProduct Family</span>
-							</div>
 						</div>
-
-						{/* Moving cards — same dark theme */}
 						<div className="mt-4 -mx-6 lg:-mx-10 xl:-mx-14 relative">
 							<div className="absolute left-0 top-0 bottom-0 w-10 lg:w-14 bg-gradient-to-r from-gray-950 to-transparent z-10 pointer-events-none" />
 							<div className="absolute right-0 top-0 bottom-0 w-10 lg:w-14 bg-gradient-to-l from-gray-950 to-transparent z-10 pointer-events-none" />
@@ -185,19 +171,9 @@ const LoginPage: React.FC = () => {
 								</motion.div>
 							</div>
 						</div>
-
-						<div className="mt-6 flex flex-wrap items-center gap-2 text-gray-400 text-xs">
-							<span className="inline-flex items-center gap-1.5">
-								<span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-								Trusted by dairy, education, hospitality & residential sectors
-							</span>
-							<span className="hidden sm:inline text-gray-600">•</span>
-							<span>enquiry@techsignific.com</span>
-						</div>
 					</div>
 				</div>
 
-				{/* RIGHT - same dark theme, no divider */}
 				<div className="lg:w-[42%] relative overflow-hidden bg-gray-950 flex flex-col transition-colors duration-300">
 
 					<div className="relative z-10 flex flex-1 items-center justify-center p-4 lg:p-6">
@@ -207,7 +183,6 @@ const LoginPage: React.FC = () => {
 							transition={{ duration: 0.5, delay: 0.2 }}
 							className="w-full max-w-[400px]"
 						>
-							{/* Application Name — TSTestManager — compact header */}
 							<div className="flex flex-col items-center text-center mb-4">
 								<div className="w-12 h-12 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-2 shadow-md ring-1 ring-black/5 dark:ring-white/5 flex items-center justify-center transition-colors duration-300">
 									<img src="/logo.png" alt="TSTestManager Logo" className="w-full h-full object-contain" />
@@ -216,11 +191,11 @@ const LoginPage: React.FC = () => {
 									<span className="text-amber-400">TS</span>
 									<span style={{ color: "rgb(46,92,116)" }}>TestManager</span>
 								</h1>
-								<p className="mt-1 text-[10px] font-semibold tracking-[0.16em] uppercase text-gray-400">Manage Client</p>
+								<p className="mt-1 text-[10px] font-semibold tracking-[0.16em] uppercase text-gray-400">QA & Testing Workspace</p>
 								<div className="mt-2 flex items-center justify-center">
 									<span className="text-[10px] font-medium tracking-wide text-white/60 flex items-center gap-1.5">
-										<Building2 size={10} className="opacity-80" />
-										Super Admin • Manage Client
+										<ClipboardCheck size={10} className="opacity-80" />
+										QA & Testing Workspace
 									</span>
 								</div>
 							</div>
@@ -228,11 +203,26 @@ const LoginPage: React.FC = () => {
 							<div className="bg-white dark:bg-gray-900 rounded-2xl shadow-[0_16px_40px_-16px_rgba(0,0,0,0.15)] dark:shadow-[0_16px_40px_-16px_rgba(0,0,0,0.5)] border border-gray-200 dark:border-gray-800 overflow-hidden transition-colors duration-300">
 								<div className="px-6 pt-6 pb-5">
 									<div className="mb-4">
-										<h2 className="text-[20px] font-bold tracking-tight text-gray-900 dark:text-white">Super Admin Login</h2>
-										<p className="text-xs text-gray-600 dark:text-gray-400 mt-1">Secure access to Client Management Console</p>
+										<h2 className="text-[20px] font-bold tracking-tight text-gray-900 dark:text-white">Client Login</h2>
+										<p className="text-xs text-gray-600 dark:text-gray-400 mt-1">QA & Testing Workspace — Client ID required</p>
 									</div>
 
 									<form onSubmit={handleLogin} className="space-y-0">
+										<div className="relative mb-3">
+											<div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+												<Building2 className="h-4 w-4 text-gray-400" />
+											</div>
+											<input
+												type="text"
+												placeholder="Client ID (e.g. CLT-0001)"
+												value={clientCode}
+												onChange={(e) => setClientCode(e.target.value.toUpperCase())}
+												pattern="CLT-[0-9]{4}"
+												title="Client ID format: CLT-0001"
+												required
+												className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono uppercase"
+											/>
+										</div>
 										<Input
 											icon={Mail}
 											type="email"
@@ -256,7 +246,9 @@ const LoginPage: React.FC = () => {
 											<Link to="/forgot-password" className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline">
 												Forgot password?
 											</Link>
-											<span className="text-[11px] text-gray-500 dark:text-gray-500 hidden sm:inline">Secure login • 256-bit encrypted</span>
+											<Link to="/login" className="text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 hover:underline">
+												Super Admin Login
+											</Link>
 										</div>
 
 										{error && (
@@ -276,36 +268,27 @@ const LoginPage: React.FC = () => {
 										</motion.button>
 
 										<p className="text-center text-[11px] text-gray-500 dark:text-gray-500 mt-2.5">
-											By signing in you agree to our Terms & Privacy Policy
+											Same email can be used in multiple clients with different Client IDs (isolated accounts)
 										</p>
 									</form>
 								</div>
 
 								<div className="px-6 py-2.5 bg-gray-50 dark:bg-gray-950 border-t border-gray-100 dark:border-gray-800 flex items-center justify-center gap-2 text-[11px] text-gray-500 dark:text-gray-500">
 									<span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-									System operational • All services online
+									Secure login • 256-bit encrypted
 								</div>
 							</div>
 
-							<div className="text-center mt-3 space-y-1">
-								<p className="text-[11px] text-gray-400 px-4">
-									<Link to="/client-login" className="text-blue-500 hover:text-blue-600 dark:text-blue-400 hover:underline font-medium">Client Login — Sign in with Client ID</Link>
-									<span className="mx-2 text-gray-300">•</span>
-									<Link to="/admin/login" className="text-gray-400 hover:text-gray-600 hover:underline">Super Admin</Link>
-								</p>
-								<p className="text-center text-[11px] text-gray-400 px-4">
-									Need access? Contact your workspace admin or{" "}
-									<a href="mailto:enquiry@techsignific.com" className="text-blue-400 hover:underline font-medium">
-										enquiry@techsignific.com
-									</a>
-								</p>
-							</div>
+							<p className="text-center text-[11px] text-gray-400 mt-3 px-4">
+								Super Admin?{" "}
+								<Link to="/login" className="text-blue-400 hover:underline font-medium">
+									Go to Super Admin Login
+								</Link>
+							</p>
 						</motion.div>
 					</div>
 				</div>
 			</div>
-
-			
 			
 			{/* FOOTER - Two lines, merged, no logo */}
 			<footer className="border-t border-gray-800 bg-gray-950">
@@ -333,9 +316,8 @@ const LoginPage: React.FC = () => {
 				</div>
 			</footer>
 
-
 		</div>
 	);
 };
 
-export default LoginPage;
+export default ClientLoginPage;

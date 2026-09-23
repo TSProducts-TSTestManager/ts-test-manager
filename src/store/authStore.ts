@@ -31,10 +31,12 @@ export const useAuthStore = create<AuthStoreState>((set) => ({
 		}
 	},
 
-	login: async (email: string, password: string): Promise<void> => {
+	login: async (email: string, password: string, clientCode?: string): Promise<void> => {
 		set({ isLoading: true, error: null });
 		try {
-			const response = await axios.post<{ user: User }>(`${API_URL}/auth/login`, { email, password });
+			const body: any = { email, password };
+			if (clientCode) body.clientCode = clientCode.toUpperCase().trim();
+			const response = await axios.post<{ user: User }>(`${API_URL}/auth/login`, body);
 			set({
 				isAuthenticated: true,
 				user: response.data.user,
@@ -46,6 +48,15 @@ export const useAuthStore = create<AuthStoreState>((set) => ({
 			set({ error: axiosError.response?.data?.message || "Error logging in", isLoading: false });
 			throw error;
 		}
+	},
+
+	loginAsSuperAdmin: async (email: string, password: string): Promise<void> => {
+		return useAuthStore.getState().login(email, password);
+	},
+
+	loginAsClient: async (email: string, password: string, clientCode: string): Promise<void> => {
+		if (!clientCode?.trim()) throw new Error("Client ID is required (e.g. CLT-0001)");
+		return useAuthStore.getState().login(email, password, clientCode);
 	},
 
 	logout: async (): Promise<void> => {

@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { NavLink, useNavigate } from 'react-router';
 import { useAuthStore } from '../store/authStore';
 import { useTestManagerStore } from '../store/testManagerStore';
+import { getClients } from '../services/clientApi';
+import type { Client } from '../types/client';
 import {
   LayoutDashboard,
   Settings,
@@ -14,6 +16,7 @@ import {
   Layers,
   ClipboardList,
   Bug,
+  Building2,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -35,12 +38,27 @@ interface SubMenuItem {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
-  const { logout } = useAuthStore();
+  const { logout, user } = useAuthStore();
   const { activeProject, projects, setActiveSuite, setActiveSuiteId, setActiveArea, clearFilters } = useTestManagerStore();
+  const isSuperAdmin = (user as any)?.role === 'super_admin';
   const navigate = useNavigate();
   const [activeSubMenu, setActiveSubMenu] = useState<string | null>(null);
 
   const currentProject = projects.find(p => p.id === activeProject);
+  const [clients, setClients] = useState<Client[]>([]);
+  useEffect(() => {
+    getClients().then(setClients).catch(() => {});
+  }, [activeProject, user]);
+  const currentClient = (() => {
+    if (!clients.length) return null;
+    if (currentProject && (currentProject as any).clientId) {
+      const cid = (currentProject as any).clientId as string;
+      return clients.find(c => c._id === cid || c.displayId === cid) || null;
+    }
+    // fallback: if user is client_admin and has single client, show it
+    if (!isSuperAdmin && clients.length === 1) return clients[0];
+    return null;
+  })();
 
   const handleLogout = () => {
     logout();
@@ -59,54 +77,81 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
     clearFilters();
   };
 
-  const menuItems: MenuItem[] = [
-    {
-      icon: <LayoutDashboard size={18} />,
-      label: 'Dashboard',
-      to: '/dashboard',
-      subItems: []
-    },
-    {
-      icon: <Folder size={18} />,
-      label: 'Projects',
-      to: '/test-manager/projects',
-      subItems: []
-    },
-    {
-      icon: <Layers size={18} />,
-      label: 'Test Suites',
-      to: '/test-manager/suites',
-      subItems: [],
-      requiresProject: true
-    },
-    {
-      icon: <List size={18} />,
-      label: 'All Cases',
-      to: '/test-manager/cases',
-      subItems: [],
-      requiresProject: true
-    },
-    {
-      icon: <ClipboardList size={18} />,
-      label: 'Test Runs',
-      to: '/test-manager/runs',
-      subItems: [],
-      requiresProject: true
-    },
-    {
-      icon: <Bug size={18} />,
-      label: 'Tickets',
-      to: '/test-manager/tickets',
-      subItems: [],
-      requiresProject: true
-    },
-    {
-      icon: <PieChart size={18} />,
-      label: 'Analytics',
-      to: '/analytics',
-      subItems: []
-    },
-  ];
+  const menuItems: MenuItem[] = isSuperAdmin
+    ? [
+        {
+          icon: <LayoutDashboard size={18} />,
+          label: 'Client Dashboard',
+          to: '/admin/dashboard',
+          subItems: []
+        },
+        {
+          icon: <Building2 size={18} />,
+          label: 'Clients',
+          to: '/admin/clients',
+          subItems: []
+        },
+        {
+          icon: <PieChart size={18} />,
+          label: 'Client Analytics',
+          to: '/admin/analytics',
+          subItems: []
+        },
+      ]
+    : [
+        {
+          icon: <LayoutDashboard size={18} />,
+          label: 'Dashboard',
+          to: '/dashboard',
+          subItems: []
+        },
+        {
+          icon: <Building2 size={18} />,
+          label: 'My Client',
+          to: '/my-client',
+          subItems: []
+        },
+        {
+          icon: <Folder size={18} />,
+          label: 'Projects',
+          to: '/test-manager/projects',
+          subItems: []
+        },
+        {
+          icon: <Layers size={18} />,
+          label: 'Test Suites',
+          to: '/test-manager/suites',
+          subItems: [],
+          requiresProject: true
+        },
+        {
+          icon: <List size={18} />,
+          label: 'All Cases',
+          to: '/test-manager/cases',
+          subItems: [],
+          requiresProject: true
+        },
+        {
+          icon: <ClipboardList size={18} />,
+          label: 'Test Runs',
+          to: '/test-manager/runs',
+          subItems: [],
+          requiresProject: true
+        },
+        {
+          icon: <Bug size={18} />,
+          label: 'Tickets',
+          to: '/test-manager/tickets',
+          subItems: [],
+          requiresProject: true
+        },
+        {
+          icon: <PieChart size={18} />,
+          label: 'Analytics',
+          to: '/analytics',
+          subItems: []
+        },
+      ];
 
   return (
     <div className={`bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-700 h-screen flex flex-col transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
@@ -126,8 +171,24 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3">
-        {/* Active Project Indicator */}
-        {!isCollapsed && activeProject && currentProject && (
+        {/* Active Client Indicator — above Project — hidden for Super Admin */}
+        {!isCollapsed && !isSuperAdmin && currentClient && (
+          <div className="mb-3">
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:bg-blue-900/20 dark:border-blue-800 dark:shadow-none">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-md bg-blue-600 flex items-center justify-center shadow-sm">
+                  <Building2 size={14} className="text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] uppercase tracking-wider text-blue-600 font-semibold dark:text-blue-300">Active Client</p>
+                  <p className="text-sm font-medium text-blue-900 truncate dark:text-blue-100" title={`${currentClient.displayId} • ${currentClient.name}`}>{currentClient.displayId} • {currentClient.name}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Active Project Indicator — hidden for Super Admin */}
+        {!isCollapsed && !isSuperAdmin && activeProject && currentProject && (
           <div className="mb-4">
             <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:bg-gray-800 dark:border-gray-700 dark:shadow-none">
               <div className="flex items-center gap-3">
