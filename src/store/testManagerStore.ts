@@ -65,6 +65,7 @@ export const mapProjectResponse = (p: ProjectResponse): Project => ({
     ownerId: p.ownerId,
     members: p.members,
     stats: p.stats,
+    jira: p.jira,
     updatedAt: p.updatedAt,
 });
 

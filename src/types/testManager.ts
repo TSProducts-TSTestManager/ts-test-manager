@@ -152,6 +152,14 @@ export interface Project {
         suites: number;
         cases: number;
         members: number;
+        bugs?: number;
+        openBugs?: number;
+    };
+    jira?: {
+        enabled: boolean;
+        domain: string;
+        projectKey: string;
+        defaultIssueType?: string;
     };
     updatedAt: string;
     settings?: ProjectSettings;

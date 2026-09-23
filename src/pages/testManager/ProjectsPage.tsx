@@ -11,7 +11,7 @@ import { useTestManagerStore } from '../../store/testManagerStore';
 import { Project } from '../../types/testManager';
 
 const ProjectsPage: React.FC = () => {
-    const { projects, fetchProjects, fetchMoreProjects, setActiveProject, searchQuery, clearSearchQuery, deleteProject, projectsHasMore, isProjectsLoadingMore, projectsOffset, projectsTotal } = useTestManagerStore();
+    const { projects, fetchProjects, fetchMoreProjects, setActiveProject, searchQuery, setSearchQuery, clearSearchQuery, deleteProject, projectsHasMore, isProjectsLoadingMore, projectsOffset, projectsTotal } = useTestManagerStore();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -20,7 +20,20 @@ const ProjectsPage: React.FC = () => {
     const [projectToSettings, setProjectToSettings] = useState<Project | null>(null);
     const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('projectViewMode');
+            return saved === 'table' ? 'table' : 'card';
+        }
+        return 'card';
+    });
     const sentinelRef = useRef<HTMLDivElement>(null);
+
+    const handleViewModeToggle = () => {
+        const newMode = viewMode === 'card' ? 'table' : 'card';
+        setViewMode(newMode);
+        localStorage.setItem('projectViewMode', newMode);
+    };
 
     // Fetch projects when this page mounts so the list is populated after reload
     useEffect(() => {
@@ -85,10 +98,12 @@ const ProjectsPage: React.FC = () => {
         }
     };
 
-    // Filter projects based on search query
+    // Filter projects based on search query (also match displayId + JIRA key)
     const filteredProjects = projects.filter(project =>
         project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        project.description.toLowerCase().includes(searchQuery.toLowerCase())
+        project.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (project.displayId || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (project.jira?.projectKey || '').toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     // Infinite scroll: load more projects when sentinel is visible
@@ -156,9 +171,13 @@ const ProjectsPage: React.FC = () => {
                 onEdit={handleEditProject}
                 onSettings={handleProjectSettings}
                 onDelete={handleDeleteProject}
+                viewMode={viewMode}
+                onViewModeToggle={handleViewModeToggle}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
             />
 
-            {projectsHasMore && (
+            {viewMode === 'card' && projectsHasMore && (
                 <div ref={sentinelRef} className="flex justify-center py-4">
                     {isProjectsLoadingMore && (
                         <div className="inline-flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
@@ -168,7 +187,7 @@ const ProjectsPage: React.FC = () => {
                     )}
                 </div>
             )}
-            {projectsTotal > 0 && (
+            {viewMode === 'card' && projectsTotal > 0 && (
                 <div className="text-center text-xs text-gray-400 dark:text-gray-500 pb-4">
                     Loaded {Math.min(projectsOffset, filteredProjects.length)} / {projectsTotal} projects
                 </div>

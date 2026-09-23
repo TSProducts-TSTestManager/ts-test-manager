@@ -151,6 +151,7 @@ const ProjectSettingsModal: React.FC<Props> = ({ isOpen, onClose, project }) => 
                                     settings={settings}
                                     setSettings={setSettings}
                                     isOwner={user?._id === project.ownerId}
+                                    project={project}
                                 />
                             )}
                         </>
@@ -201,6 +202,41 @@ const GeneralTab: React.FC<{ project: Project }> = ({ project }) => {
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Members</label>
                     <p className="text-gray-600 dark:text-gray-400">{project.stats.members} member(s)</p>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">JIRA Project</label>
+                    {project.jira?.enabled && project.jira.projectKey ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-sm text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
+                                {project.jira.projectKey}
+                            </span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">{project.jira.domain}</span>
+                        </div>
+                    ) : (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800">
+                            Not Configured
+                        </span>
+                    )}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-gray-100 dark:border-gray-700">
+                    <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Suites</p>
+                        <p className="text-lg font-semibold text-gray-900 dark:text-white">{project.stats.suites}</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Test Cases</p>
+                        <p className="text-lg font-semibold text-gray-900 dark:text-white">{project.stats.cases}</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Bugs</p>
+                        <p className="text-lg font-semibold text-gray-900 dark:text-white">{project.stats.bugs ?? 0}</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Open Bugs</p>
+                        <p className={`text-lg font-semibold ${(project.stats.openBugs ?? 0) > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+                            {project.stats.openBugs ?? 0}
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -314,7 +350,8 @@ const IntegrationsTab: React.FC<{
     settings: ProjectSettings;
     setSettings: React.Dispatch<React.SetStateAction<ProjectSettings>>;
     isOwner: boolean;
-}> = ({ settings, setSettings, isOwner }) => {
+    project?: Project | null;
+}> = ({ settings, setSettings, isOwner, project }) => {
     if (!isOwner) {
         return (
             <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700">
@@ -328,6 +365,31 @@ const IntegrationsTab: React.FC<{
 
     return (
         <div className="space-y-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">JIRA Project Mapping</h3>
+                <div className="space-y-3">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">JIRA Project ID (Key)</label>
+                        {project?.jira?.enabled && project.jira.projectKey ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-mono text-sm text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">{project.jira.projectKey}</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">{project.jira.domain}</span>
+                                {project.jira.defaultIssueType && (
+                                    <span className="text-xs text-gray-400 dark:text-gray-500">Issue type: {project.jira.defaultIssueType}</span>
+                                )}
+                            </div>
+                        ) : (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800">
+                                Not Configured
+                            </span>
+                        )}
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Project JIRA is mapped by a Client Admin from My Client → Project JIRA. Bug create/link uses your personal JIRA credentials with this project&apos;s domain + key.
+                    </p>
+                </div>
+            </div>
+
             <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Google Drive Video Evidence</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">

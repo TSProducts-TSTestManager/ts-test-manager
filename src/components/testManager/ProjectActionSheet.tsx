@@ -171,7 +171,15 @@ const ProjectActionSheet: React.FC<Props> = ({
                                 {project.name}
                             </h3>
                             <p className="text-xs text-gray-500 dark:text-gray-400">
-                                {project.stats.members} member{project.stats.members !== 1 ? 's' : ''}
+                                {project.stats.members} member{project.stats.members !== 1 ? 's' : ''} · {project.stats.suites} suites · {project.stats.cases} cases · {project.stats.bugs ?? 0} bugs
+                                {(project.stats.openBugs ?? 0) > 0 && <span className="text-red-500"> ({project.stats.openBugs} open)</span>}
+                            </p>
+                            <p className="text-xs mt-0.5">
+                                {project.jira?.enabled && project.jira.projectKey ? (
+                                    <span className="font-mono text-blue-600 dark:text-blue-400">JIRA: {project.jira.projectKey}</span>
+                                ) : (
+                                    <span className="text-amber-600 dark:text-amber-400">JIRA: Not Configured</span>
+                                )}
                             </p>
                         </div>
                         <button 

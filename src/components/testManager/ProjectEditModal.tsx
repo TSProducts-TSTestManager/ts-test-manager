@@ -103,6 +103,18 @@ const ProjectEditModal: React.FC<Props> = ({ isOpen, onClose, project }) => {
                     )}
 
                     <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">JIRA Project ID</label>
+                        {project.jira?.enabled && project.jira.projectKey ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-mono text-sm text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">{project.jira.projectKey}</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">{project.jira.domain}</span>
+                            </div>
+                        ) : (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800">Not Configured</span>
+                        )}
+                    </div>
+
+                    <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Project Name</label>
                         <input
                             value={name}
