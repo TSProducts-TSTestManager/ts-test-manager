@@ -117,44 +117,42 @@ const LoginPage: React.FC = () => {
 					</div>
 				</div>
 
-				{/* RIGHT - Login panel - professionally on right, fully visible, not cut off */}
+				{/* RIGHT - Login panel - TSTestManager, Logo and all details under yellow border */}
 				<div className="lg:w-[45%] flex flex-col items-center justify-center px-6 py-4 lg:px-8 lg:py-6 lg:sticky lg:top-4 self-start lg:self-center min-h-0">
-					<div className="w-full max-w-[400px]">
-						<div className="flex flex-col items-center text-center mb-4">
-							<div className="w-12 h-12 rounded-xl bg-[#1a2235] border border-[#334155] p-2 shadow-md flex items-center justify-center">
+					<div className="w-full max-w-[400px] bg-[#1a2235] rounded-2xl border-2 border-amber-400 shadow-[0_0_0_1px_rgba(251,191,36,0.15),0_8px_32px_rgba(251,191,36,0.2),0_16px_40px_-16px_rgba(0,0,0,0.5)] overflow-hidden">
+						<div className="flex flex-col items-center text-center px-6 pt-6 pb-3">
+							<div className="w-12 h-12 rounded-xl bg-[#0B0F19] border border-[#334155] p-2 shadow-md flex items-center justify-center">
 								<img src="/logo.png" alt="TSTestManager Logo" className="w-full h-full object-contain" />
 							</div>
-							<h1 className="mt-2.5 text-[22px] font-extrabold tracking-tight leading-none"><span className="text-amber-400">TS</span><span style={{ color: "rgb(46,92,116)" }}>TestManager</span></h1>
+							<h1 className="mt-3 text-[22px] font-extrabold tracking-tight leading-none"><span className="text-amber-400">TS</span><span style={{ color: "rgb(46,92,116)" }}>TestManager</span></h1>
 							<p className="mt-1 text-[10px] font-semibold tracking-[0.16em] uppercase text-gray-400">QA & Testing Workspace</p>
 							<div className="mt-2 flex items-center justify-center">
 								<span className="text-[10px] font-medium tracking-wide text-gray-400 flex items-center gap-1.5"><img src="/logo.png" alt="TechSignific" className="w-3 h-3 rounded-sm object-contain opacity-80" /><span><span className="text-amber-400">Tech</span><span style={{ color: "rgb(46,92,116)" }}>Signific</span></span></span>
 							</div>
 						</div>
-						<div className="bg-[#1a2235] rounded-2xl shadow-[0_16px_40px_-16px_rgba(0,0,0,0.5)] border-2 border-amber-400/60 shadow-[0_0_0_1px_rgba(251,191,36,0.1),0_8px_32px_rgba(251,191,36,0.15),0_16px_40px_-16px_rgba(0,0,0,0.5)] overflow-hidden">
-							<div className="px-6 pt-6 pb-5">
-								<div className="mb-4 text-center">
-									<h2 className="text-[20px] font-bold tracking-tight text-white">Welcome back</h2>
-									<p className="text-xs text-gray-400 mt-1">Sign in to your TSTestManager workspace</p>
+						<div className="px-6 pt-2 pb-5">
+							<div className="mb-4 text-center">
+								<h2 className="text-[20px] font-bold tracking-tight text-white">Welcome back</h2>
+								<p className="text-xs text-gray-400 mt-1">Sign in to your TSTestManager workspace</p>
+							</div>
+							<form onSubmit={handleLogin} className="space-y-3">
+								<Input icon={Mail} type="email" placeholder="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}" title="Please enter a valid email address" required />
+								<Input icon={Lock} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+								<div className="flex items-center justify-between pt-1">
+									<Link to="/forgot-password" className="text-xs font-medium text-blue-400 hover:text-blue-300 hover:underline">Forgot password?</Link>
+									<span className="text-[11px] text-gray-500 hidden sm:inline">Secure login • 256-bit encrypted</span>
 								</div>
-								<form onSubmit={handleLogin} className="space-y-3">
-									<Input icon={Mail} type="email" placeholder="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}" title="Please enter a valid email address" required />
-									<Input icon={Lock} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-									<div className="flex items-center justify-between pt-1">
-										<Link to="/forgot-password" className="text-xs font-medium text-blue-400 hover:text-blue-300 hover:underline">Forgot password?</Link>
-										<span className="text-[11px] text-gray-500 hidden sm:inline">Secure login • 256-bit encrypted</span>
-									</div>
-									{error && <div className="rounded-xl bg-red-950/30 border border-red-900/50 px-3 py-2.5"><p className="text-xs font-medium text-red-300">{error}</p></div>}
-									<motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }} className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 transition flex items-center justify-center gap-2 disabled:opacity-60 text-sm" type="submit" disabled={isLoading}>
-										{isLoading ? <Loader className="w-4 h-4 animate-spin" /> : <>Sign in <ArrowRight size={14} className="opacity-80" /></>}
-									</motion.button>
-									<p className="text-center text-[11px] text-gray-500">By signing in you agree to our Terms & Privacy Policy</p>
-								</form>
-							</div>
-							<div className="px-6 py-2.5 bg-[#0B0F19] border-t border-[#334155] flex items-center justify-center gap-2 text-[11px] text-gray-500">
-								<span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> System operational • All services online
-							</div>
+								{error && <div className="rounded-xl bg-red-950/30 border border-red-900/50 px-3 py-2.5"><p className="text-xs font-medium text-red-300">{error}</p></div>}
+								<motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }} className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 transition flex items-center justify-center gap-2 disabled:opacity-60 text-sm" type="submit" disabled={isLoading}>
+									{isLoading ? <Loader className="w-4 h-4 animate-spin" /> : <>Sign in <ArrowRight size={14} className="opacity-80" /></>}
+								</motion.button>
+								<p className="text-center text-[11px] text-gray-500">By signing in you agree to our Terms & Privacy Policy</p>
+							</form>
 						</div>
-						<p className="text-center text-[11px] text-gray-400 mt-3 px-4">Need access? Contact your workspace admin or <a href="mailto:enquiry@techsignific.com" className="text-blue-400 hover:underline font-medium">enquiry@techsignific.com</a></p>
+						<div className="px-6 py-2.5 bg-[#0B0F19] border-t border-amber-400/20 flex items-center justify-center gap-2 text-[11px] text-gray-500">
+							<span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> System operational • All services online
+						</div>
+						<p className="text-center text-[11px] text-gray-400 py-3 px-6 bg-[#0B0F19]/50">Need access? Contact your workspace admin or <a href="mailto:enquiry@techsignific.com" className="text-blue-400 hover:underline font-medium">enquiry@techsignific.com</a></p>
 					</div>
 				</div>
 			</div>
