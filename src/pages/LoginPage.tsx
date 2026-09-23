@@ -125,7 +125,7 @@ const LoginPage: React.FC = () => {
 									<span className="text-blue-400">Manage Client</span>
 								</h2>
 								<p className="mt-6 max-w-xl text-[14px] lg:text-[15px] leading-7 text-gray-400">
-									Centralized control for all clients — create <span className="font-bold text-white">CLT-0001</span>, manage seats, plans, and Client Admins with isolated workspaces.
+									Unified Super Admin console to onboard clients, manage subscriptions, and oversee secure isolated workspaces with full control.
 								</p>
 							</motion.div>
 
@@ -228,8 +228,8 @@ const LoginPage: React.FC = () => {
 							<div className="bg-white dark:bg-gray-900 rounded-2xl shadow-[0_16px_40px_-16px_rgba(0,0,0,0.15)] dark:shadow-[0_16px_40px_-16px_rgba(0,0,0,0.5)] border border-gray-200 dark:border-gray-800 overflow-hidden transition-colors duration-300">
 								<div className="px-6 pt-6 pb-5">
 									<div className="mb-4">
-										<h2 className="text-[20px] font-bold tracking-tight text-gray-900 dark:text-white">Super Admin</h2>
-										<p className="text-xs text-gray-600 dark:text-gray-400 mt-1">Manage Client — CLT-0001, seats, plans & Client Admins</p>
+										<h2 className="text-[20px] font-bold tracking-tight text-gray-900 dark:text-white">Super Admin Login</h2>
+										<p className="text-xs text-gray-600 dark:text-gray-400 mt-1">Secure access to Client Management Console</p>
 									</div>
 
 									<form onSubmit={handleLogin} className="space-y-0">
