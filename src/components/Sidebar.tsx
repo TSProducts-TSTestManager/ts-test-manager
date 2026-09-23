@@ -77,55 +77,75 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
     clearFilters();
   };
 
-  const menuItems: MenuItem[] = [
-    {
-      icon: <LayoutDashboard size={18} />,
-      label: 'Dashboard',
-      to: '/dashboard',
-      subItems: []
-    },
-    ...(isSuperAdmin ? [{ icon: <Building2 size={18} />, label: 'Clients', to: '/admin/clients', subItems: [] as SubMenuItem[] }] : []),
-    {
-      icon: <Folder size={18} />,
-      label: 'Projects',
-      to: '/test-manager/projects',
-      subItems: []
-    },
-    {
-      icon: <Layers size={18} />,
-      label: 'Test Suites',
-      to: '/test-manager/suites',
-      subItems: [],
-      requiresProject: true
-    },
-    {
-      icon: <List size={18} />,
-      label: 'All Cases',
-      to: '/test-manager/cases',
-      subItems: [],
-      requiresProject: true
-    },
-    {
-      icon: <ClipboardList size={18} />,
-      label: 'Test Runs',
-      to: '/test-manager/runs',
-      subItems: [],
-      requiresProject: true
-    },
-    {
-      icon: <Bug size={18} />,
-      label: 'Tickets',
-      to: '/test-manager/tickets',
-      subItems: [],
-      requiresProject: true
-    },
-    {
-      icon: <PieChart size={18} />,
-      label: 'Analytics',
-      to: '/analytics',
-      subItems: []
-    },
-  ];
+  const menuItems: MenuItem[] = isSuperAdmin
+    ? [
+        {
+          icon: <LayoutDashboard size={18} />,
+          label: 'Client Dashboard',
+          to: '/admin/dashboard',
+          subItems: []
+        },
+        {
+          icon: <Building2 size={18} />,
+          label: 'Clients',
+          to: '/admin/clients',
+          subItems: []
+        },
+        {
+          icon: <PieChart size={18} />,
+          label: 'Client Analytics',
+          to: '/admin/analytics',
+          subItems: []
+        },
+      ]
+    : [
+        {
+          icon: <LayoutDashboard size={18} />,
+          label: 'Dashboard',
+          to: '/dashboard',
+          subItems: []
+        },
+        {
+          icon: <Folder size={18} />,
+          label: 'Projects',
+          to: '/test-manager/projects',
+          subItems: []
+        },
+        {
+          icon: <Layers size={18} />,
+          label: 'Test Suites',
+          to: '/test-manager/suites',
+          subItems: [],
+          requiresProject: true
+        },
+        {
+          icon: <List size={18} />,
+          label: 'All Cases',
+          to: '/test-manager/cases',
+          subItems: [],
+          requiresProject: true
+        },
+        {
+          icon: <ClipboardList size={18} />,
+          label: 'Test Runs',
+          to: '/test-manager/runs',
+          subItems: [],
+          requiresProject: true
+        },
+        {
+          icon: <Bug size={18} />,
+          label: 'Tickets',
+          to: '/test-manager/tickets',
+          subItems: [],
+          requiresProject: true
+        },
+        {
+          icon: <PieChart size={18} />,
+          label: 'Analytics',
+          to: '/analytics',
+          subItems: []
+        },
+      ];
 
   return (
     <div className={`bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-700 h-screen flex flex-col transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
@@ -145,8 +165,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3">
-        {/* Active Client Indicator — above Project */}
-        {!isCollapsed && currentClient && (
+        {/* Active Client Indicator — above Project — hidden for Super Admin */}
+        {!isCollapsed && !isSuperAdmin && currentClient && (
           <div className="mb-3">
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:bg-blue-900/20 dark:border-blue-800 dark:shadow-none">
               <div className="flex items-center gap-3">
@@ -161,8 +181,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
             </div>
           </div>
         )}
-        {/* Active Project Indicator */}
-        {!isCollapsed && activeProject && currentProject && (
+        {/* Active Project Indicator — hidden for Super Admin */}
+        {!isCollapsed && !isSuperAdmin && activeProject && currentProject && (
           <div className="mb-4">
             <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:bg-gray-800 dark:border-gray-700 dark:shadow-none">
               <div className="flex items-center gap-3">

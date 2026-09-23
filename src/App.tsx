@@ -23,6 +23,8 @@ const TestRunsPage = React.lazy(() => import("./pages/testManager/TestRunsPage")
 const TicketsPage = React.lazy(() => import("./pages/testManager/TicketsPage"));
 const ClientsPage = React.lazy(() => import("./pages/admin/ClientsPage"));
 const ClientDetailPage = React.lazy(() => import("./pages/admin/ClientDetailPage"));
+const ClientDashboardPage = React.lazy(() => import("./pages/admin/ClientDashboardPage"));
+const ClientAnalyticsPage = React.lazy(() => import("./pages/admin/ClientAnalyticsPage"));
 
 // Non-lazy imports (needed immediately)
 import AppLayout from "./components/AppLayout";
@@ -62,6 +64,20 @@ const SuperAdminRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   if (!user?.isVerified) return <Navigate to='/verify-email' replace />;
   if ((user as any)?.role !== 'super_admin') return <Navigate to='/' replace />;
   return <>{children}</>;
+};
+
+const ClientRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
+  const { isAuthenticated, user } = useAuthStore();
+  if (!isAuthenticated) return <Navigate to='/login' replace />;
+  if (!user?.isVerified) return <Navigate to='/verify-email' replace />;
+  if ((user as any)?.role === 'super_admin') return <Navigate to='/admin/dashboard' replace />;
+  return <>{children}</>;
+};
+
+const SuperAdminRedirect: React.FC = () => {
+  const { user } = useAuthStore();
+  if ((user as any)?.role === 'super_admin') return <Navigate to='/admin/dashboard' replace />;
+  return <Navigate to='/dashboard' replace />;
 };
 
 // redirect authenticated users to the home page
@@ -177,17 +193,17 @@ function App() {
                 </ErrorBoundary>
               </ProtectedRoute>
             }>
-              <Route index element={<DashboardPage />} />
-              <Route path='dashboard' element={<DashboardPage />} />
+              <Route index element={<SuperAdminRedirect />} />
+              <Route path='dashboard' element={<ClientRoute><DashboardPage /></ClientRoute>} />
 
-              <Route path='analytics' element={<AnalyticsPage />} />
+              <Route path='analytics' element={<ClientRoute><AnalyticsPage /></ClientRoute>} />
 
               <Route path='settings' element={<SettingsPage />} />
 
               <Route path='drive-oauth-redirect' element={<DriveOAuthRedirect />} />
 
-              {/* Test Manager Routes */}
-              <Route path='test-manager' element={<TestManagerLayout />}>
+              {/* Test Manager Routes — hidden for Super Admin */}
+              <Route path='test-manager' element={<ClientRoute><TestManagerLayout /></ClientRoute>}>
                 <Route index element={<Navigate to="/test-manager/projects" replace />} />
                 <Route path='projects' element={<ProjectsPage />} />
                 <Route path='cases' element={<TestCasesPage />} />
@@ -196,9 +212,11 @@ function App() {
                 <Route path='tickets' element={<TicketsPage />} />
               </Route>
 
-              {/* Super Admin */}
+              {/* Super Admin — Client Management only */}
+              <Route path='admin/dashboard' element={<SuperAdminRoute><ClientDashboardPage /></SuperAdminRoute>} />
               <Route path='admin/clients' element={<SuperAdminRoute><ClientsPage /></SuperAdminRoute>} />
               <Route path='admin/clients/:displayId' element={<SuperAdminRoute><ClientDetailPage /></SuperAdminRoute>} />
+              <Route path='admin/analytics' element={<SuperAdminRoute><ClientAnalyticsPage /></SuperAdminRoute>} />
             </Route>
 
             <Route path='*' element={<Navigate to='/' replace />} />
