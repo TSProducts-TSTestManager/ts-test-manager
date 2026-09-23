@@ -7,6 +7,11 @@ export interface Client {
   status: 'active' | 'suspended';
   plan: 'free' | 'starter' | 'pro' | 'enterprise';
   maxUsers: number;
+  contactFirstName?: string;
+  contactLastName?: string;
+  mobile?: string;
+  whatsapp?: string;
+  whatsappSameAsMobile?: boolean;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -32,6 +37,11 @@ export interface ClientUser {
   _id: string;
   email: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
+  mobile?: string;
+  whatsapp?: string;
+  whatsappSameAsMobile?: boolean;
   role: 'super_admin' | 'client_admin' | 'member' | 'viewer';
   status: 'active' | 'inactive';
   clientId?: string;

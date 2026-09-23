@@ -8,7 +8,7 @@ const ClientsPage: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: '', description: '', plan: 'starter', maxUsers: 10 });
+  const [form, setForm] = useState({ firstName: '', lastName: '', name: '', description: '', plan: 'starter', maxUsers: 10, mobile: '', whatsapp: '', whatsappSameAsMobile: false });
   const [usageMap, setUsageMap] = useState<Record<string, SeatUsage>>({});
   const navigate = useNavigate();
 
@@ -27,10 +27,22 @@ const ClientsPage: React.FC = () => {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await createClient(form);
-      toast.success('Client created: ' + form.name);
+      const payload: any = {
+        description: form.description,
+        plan: form.plan,
+        maxUsers: form.maxUsers,
+        firstName: form.firstName,
+        lastName: form.lastName,
+        mobile: form.mobile || undefined,
+        whatsapp: form.whatsappSameAsMobile ? form.mobile : (form.whatsapp || undefined),
+        whatsappSameAsMobile: form.whatsappSameAsMobile,
+      };
+      payload.name = `${form.firstName} ${form.lastName}`.trim() || form.name;
+      if (!payload.name) { toast.error('First Name & Last Name required'); return; }
+      await createClient(payload);
+      toast.success('Client created: ' + payload.name);
       setShowCreate(false);
-      setForm({ name: '', description: '', plan: 'starter', maxUsers: 10 });
+      setForm({ firstName: '', lastName: '', name: '', description: '', plan: 'starter', maxUsers: 10, mobile: '', whatsapp: '', whatsappSameAsMobile: false });
       load();
     } catch (e: any) { toast.error(e.message); }
   };
@@ -69,15 +81,25 @@ const ClientsPage: React.FC = () => {
       </div>
       {clients.length === 0 && <div className="text-center text-gray-500 py-10">No clients yet. Create CLT-0001.</div>}
       {showCreate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <form onSubmit={handleCreate} className="bg-white dark:bg-gray-800 p-6 rounded-lg w-full max-w-md space-y-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <form onSubmit={handleCreate} className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-bold">Create Client</h2>
-            <input placeholder="Name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full border p-2 rounded" required />
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="First Name *" value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} className="border p-2 rounded" required />
+              <input placeholder="Last Name *" value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} className="border p-2 rounded" required />
+            </div>
             <input placeholder="Description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="w-full border p-2 rounded" />
-            <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value })} className="w-full border p-2 rounded">
-              <option value="free">free (3)</option><option value="starter">starter (10)</option><option value="pro">pro (25)</option><option value="enterprise">enterprise (∞)</option>
-            </select>
-            <input type="number" placeholder="Max Users" value={form.maxUsers} onChange={e => setForm({ ...form, maxUsers: parseInt(e.target.value) || 0 })} className="w-full border p-2 rounded" required />
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="Mobile (optional)" value={form.mobile} onChange={e => setForm({ ...form, mobile: e.target.value })} className="border p-2 rounded" />
+              <input placeholder="Whatsapp (optional)" value={form.whatsappSameAsMobile ? form.mobile : form.whatsapp} onChange={e => setForm({ ...form, whatsapp: e.target.value })} disabled={form.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-100" />
+            </div>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.whatsappSameAsMobile} onChange={e => setForm({ ...form, whatsappSameAsMobile: e.target.checked })} /> Whatsapp same as Mobile</label>
+            <div className="grid grid-cols-2 gap-3">
+              <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value })} className="border p-2 rounded">
+                <option value="free">free (3)</option><option value="starter">starter (10)</option><option value="pro">pro (25)</option><option value="enterprise">enterprise (∞)</option>
+              </select>
+              <input type="number" placeholder="Max Users" value={form.maxUsers} onChange={e => setForm({ ...form, maxUsers: parseInt(e.target.value) || 0 })} className="border p-2 rounded" required />
+            </div>
             <div className="flex gap-2 justify-end">
               <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border rounded">Cancel</button>
               <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">Create</button>

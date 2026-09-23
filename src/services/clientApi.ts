@@ -15,7 +15,7 @@ export const getClients = async (): Promise<Client[]> => {
   return res.data.data || [];
 };
 
-export const createClient = async (data: { name: string; description?: string; plan?: string; maxUsers: number }): Promise<Client> => {
+export const createClient = async (data: { name?: string; description?: string; plan?: string; maxUsers: number; firstName?: string; lastName?: string; mobile?: string; whatsapp?: string; whatsappSameAsMobile?: boolean }): Promise<Client> => {
   const res = await axios.post<ApiResponse<Client>>(`${API_URL}/clients`, data);
   if (!res.data.data) throw new Error('No data');
   return res.data.data;
@@ -38,7 +38,7 @@ export const getClientUsers = async (displayId: string, status: 'active'|'inacti
   return res.data.data || [];
 };
 
-export const createClientAdmin = async (displayId: string, data: { email: string; name: string; tempPassword?: string }) => {
+export const createClientAdmin = async (displayId: string, data: { email: string; name?: string; tempPassword?: string; firstName?: string; lastName?: string; mobile?: string; whatsapp?: string; whatsappSameAsMobile?: boolean }) => {
   const res = await axios.post(`${API_URL}/clients/${displayId}/admins`, data);
   return res.data;
 };
