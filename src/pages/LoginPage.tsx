@@ -130,11 +130,7 @@ const LoginPage: React.FC = () => {
 								<span className="text-[10px] font-medium tracking-wide text-gray-400 flex items-center gap-1.5"><img src="/logo.png" alt="TechSignific" className="w-3 h-3 rounded-sm object-contain opacity-80" /><span><span className="text-amber-400">Tech</span><span style={{ color: "rgb(46,92,116)" }}>Signific</span></span></span>
 							</div>
 						</div>
-						<div className="px-6 pt-2 pb-5">
-							<div className="mb-4 text-center">
-								<h2 className="text-[20px] font-bold tracking-tight text-white">Welcome back</h2>
-								<p className="text-xs text-gray-400 mt-1">Sign in to your TSTestManager workspace</p>
-							</div>
+						<div className="px-6 pt-6 pb-5">
 							<form onSubmit={handleLogin} className="space-y-3">
 								<Input icon={Mail} type="email" placeholder="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}" title="Please enter a valid email address" required />
 								<Input icon={Lock} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
