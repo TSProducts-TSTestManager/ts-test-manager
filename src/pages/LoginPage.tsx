@@ -130,7 +130,7 @@ const LoginPage: React.FC = () => {
 								<span className="text-[10px] font-medium tracking-wide text-gray-400 flex items-center gap-1.5"><img src="/logo.png" alt="TechSignific" className="w-3 h-3 rounded-sm object-contain opacity-80" /><span><span className="text-amber-400">Tech</span><span style={{ color: "rgb(46,92,116)" }}>Signific</span></span></span>
 							</div>
 						</div>
-						<div className="bg-gray-900 rounded-2xl shadow-[0_16px_40px_-16px_rgba(0,0,0,0.5)] border border-gray-800 overflow-hidden">
+						<div className="bg-gray-900 rounded-2xl shadow-[0_16px_40px_-16px_rgba(0,0,0,0.5)] border-2 border-amber-400/60 shadow-[0_0_0_1px_rgba(251,191,36,0.1),0_8px_32px_rgba(251,191,36,0.15),0_16px_40px_-16px_rgba(0,0,0,0.5)] overflow-hidden">
 							<div className="px-6 pt-6 pb-5">
 								<div className="mb-4 text-center">
 									<h2 className="text-[20px] font-bold tracking-tight text-white">Welcome back</h2>
