@@ -53,17 +53,30 @@ export interface ProjectStats {
   suites: number;
   cases: number;
   members: number;
+  bugs?: number;
+  openBugs?: number;
+}
+
+export interface ProjectJira {
+  enabled: boolean;
+  domain: string;
+  projectKey: string;
+  defaultIssueType?: string;
 }
 
 // Project API Response
 export interface ProjectResponse {
   id: string;
+  displayId?: string;
+  seq?: number;
+  clientId?: string;
   name: string;
   description?: string;
   color: string;
   ownerId: string;
   members: ProjectMember[];
   stats: ProjectStats;
+  jira?: ProjectJira;
   createdAt: string;
   updatedAt: string;
 }
@@ -102,6 +115,7 @@ export interface HistoryEntryResponse {
 // Test Case API Response
 export interface TestCaseResponse {
   id: string;
+  displayId?: string;
   title: string;
   priority: Priority;
   status: Status;

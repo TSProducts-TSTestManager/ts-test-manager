@@ -178,7 +178,7 @@ const SortableRow: React.FC<SortableRowProps> = React.memo(({
             {/* ID Column */}
             {!hiddenColumns.id && (
                 <td className={`py-2 ${isSelectionMode ? 'pl-2' : enableReorder ? 'pl-2' : 'pl-6'} pr-4 text-sm font-medium text-gray-500 dark:text-gray-400 font-mono tracking-tight group-hover:text-gray-900 dark:group-hover:text-gray-200`}>
-                    <IdDisplay id={item.id} />
+                    <IdDisplay id={item.displayId || item.id} />
                 </td>
             )}
 

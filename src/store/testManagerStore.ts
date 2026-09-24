@@ -56,17 +56,22 @@ const initialFilters: TestCaseFilters = {
 // Helper to convert API response to frontend types
 export const mapProjectResponse = (p: ProjectResponse): Project => ({
     id: p.id,
+    displayId: p.displayId,
+    seq: p.seq,
+    clientId: p.clientId,
     name: p.name,
     description: p.description || '',
     color: p.color,
     ownerId: p.ownerId,
     members: p.members,
     stats: p.stats,
+    jira: p.jira,
     updatedAt: p.updatedAt,
 });
 
 export const mapTestCaseResponse = (tc: TestCaseResponse): TestCase => ({
     id: tc.id,
+    displayId: tc.displayId,
     title: tc.title,
     priority: tc.priority as Priority,
     status: tc.status as Status,

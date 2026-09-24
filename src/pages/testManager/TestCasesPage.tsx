@@ -755,6 +755,7 @@ const TestCasesPage: React.FC = () => {
             cases = cases.filter(tc =>
                 tc.title.toLowerCase().includes(query) ||
                 tc.id.toLowerCase().includes(query) ||
+                (tc.displayId || '').toLowerCase().includes(query) ||
                 (tc.area && tc.area.toLowerCase().includes(query))
             );
         }

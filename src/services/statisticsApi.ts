@@ -9,6 +9,10 @@ export interface DashboardStats {
     suitesAddedToday: number;
     totalTestCases: number;
     testCasesModifiedToday: number;
+    totalTickets?: number;
+    openTickets?: number;
+    totalRuns?: number;
+    activeRuns?: number;
     chartData: {
         name: string;
         value: number;

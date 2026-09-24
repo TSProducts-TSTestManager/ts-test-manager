@@ -75,6 +75,9 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({ stayOnPage = false })
                                     <Folder className="h-4 w-4" />
                                 </div>
                                 <span className="flex-1 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    {project.displayId && (
+                                        <span className="font-mono text-xs text-gray-400 dark:text-gray-500 mr-1.5">{project.displayId}</span>
+                                    )}
                                     {project.name}
                                 </span>
                                 {activeProject === project.id && (

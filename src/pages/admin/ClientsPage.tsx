@@ -205,42 +205,78 @@ const ClientsPage: React.FC = () => {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <form onSubmit={handleCreate} className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-bold">Create Client</h2>
-            <input placeholder="Client Name *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full border p-2 rounded" required />
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Client Name *</label>
+              <input placeholder="e.g. TSInternal" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full border p-2 rounded" required />
+            </div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact Person</div>
             <div className="grid grid-cols-2 gap-3">
-              <input placeholder="First Name *" value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} className="border p-2 rounded" required />
-              <input placeholder="Last Name *" value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} className="border p-2 rounded" required />
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Contact First Name *</label>
+                <input placeholder="e.g. Pankaj" value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} className="border p-2 rounded w-full" required />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Contact Last Name *</label>
+                <input placeholder="e.g. Kumar" value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} className="border p-2 rounded w-full" required />
+              </div>
             </div>
-            <input placeholder="Description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="w-full border p-2 rounded" />
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Description <span className="font-normal text-gray-400">(optional)</span></label>
+              <input placeholder="Short note about this client" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="w-full border p-2 rounded" />
+            </div>
             <div className="grid grid-cols-2 gap-3">
-              <input placeholder="Mobile (optional)" value={form.mobile} onChange={e => setForm({ ...form, mobile: e.target.value })} className="border p-2 rounded" />
-              <input placeholder="Whatsapp (optional)" value={form.whatsappSameAsMobile ? form.mobile : form.whatsapp} onChange={e => setForm({ ...form, whatsapp: e.target.value })} disabled={form.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-500 dark:disabled:text-gray-400" />
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Mobile Number <span className="font-normal text-gray-400">(10-digit India, optional)</span></label>
+                <input placeholder="9876543210" value={form.mobile} onChange={e => setForm({ ...form, mobile: e.target.value })} className="border p-2 rounded w-full" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Whatsapp Number <span className="font-normal text-gray-400">(optional)</span></label>
+                <input placeholder="9876543210" value={form.whatsappSameAsMobile ? form.mobile : form.whatsapp} onChange={e => setForm({ ...form, whatsapp: e.target.value })} disabled={form.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-500 dark:disabled:text-gray-400" />
+              </div>
             </div>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.whatsappSameAsMobile} onChange={e => setForm({ ...form, whatsappSameAsMobile: e.target.checked })} /> Whatsapp same as Mobile</label>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Address *</div>
-            <input placeholder="Address Line 1 *" value={form.addressLine1} onChange={e => setForm({ ...form, addressLine1: e.target.value })} className="w-full border p-2 rounded" required />
-            <input placeholder="Address Line 2 (optional)" value={form.addressLine2} onChange={e => setForm({ ...form, addressLine2: e.target.value })} className="w-full border p-2 rounded" />
-            <div className="grid grid-cols-2 gap-3">
-              <input placeholder="City *" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} className="border p-2 rounded" required />
-              <select value={form.state} onChange={e => setForm({ ...form, state: e.target.value })} className="border p-2 rounded" required>
-                <option value="">State *</option>{indianStates.map(s=><option key={s} value={s}>{s}</option>)}
-              </select>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Address Line 1 *</label>
+              <input placeholder="Flat / House no., Building, Street" value={form.addressLine1} onChange={e => setForm({ ...form, addressLine1: e.target.value })} className="w-full border p-2 rounded" required />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Address Line 2 <span className="font-normal text-gray-400">(optional)</span></label>
+              <input placeholder="Area, Landmark" value={form.addressLine2} onChange={e => setForm({ ...form, addressLine2: e.target.value })} className="w-full border p-2 rounded" />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <input placeholder="Country *" value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} className="border p-2 rounded" required />
-              <input placeholder="Pin Code * (6 digits)" value={form.pinCode} onChange={e => setForm({ ...form, pinCode: e.target.value })} className="border p-2 rounded" required maxLength={6} />
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">City *</label>
+                <input placeholder="e.g. Mumbai" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} className="border p-2 rounded w-full" required />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">State *</label>
+                <select value={form.state} onChange={e => setForm({ ...form, state: e.target.value })} className="border p-2 rounded w-full" required>
+                  <option value="">Select State</option>{indianStates.map(s=><option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Country *</label>
+                <input placeholder="India" value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} className="border p-2 rounded w-full" required />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">PIN Code * <span className="font-normal text-gray-400">(6-digit)</span></label>
+                <input placeholder="400001" value={form.pinCode} onChange={e => setForm({ ...form, pinCode: e.target.value })} className="border p-2 rounded w-full" required maxLength={6} />
+              </div>
             </div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Plan Details *</div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-gray-500">Plan</label>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Plan *</label>
                 <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value })} className="w-full border p-2 rounded">
                   <option value="free">Free [3 Users]</option><option value="starter">Starter [10 Users]</option><option value="pro">Pro [25 Users]</option><option value="enterprise">Enterprise [Unlimited]</option>
                 </select>
               </div>
               <div>
-                <label className="text-xs text-gray-500">Max Users</label>
-                <input type="number" placeholder="Max Users" value={form.maxUsers} onChange={e => setForm({ ...form, maxUsers: parseInt(e.target.value) || 0 })} className="w-full border p-2 rounded" required />
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Max Users *</label>
+                <input type="number" placeholder="e.g. 5" value={form.maxUsers} onChange={e => setForm({ ...form, maxUsers: parseInt(e.target.value) || 0 })} className="w-full border p-2 rounded" required />
               </div>
             </div>
             <p className="text-xs text-gray-500">Limit: {planLimits[form.plan] === Infinity ? 'Unlimited' : `${planLimits[form.plan]} Users`} → max {getAllowedMax(form.plan) === Infinity ? 'Unlimited' : `${getAllowedMax(form.plan)} Users`} (+50%). Exceed requires plan upgrade.</p>

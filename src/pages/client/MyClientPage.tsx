@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { getClients, getClientUsage, getClientUsers, createClientAdmin, resetClientAdminPassword, deactivateUser, restoreUser, updateClient, updateClientUser } from '../../services/clientApi';
-import { connectJira, disconnectJira, getJiraConfig } from '../../services/jiraApi';
+import { connectMyJira, getMyJira, disconnectMyJira, connectProjectJira, getProjectJira, disconnectProjectJira } from '../../services/jiraApi';
+import { getProjects } from '../../services/testManagerApi';
 import { useAuthStore } from '../../store/authStore';
 import type { Client, ClientUser, SeatUsage } from '../../types/client';
-import { Eye, EyeOff, ShieldCheck, User as UserIcon, Eye as EyeIcon, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Eye, EyeOff, ShieldCheck, User as UserIcon, Eye as EyeIcon, ChevronLeft, ChevronRight, LayoutDashboard, Users, Layers, UserCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const MyClientPage: React.FC = () => {
@@ -11,10 +12,13 @@ const MyClientPage: React.FC = () => {
   const [client, setClient] = useState<Client | null>(null);
   const [usage, setUsage] = useState<SeatUsage | null>(null);
   const [users, setUsers] = useState<ClientUser[]>([]);
-  const [tab, setTab] = useState<'overview' | 'users' | 'jira'>('overview');
-  const [jira, setJira] = useState<any>(null);
+  const [tab, setTab] = useState<'overview' | 'users' | 'myJira' | 'projectJira'>('overview');
+  const [myJira, setMyJira] = useState<any>(null);
+  const [myJiraForm, setMyJiraForm] = useState({ email: '', apiToken: '' });
+  const [projects, setProjects] = useState<any[]>([]);
+  const [projectJiras, setProjectJiras] = useState<Record<string, any>>({});
+  const [projectJiraForms, setProjectJiraForms] = useState<Record<string, { domain: string; projectKey: string }>>({});
   const [invite, setInvite] = useState({ email: '', firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false, tempPassword: '', role: 'client_admin' as 'client_admin'|'member'|'viewer' });
-  const [jiraForm, setJiraForm] = useState({ domain: '', email: '', apiToken: '', projectKey: '' });
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetTarget, setResetTarget] = useState<ClientUser | null>(null);
@@ -69,7 +73,14 @@ const MyClientPage: React.FC = () => {
       });
       try { setUsage(await getClientUsage(c.displayId)); } catch {}
       try { setUsers(await getClientUsers(c.displayId, 'all')); } catch (e:any) { toast.error(e.message); }
-      try { setJira(await getJiraConfig(c.displayId)); } catch {}
+      try { setMyJira(await getMyJira()); } catch {}
+      try {
+        const projs = await getProjects();
+        setProjects(projs as any);
+        for (const p of (projs as any)) {
+          try { const pj = await getProjectJira((p as any).id || (p as any)._id); setProjectJiras(m => ({ ...m, [(p as any).id || (p as any)._id]: pj })); } catch {}
+        }
+      } catch {}
     } catch (e:any) { toast.error(e.message); }
   };
 
@@ -148,9 +159,14 @@ const MyClientPage: React.FC = () => {
       toast.success('User updated'); setShowEditUserModal(false); load();
     } catch(e:any){ toast.error(e.message); }
   };
-  const handleJiraConnect = async (e: React.FormEvent) => {
-    e.preventDefault(); if (!client) return;
-    try { await connectJira(client.displayId, jiraForm); toast.success('JIRA connected'); load(); } catch(e:any){ toast.error(e.message); }
+  const handleMyJiraConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try { await connectMyJira({ email: (myJiraForm as any).email, apiToken: (myJiraForm as any).apiToken }); toast.success('My JIRA connected'); load(); } catch(e:any){ toast.error(e.message); }
+  };
+  const handleProjectJiraConnect = async (projectId: string) => {
+    const f = projectJiraForms[projectId];
+    if (!f?.domain?.trim() || !f?.projectKey?.trim()) { toast.error('Domain and Project Key required (every project)'); return; }
+    try { await connectProjectJira(projectId, { domain: f.domain.trim(), projectKey: f.projectKey.trim() }); toast.success('Project JIRA mapped'); load(); } catch(e:any){ toast.error(e.message); }
   };
 
   if (!client) return <div className="bg-white dark:bg-gray-900 min-h-full p-6">Loading your client...</div>;
@@ -180,45 +196,34 @@ const MyClientPage: React.FC = () => {
           </div>
           {isClientAdmin && <button onClick={()=>setEditingClient(true)} className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg h-fit">Edit</button>}
         </div>
-        {editingClient && isClientAdmin && (
-          <div className="mt-4 border-t pt-4 space-y-3">
-            <input placeholder="Client Name *" value={editForm.clientName} onChange={e=>setEditForm({...editForm,clientName:e.target.value})} className="w-full border p-2 rounded" />
-            <div className="grid grid-cols-2 gap-3">
-              <input placeholder="First Name *" value={editForm.firstName} onChange={e=>setEditForm({...editForm,firstName:e.target.value})} className="border p-2 rounded" />
-              <input placeholder="Last Name *" value={editForm.lastName} onChange={e=>setEditForm({...editForm,lastName:e.target.value})} className="border p-2 rounded" />
-            </div>
-            <input placeholder="Description" value={editForm.description} onChange={e=>setEditForm({...editForm,description:e.target.value})} className="w-full border p-2 rounded" />
-            <div className="grid grid-cols-2 gap-3">
-              <input placeholder="Mobile" value={editForm.mobile} onChange={e=>setEditForm({...editForm,mobile:e.target.value})} className="border p-2 rounded" />
-              <input placeholder="Whatsapp" value={editForm.whatsappSameAsMobile ? editForm.mobile : editForm.whatsapp} onChange={e=>setEditForm({...editForm,whatsapp:e.target.value})} disabled={editForm.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-200 dark:disabled:bg-gray-700" />
-            </div>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editForm.whatsappSameAsMobile} onChange={e=>setEditForm({...editForm,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
-            <input placeholder="Address Line 1 *" value={editForm.addressLine1} onChange={e=>setEditForm({...editForm,addressLine1:e.target.value})} className="w-full border p-2 rounded" />
-            <div className="grid grid-cols-2 gap-3">
-              <input placeholder="City *" value={editForm.city} onChange={e=>setEditForm({...editForm,city:e.target.value})} className="border p-2 rounded" />
-              <select value={editForm.state} onChange={e=>setEditForm({...editForm,state:e.target.value})} className="border p-2 rounded"><option value="">State *</option>{indianStates.map(s=><option key={s} value={s}>{s}</option>)}</select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <input placeholder="Country *" value={editForm.country} onChange={e=>setEditForm({...editForm,country:e.target.value})} className="border p-2 rounded" />
-              <input placeholder="Pin *" value={editForm.pinCode} onChange={e=>setEditForm({...editForm,pinCode:e.target.value})} className="border p-2 rounded" maxLength={6} />
-            </div>
-            <div className="flex gap-2 justify-end">
-              <button onClick={()=>setEditingClient(false)} className="border px-4 py-2 rounded">Cancel</button>
-              <button onClick={handleSaveClient} className="bg-blue-600 text-white px-4 py-2 rounded">Save</button>
-            </div>
-          </div>
-        )}
       </div>
 
-      <div className="flex gap-4 border-b">
-        <button onClick={()=>setTab('overview')} className={`pb-2 text-sm ${tab==='overview'?'border-b-2 border-blue-600 text-blue-600':''}`}>Overview</button>
-        <button onClick={()=>setTab('users')} className={`pb-2 text-sm ${tab==='users'?'border-b-2 border-blue-600 text-blue-600':''}`}>Users ({active})</button>
-        <button onClick={()=>setTab('jira')} className={`pb-2 text-sm ${tab==='jira'?'border-b-2 border-blue-600 text-blue-600':''}`}>JIRA</button>
+      <div className="bg-gray-50 dark:bg-gray-800/30 rounded-xl p-1.5 flex gap-1.5 overflow-x-auto">
+        {[
+          { id: 'overview', label: 'Overview', icon: LayoutDashboard, count: null },
+          { id: 'users', label: 'Users', icon: Users, count: active },
+          { id: 'myJira', label: 'My JIRA', icon: UserCircle, count: myJira?.enabled ? 1 : 0 },
+          { id: 'projectJira', label: 'Project JIRA', icon: Layers, count: projects.length },
+        ].map(t => {
+          const Icon = t.icon as any;
+          const isActive = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={()=>setTab(t.id as any)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-900'}`}
+            >
+              <Icon size={14} />
+              {t.label}
+              {t.count !== null && <span className={`ml-1 px-1.5 py-0.5 rounded-full text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>{t.count}</span>}
+            </button>
+          );
+        })}
       </div>
 
       {tab==='overview' && (
         <div className="bg-white dark:bg-gray-800 rounded-2xl border p-5 space-y-3">
-          <h3 className="font-semibold">Client Overview</h3>
+          <h3 className="font-semibold flex items-center gap-2"><LayoutDashboard size={16} className="text-blue-600" /> Client Overview <span className="text-xs font-normal text-gray-400">— Professional summary for easy management</span></h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
             <div className="bg-gray-50 dark:bg-gray-700/30 p-3 rounded-xl"><div className="text-gray-400 uppercase">Seats</div><div className="font-bold text-lg">{usage ? `${usage.active}/${usage.max===-1?'∞':usage.max}` : '—'}</div></div>
             <div className="bg-gray-50 dark:bg-gray-700/30 p-3 rounded-xl"><div className="text-gray-400 uppercase">Plan</div><div className="font-bold capitalize">{client.plan}</div></div>
@@ -232,7 +237,7 @@ const MyClientPage: React.FC = () => {
       {tab==='users' && (
         <>
           <div className="flex justify-between items-center">
-            <h3 className="font-semibold">Users</h3>
+            <h3 className="font-semibold flex items-center gap-2"><Users size={16} className="text-blue-600" /> Users <span className="text-xs font-normal text-gray-400">— Manage team, roles & seats</span></h3>
             <button onClick={()=>setShowInviteModal(true)} disabled={!!full} className={`px-3 py-1.5 rounded-lg text-sm text-white ${full?'bg-gray-400':'bg-blue-600'}`}>+ Add User</button>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
@@ -297,20 +302,144 @@ const MyClientPage: React.FC = () => {
         </>
       )}
 
-      {tab==='jira' && (
+      {tab==='myJira' && (
         <div className="bg-white dark:bg-gray-800 rounded-2xl border p-4 space-y-3">
-          <h3 className="font-semibold">JIRA — {isClientAdmin ? 'Configure' : 'View'}</h3>
-          <div className="text-xs text-gray-500">Current: {jira?.enabled ? `${jira.domain} / ${jira.projectKey}` : 'Not connected'}</div>
-          {isClientAdmin ? (
-            <form onSubmit={handleJiraConnect} className="space-y-2">
-              <input placeholder="Domain (xxx.atlassian.net)" value={jiraForm.domain} onChange={e=>setJiraForm({...jiraForm,domain:e.target.value})} className="w-full border p-2 rounded" required />
-              <input placeholder="Email" value={jiraForm.email} onChange={e=>setJiraForm({...jiraForm,email:e.target.value})} className="w-full border p-2 rounded" required />
-              <input placeholder="API Token" value={jiraForm.apiToken} onChange={e=>setJiraForm({...jiraForm,apiToken:e.target.value})} className="w-full border p-2 rounded" required />
-              <input placeholder="Project Key" value={jiraForm.projectKey} onChange={e=>setJiraForm({...jiraForm,projectKey:e.target.value})} className="w-full border p-2 rounded" required />
-              <button className="bg-blue-600 text-white px-3 py-1.5 rounded">Connect / Update</button>
-              {jira?.enabled && <button type="button" onClick={async()=>{await disconnectJira(client.displayId); load();}} className="ml-2 border px-3 py-1.5 rounded">Disconnect</button>}
-            </form>
-          ) : <p className="text-xs text-gray-500">Only Client Admin can configure JIRA.</p>}
+          <h3 className="font-semibold flex items-center gap-2"><UserCircle size={16} className="text-blue-600" /> My JIRA — Per-User</h3>
+          <p className="text-xs text-gray-500">Your personal Atlassian <span className="font-medium">email + API token</span> (own cred, real-time verify). Same token can be reused with different email. Paired with Project's domain/projectKey on bug create/link.</p>
+          <div className="text-xs">Current: {myJira?.enabled ? `${myJira.email} • Connected` : 'Not connected'}</div>
+          <form onSubmit={handleMyJiraConnect} className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Atlassian Email</label>
+              <input placeholder="you@company.com" value={myJiraForm.email} onChange={e=>setMyJiraForm({...myJiraForm, email:e.target.value})} className="w-full border p-2 rounded" required />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">API Token <span className="font-normal text-gray-400">(id.atlassian.com — same token can be used with different email)</span></label>
+              <input placeholder="Paste your Atlassian API token" value={myJiraForm.apiToken} onChange={e=>setMyJiraForm({...myJiraForm, apiToken:e.target.value})} className="w-full border p-2 rounded" required />
+            </div>
+            <div className="flex gap-2">
+              <button className="bg-blue-600 text-white px-3 py-1.5 rounded">Connect My JIRA</button>
+              {myJira?.enabled && <button type="button" onClick={async()=>{await disconnectMyJira(); toast.success('My JIRA disconnected'); load();}} className="border px-3 py-1.5 rounded">Disconnect</button>}
+            </div>
+          </form>
+        </div>
+      )}
+
+      {tab==='projectJira' && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border p-4 space-y-3">
+          <h3 className="font-semibold flex items-center gap-2"><Layers size={16} className="text-blue-600" /> Project JIRA — Per-Project</h3>
+          <p className="text-xs text-gray-500">Every project has its own <span className="font-medium">domain + projectKey</span>. Bug creation uses <span className="font-medium">your email/token + this project's mapping</span> (verified real-time via <span className="font-mono">/rest/api/3/myself</span>).</p>
+          <div className="space-y-4">
+            {projects.map(p=> {
+              const pid = (p as any).id || (p as any)._id;
+              const pj = projectJiras[pid];
+              const form = projectJiraForms[pid] || { domain: '', projectKey: '' };
+              return (
+                <div key={pid} className="border rounded-xl p-3 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium text-sm">{(p as any).name} <span className="font-mono text-xs text-gray-500">{(p as any).displayId || ''}</span></span>
+                    <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700">{pj?.enabled ? `${pj.domain} / ${pj.projectKey}` : 'Not mapped'}</span>
+                  </div>
+                  {isClientAdmin ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">JIRA Domain</label>
+                        <input placeholder="xxx.atlassian.net" value={form.domain} onChange={e=>setProjectJiraForms(m=>({...m, [pid]: {...(m[pid]||{domain:'',projectKey:''}), domain:e.target.value}}))} className="border p-2 rounded text-sm w-full" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Project Key</label>
+                        <input placeholder="ACME" value={form.projectKey} onChange={e=>setProjectJiraForms(m=>({...m, [pid]: {...(m[pid]||{domain:'',projectKey:''}), projectKey:e.target.value.toUpperCase()}}))} className="border p-2 rounded text-sm font-mono uppercase w-full" />
+                      </div>
+                      <div className="col-span-2 flex gap-2">
+                        <button onClick={()=>handleProjectJiraConnect(pid)} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm whitespace-nowrap">Map</button>
+                        {pj?.enabled && <button onClick={async()=>{await disconnectProjectJira(pid); toast.success('Project JIRA cleared'); load();}} className="border px-3 py-1.5 rounded text-sm">Clear</button>}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">Only Client Admin can map. Current: {pj?.enabled ? `${pj.domain} / ${pj.projectKey}` : '—'}</p>
+                  )}
+                </div>
+              );
+            })}
+            {projects.length===0 && <p className="text-sm text-gray-400">No projects yet — create a project first</p>}
+          </div>
+        </div>
+      )}
+
+      {editingClient && isClientAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={()=>setEditingClient(false)} />
+          <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Edit Client — {client.displayId}</h3>
+              <button onClick={()=>setEditingClient(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xl leading-none">&times;</button>
+            </div>
+            <div className="text-xs text-gray-500 bg-gray-50 dark:bg-gray-700/50 p-3 rounded">
+              Client: <span className="font-medium">{client.name}</span> ({client.displayId}) • Plan {client.plan} • Seats {usage ? `${usage.active}/${usage.max===-1?'∞':usage.max}` : ''}
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Client Name *</label>
+                <input placeholder="e.g. TSInternal" value={editForm.clientName} onChange={e=>setEditForm({...editForm,clientName:e.target.value})} className="w-full border p-2 rounded" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Contact First Name *</label>
+                  <input placeholder="e.g. Pankaj" value={editForm.firstName} onChange={e=>setEditForm({...editForm,firstName:e.target.value})} className="border p-2 rounded w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Contact Last Name *</label>
+                  <input placeholder="e.g. Kumar" value={editForm.lastName} onChange={e=>setEditForm({...editForm,lastName:e.target.value})} className="border p-2 rounded w-full" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Description <span className="font-normal text-gray-400">(optional)</span></label>
+                <input placeholder="Short note about this client" value={editForm.description} onChange={e=>setEditForm({...editForm,description:e.target.value})} className="w-full border p-2 rounded" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Mobile Number <span className="font-normal text-gray-400">(10-digit India)</span></label>
+                  <input placeholder="9876543210" value={editForm.mobile} onChange={e=>setEditForm({...editForm,mobile:e.target.value})} className="border p-2 rounded w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Whatsapp Number</label>
+                  <input placeholder="9876543210" value={editForm.whatsappSameAsMobile ? editForm.mobile : editForm.whatsapp} onChange={e=>setEditForm({...editForm,whatsapp:e.target.value})} disabled={editForm.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200 dark:disabled:bg-gray-700" />
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editForm.whatsappSameAsMobile} onChange={e=>setEditForm({...editForm,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Address Line 1 *</label>
+                <input placeholder="Flat / House no., Building, Street" value={editForm.addressLine1} onChange={e=>setEditForm({...editForm,addressLine1:e.target.value})} className="w-full border p-2 rounded" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Address Line 2 <span className="font-normal text-gray-400">(optional)</span></label>
+                <input placeholder="Area, Landmark" value={editForm.addressLine2} onChange={e=>setEditForm({...editForm,addressLine2:e.target.value})} className="w-full border p-2 rounded" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">City *</label>
+                  <input placeholder="e.g. Mumbai" value={editForm.city} onChange={e=>setEditForm({...editForm,city:e.target.value})} className="border p-2 rounded w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">State *</label>
+                  <select value={editForm.state} onChange={e=>setEditForm({...editForm,state:e.target.value})} className="border p-2 rounded w-full"><option value="">Select State</option>{indianStates.map(s=><option key={s} value={s}>{s}</option>)}</select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Country *</label>
+                  <input placeholder="India" value={editForm.country} onChange={e=>setEditForm({...editForm,country:e.target.value})} className="border p-2 rounded w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">PIN Code * <span className="font-normal text-gray-400">(6-digit)</span></label>
+                  <input placeholder="400001" value={editForm.pinCode} onChange={e=>setEditForm({...editForm,pinCode:e.target.value})} className="border p-2 rounded w-full" maxLength={6} />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2 border-t border-gray-100 dark:border-gray-700">
+              <button onClick={()=>setEditingClient(false)} className="border px-4 py-2 rounded">Cancel</button>
+              <button onClick={handleSaveClient} className="bg-blue-600 text-white px-4 py-2 rounded">Save</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -320,20 +449,41 @@ const MyClientPage: React.FC = () => {
           <div className="relative bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-lg space-y-3 max-h-[90vh] overflow-y-auto">
             <h3 className="font-semibold">Add User — {client.displayId}</h3>
             <form onSubmit={handleInvite} className="space-y-3">
-              <input placeholder="Email *" value={invite.email} onChange={e=>setInvite({...invite,email:e.target.value})} className="w-full border p-2 rounded" required />
-              <div className="grid grid-cols-2 gap-3">
-                <input placeholder="First Name *" value={invite.firstName} onChange={e=>setInvite({...invite,firstName:e.target.value})} className="border p-2 rounded" required />
-                <input placeholder="Last Name *" value={invite.lastName} onChange={e=>setInvite({...invite,lastName:e.target.value})} className="border p-2 rounded" required />
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Email *</label>
+                <input placeholder="user@company.com" value={invite.email} onChange={e=>setInvite({...invite,email:e.target.value})} className="w-full border p-2 rounded" required />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <input placeholder="Mobile" value={invite.mobile} onChange={e=>setInvite({...invite,mobile:e.target.value})} className="border p-2 rounded" />
-                <input placeholder="Whatsapp" value={invite.whatsappSameAsMobile ? invite.mobile : invite.whatsapp} onChange={e=>setInvite({...invite,whatsapp:e.target.value})} disabled={invite.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-200" />
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">First Name *</label>
+                  <input placeholder="e.g. Pankaj" value={invite.firstName} onChange={e=>setInvite({...invite,firstName:e.target.value})} className="border p-2 rounded w-full" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Last Name *</label>
+                  <input placeholder="e.g. Kumar" value={invite.lastName} onChange={e=>setInvite({...invite,lastName:e.target.value})} className="border p-2 rounded w-full" required />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Mobile Number <span className="font-normal text-gray-400">(10-digit India)</span></label>
+                  <input placeholder="9876543210" value={invite.mobile} onChange={e=>setInvite({...invite,mobile:e.target.value})} className="border p-2 rounded w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Whatsapp Number</label>
+                  <input placeholder="9876543210" value={invite.whatsappSameAsMobile ? invite.mobile : invite.whatsapp} onChange={e=>setInvite({...invite,whatsapp:e.target.value})} disabled={invite.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200" />
+                </div>
               </div>
               <label className="flex gap-2 text-sm"><input type="checkbox" checked={invite.whatsappSameAsMobile} onChange={e=>setInvite({...invite,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
-              <select value={invite.role} onChange={e=>setInvite({...invite,role:e.target.value as any})} className="w-full border p-2 rounded">
-                <option value="client_admin">Client Admin</option><option value="member">Member</option><option value="viewer">Viewer</option>
-              </select>
-              <input placeholder="Temp Password (auto if blank)" value={invite.tempPassword} onChange={e=>setInvite({...invite,tempPassword:e.target.value})} className="w-full border p-2 rounded" />
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Role *</label>
+                <select value={invite.role} onChange={e=>setInvite({...invite,role:e.target.value as any})} className="w-full border p-2 rounded">
+                  <option value="client_admin">Client Admin</option><option value="member">Member</option><option value="viewer">Viewer</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Temp Password <span className="font-normal text-gray-400">(auto-generated if blank)</span></label>
+                <input placeholder="Leave blank to auto-generate" value={invite.tempPassword} onChange={e=>setInvite({...invite,tempPassword:e.target.value})} className="w-full border p-2 rounded" />
+              </div>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={()=>setShowInviteModal(false)} className="border px-4 py-2 rounded">Cancel</button>
                 <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">Add</button>
@@ -348,9 +498,12 @@ const MyClientPage: React.FC = () => {
           <div className="absolute inset-0 bg-black/50" onClick={()=>setShowResetModal(false)} />
           <div className="relative bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-md space-y-3">
             <h3 className="font-semibold">Reset Password — {resetTarget.email}</h3>
-            <div className="relative">
-              <input type={showResetEye ? "text" : "password"} value={resetPwd} onChange={e=>setResetPwd(e.target.value)} placeholder="New temp password" className="w-full border p-2 rounded pr-10" />
-              <button type="button" onClick={()=>setShowResetEye(!showResetEye)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400">{showResetEye ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">New Temp Password</label>
+              <div className="relative">
+                <input type={showResetEye ? "text" : "password"} value={resetPwd} onChange={e=>setResetPwd(e.target.value)} placeholder="Enter new temporary password" className="w-full border p-2 rounded pr-10" />
+                <button type="button" onClick={()=>setShowResetEye(!showResetEye)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400">{showResetEye ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+              </div>
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={()=>setShowResetModal(false)} className="border px-4 py-2 rounded">Cancel</button>
@@ -380,12 +533,24 @@ const MyClientPage: React.FC = () => {
           <div className="relative bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-lg space-y-3">
             <h3 className="font-semibold">Edit User — {editUserTarget.email}</h3>
             <div className="grid grid-cols-2 gap-3">
-              <input placeholder="First Name *" value={editUserForm.firstName} onChange={e=>setEditUserForm({...editUserForm,firstName:e.target.value})} className="border p-2 rounded" />
-              <input placeholder="Last Name *" value={editUserForm.lastName} onChange={e=>setEditUserForm({...editUserForm,lastName:e.target.value})} className="border p-2 rounded" />
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">First Name *</label>
+                <input placeholder="e.g. Pankaj" value={editUserForm.firstName} onChange={e=>setEditUserForm({...editUserForm,firstName:e.target.value})} className="border p-2 rounded w-full" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Last Name *</label>
+                <input placeholder="e.g. Kumar" value={editUserForm.lastName} onChange={e=>setEditUserForm({...editUserForm,lastName:e.target.value})} className="border p-2 rounded w-full" />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <input placeholder="Mobile" value={editUserForm.mobile} onChange={e=>setEditUserForm({...editUserForm,mobile:e.target.value})} className="border p-2 rounded" />
-              <input placeholder="Whatsapp" value={editUserForm.whatsappSameAsMobile ? editUserForm.mobile : editUserForm.whatsapp} onChange={e=>setEditUserForm({...editUserForm,whatsapp:e.target.value})} disabled={editUserForm.whatsappSameAsMobile} className="border p-2 rounded disabled:bg-gray-200" />
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Mobile Number <span className="font-normal text-gray-400">(10-digit India)</span></label>
+                <input placeholder="9876543210" value={editUserForm.mobile} onChange={e=>setEditUserForm({...editUserForm,mobile:e.target.value})} className="border p-2 rounded w-full" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Whatsapp Number</label>
+                <input placeholder="9876543210" value={editUserForm.whatsappSameAsMobile ? editUserForm.mobile : editUserForm.whatsapp} onChange={e=>setEditUserForm({...editUserForm,whatsapp:e.target.value})} disabled={editUserForm.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200" />
+              </div>
             </div>
             <label className="flex gap-2 text-sm"><input type="checkbox" checked={editUserForm.whatsappSameAsMobile} onChange={e=>setEditUserForm({...editUserForm,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
             <div className="flex justify-end gap-2">

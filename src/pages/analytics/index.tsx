@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { reportingApi } from '../../services/reportingApi';
 import { testRunApi } from '../../services/testRunApi';
-import { exportReportToCSV, exportReportToPDF } from '../../utils/exportReports';
+import { exportReportToCSV, exportReportToPDF, exportReportToExcel } from '../../utils/exportReports';
 import {
     ProjectSummaryReport,
     TrendReport,
@@ -142,15 +142,41 @@ const AnalyticsPage: React.FC = () => {
         setShowExportMenu(false);
     }, [summaryReport, trendReport, suiteReport, healthReport, projectName]);
 
+    const handleExportExcel = useCallback(() => {
+        if (!summaryReport) return;
+        setShowExportMenu(false);
+        toast.loading('Preparing Excel with graphs…', { id: 'export-excel' });
+        exportReportToExcel(
+            summaryReport,
+            trendReport,
+            suiteReport,
+            healthReport,
+            projectName,
+            ticketMetricsReport,
+        )
+            .then(() => toast.success('Report exported as Excel', { id: 'export-excel' }))
+            .catch((err) => {
+                console.error('Excel export failed:', err);
+                toast.error('Failed to export Excel', { id: 'export-excel' });
+            });
+    }, [summaryReport, trendReport, suiteReport, healthReport, projectName, ticketMetricsReport]);
+
     const handleExportPDF = useCallback(() => {
         if (!summaryReport) return;
         try {
-            exportReportToPDF(summaryReport, trendReport, suiteReport, healthReport, projectName);
+            exportReportToPDF(
+                summaryReport,
+                trendReport,
+                suiteReport,
+                healthReport,
+                projectName,
+                ticketMetricsReport,
+            );
         } catch {
             toast.error('Failed to export PDF');
         }
         setShowExportMenu(false);
-    }, [summaryReport, trendReport, suiteReport, healthReport, projectName]);
+    }, [summaryReport, trendReport, suiteReport, healthReport, projectName, ticketMetricsReport]);
 
     const handleOpenFailedRunCase = useCallback((runId: string, itemId: string, caseId: string) => {
         const runParam = encodeURIComponent(runId);
@@ -341,7 +367,14 @@ const AnalyticsPage: React.FC = () => {
                                 <ChevronDown className="w-3 h-3" />
                             </button>
                             {showExportMenu && (
-                                <div className="absolute right-0 mt-1 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden">
+                                <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden">
+                                    <button
+                                        onClick={handleExportExcel}
+                                        className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                    >
+                                        <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                        Export as Excel (with graphs)
+                                    </button>
                                     <button
                                         onClick={handleExportCSV}
                                         className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -354,7 +387,7 @@ const AnalyticsPage: React.FC = () => {
                                         className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                                     >
                                         <FileText className="w-4 h-4 text-red-600 dark:text-red-400" />
-                                        Export as PDF
+                                        Export as PDF (with graphs)
                                     </button>
                                 </div>
                             )}

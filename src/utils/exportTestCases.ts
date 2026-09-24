@@ -117,7 +117,7 @@ function buildRows(
                 return testCase.customFields?.[col.customFieldId] || '';
             }
             switch (col.id) {
-                case 'id': return testCase.id || '';
+                case 'id': return testCase.displayId || testCase.id || '';
                 case 'title': return testCase.title || '';
                 case 'priority': return testCase.priority || '';
                 case 'status': return testCase.status || '';

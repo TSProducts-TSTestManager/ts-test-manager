@@ -18,6 +18,34 @@ export const getJiraConfig = async (clientDisplayId: string) => {
   return res.data.data;
 };
 
+// Per-User (own cred, every user)
+export const connectMyJira = async (data: { email: string; apiToken: string }) => {
+  const res = await axios.post(`${API_URL}/integrations/users/me/jira/connect`, data);
+  return res.data;
+};
+export const getMyJira = async () => {
+  const res = await axios.get(`${API_URL}/integrations/users/me/jira`);
+  return res.data.data;
+};
+export const disconnectMyJira = async () => {
+  const res = await axios.delete(`${API_URL}/integrations/users/me/jira/disconnect`);
+  return res.data;
+};
+
+// Per-Project (every project level domain+projectKey)
+export const connectProjectJira = async (projectId: string, data: { domain: string; projectKey: string; defaultIssueType?: string }) => {
+  const res = await axios.post(`${API_URL}/integrations/projects/${projectId}/jira/connect`, data);
+  return res.data;
+};
+export const getProjectJira = async (projectId: string) => {
+  const res = await axios.get(`${API_URL}/integrations/projects/${projectId}/jira`);
+  return res.data.data;
+};
+export const disconnectProjectJira = async (projectId: string) => {
+  const res = await axios.delete(`${API_URL}/integrations/projects/${projectId}/jira/disconnect`);
+  return res.data;
+};
+
 export const linkJira = async (ticketId: string, jiraIssueKey: string) => {
   const res = await axios.post(`${API_URL}/integrations/tickets/${ticketId}/jira/link`, { jiraIssueKey });
   return res.data.data;
