@@ -17,6 +17,7 @@ import {
   ClipboardList,
   Bug,
   Building2,
+  LineChart,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -142,6 +143,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
           icon: <Bug size={18} />,
           label: 'Tickets',
           to: '/test-manager/tickets',
+          subItems: [],
+          requiresProject: true
+        },
+        {
+          icon: <LineChart size={18} />,
+          label: 'Test Run Analytics',
+          to: '/test-run-analytics',
           subItems: [],
           requiresProject: true
         },

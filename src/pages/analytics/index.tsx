@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useTestManagerStore } from '../../store/testManagerStore';
+import { useAuthStore } from '../../store/authStore';
 import { reportingApi } from '../../services/reportingApi';
 import { testRunApi } from '../../services/testRunApi';
+import { getClients } from '../../services/clientApi';
+import type { Client } from '../../types/client';
 import { exportReportToCSV, exportReportToPDF, exportReportToExcel } from '../../utils/exportReports';
 import {
     ProjectSummaryReport,
@@ -18,6 +21,7 @@ import {
 import { getFailureTypeColor } from '../../utils/ticketColors';
 import EmptyProjectState from '../../components/testManager/EmptyProjectState';
 import ContextBreadcrumb from '../../components/testManager/ContextBreadcrumb';
+import ReportIdentityBar from '../../components/testManager/ReportIdentityBar';
 import TagInput from '../../components/testManager/TagInput';
 import toast from 'react-hot-toast';
 import {
@@ -80,6 +84,7 @@ const renderPieLabel = ({ name, percent }: { name?: string; percent?: number }):
 
 const AnalyticsPage: React.FC = () => {
     const { activeProject, projects } = useTestManagerStore();
+    const currentUser = useAuthStore((state) => state.user);
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const [isLoading, setIsLoading] = useState(false);
@@ -111,6 +116,8 @@ const AnalyticsPage: React.FC = () => {
     const [suiteReport, setSuiteReport] = useState<SuiteComparisonReport | null>(null);
     const [healthReport, setHealthReport] = useState<TestCaseHealthReport | null>(null);
     const [ticketMetricsReport, setTicketMetricsReport] = useState<TicketMetricsReport | null>(null);
+    // Client directory — only used to name the client in report headers
+    const [clients, setClients] = useState<Client[]>([]);
 
     // Export dropdown
     const [showExportMenu, setShowExportMenu] = useState(false);
@@ -129,18 +136,47 @@ const AnalyticsPage: React.FC = () => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [showExportMenu]);
 
+    // Client directory (report header context only — failure is non-fatal)
+    useEffect(() => {
+        let cancelled = false;
+        getClients()
+            .then((list: Client[]) => {
+                if (!cancelled) setClients(list);
+            })
+            .catch(() => {
+                /* client names are optional context in report headers */
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     const projectName = projects.find(p => p.id === activeProject)?.name;
+    const clientName = useMemo(() => {
+        const project = projects.find(p => p.id === activeProject);
+        if (!project?.clientId) return undefined;
+        return clients.find(c => c._id === project.clientId)?.name;
+    }, [projects, activeProject, clients]);
+    // Identity stamped onto every exported report
+    const reportMeta = useMemo(
+        () => ({
+            clientName,
+            projectName,
+            author: { name: currentUser?.name, email: currentUser?.email },
+        }),
+        [clientName, projectName, currentUser?.name, currentUser?.email]
+    );
 
     const handleExportCSV = useCallback(() => {
         if (!summaryReport) return;
         try {
-            exportReportToCSV(summaryReport, trendReport, suiteReport, healthReport, projectName);
+            exportReportToCSV(summaryReport, trendReport, suiteReport, healthReport, reportMeta);
             toast.success('Report exported as CSV');
         } catch {
             toast.error('Failed to export CSV');
         }
         setShowExportMenu(false);
-    }, [summaryReport, trendReport, suiteReport, healthReport, projectName]);
+    }, [summaryReport, trendReport, suiteReport, healthReport, reportMeta]);
 
     const handleExportExcel = useCallback(() => {
         if (!summaryReport) return;
@@ -151,7 +187,7 @@ const AnalyticsPage: React.FC = () => {
             trendReport,
             suiteReport,
             healthReport,
-            projectName,
+            reportMeta,
             ticketMetricsReport,
         )
             .then(() => toast.success('Report exported as Excel', { id: 'export-excel' }))
@@ -159,7 +195,7 @@ const AnalyticsPage: React.FC = () => {
                 console.error('Excel export failed:', err);
                 toast.error('Failed to export Excel', { id: 'export-excel' });
             });
-    }, [summaryReport, trendReport, suiteReport, healthReport, projectName, ticketMetricsReport]);
+    }, [summaryReport, trendReport, suiteReport, healthReport, reportMeta, ticketMetricsReport]);
 
     const handleExportPDF = useCallback(() => {
         if (!summaryReport) return;
@@ -169,14 +205,14 @@ const AnalyticsPage: React.FC = () => {
                 trendReport,
                 suiteReport,
                 healthReport,
-                projectName,
+                reportMeta,
                 ticketMetricsReport,
             );
         } catch {
             toast.error('Failed to export PDF');
         }
         setShowExportMenu(false);
-    }, [summaryReport, trendReport, suiteReport, healthReport, projectName, ticketMetricsReport]);
+    }, [summaryReport, trendReport, suiteReport, healthReport, reportMeta, ticketMetricsReport]);
 
     const handleOpenFailedRunCase = useCallback((runId: string, itemId: string, caseId: string) => {
         const runParam = encodeURIComponent(runId);
@@ -345,10 +381,19 @@ const AnalyticsPage: React.FC = () => {
             {/* Header */}
             <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 sm:sticky sm:top-0 sm:z-20">
                 <div className="flex items-center justify-between gap-3 px-4 py-3">
-                    <ContextBreadcrumb
-                        showSuiteSelector={false}
-                        className="min-h-0 flex-1 min-w-0 border-b-0 px-0 py-0 sm:px-0"
-                    />
+                    <div className="min-w-0 flex-1">
+                        <ContextBreadcrumb
+                            showSuiteSelector={false}
+                            className="min-h-0 min-w-0 border-b-0 px-0 py-0 sm:px-0"
+                        />
+                        <ReportIdentityBar
+                            className="mt-1 pl-1"
+                            clientName={clientName}
+                            projectName={projectName}
+                            authorName={reportMeta.author.name}
+                            authorEmail={reportMeta.author.email}
+                        />
+                    </div>
                     <div className="flex items-center gap-2">
                         <button
                             onClick={fetchReports}

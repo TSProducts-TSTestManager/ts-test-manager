@@ -7,6 +7,10 @@ import {
     TestCaseHealthReport,
     DetailedRunReport,
     TicketMetricsReport,
+    RunTicketSummary,
+    RunTicketComparisonReport,
+    FailedCasesWithoutTicketsReport,
+    TestRunTrendReport,
     ReportFilterParams,
     TrendReportParams,
 } from '../types/testManager';
@@ -107,6 +111,64 @@ class ReportingApi {
     async getDetailedRunReport(runId: string): Promise<DetailedRunReport> {
         const response = await axios.get(
             `${this.baseUrl}/run/${runId}/detailed`,
+            { withCredentials: true }
+        );
+        return response.data;
+    }
+
+    /**
+     * Ticket counts and rates for a single test run
+     */
+    async getRunTicketSummary(runId: string): Promise<RunTicketSummary> {
+        const response = await axios.get(
+            `${this.baseUrl}/run/${runId}/ticket-summary`,
+            { withCredentials: true }
+        );
+        return response.data;
+    }
+
+    /**
+     * Compare runs side by side, including their ticket metrics.
+     * Every ticket ever raised from those runs is included (no date filter).
+     */
+    async getRunTicketComparison(
+        projectId: string,
+        runIds: string[]
+    ): Promise<RunTicketComparisonReport> {
+        const query = runIds.length > 0 ? `?runIds=${encodeURIComponent(runIds.join(','))}` : '';
+        const response = await axios.get(
+            `${this.baseUrl}/project/${projectId}/test-run-comparison${query}`,
+            { withCredentials: true }
+        );
+        return response.data;
+    }
+
+    /**
+     * Failed run items across the given runs that never produced a ticket
+     */
+    async getFailedCasesWithoutTickets(
+        projectId: string,
+        runIds: string[]
+    ): Promise<FailedCasesWithoutTicketsReport> {
+        const query = runIds.length > 0 ? `?runIds=${encodeURIComponent(runIds.join(','))}` : '';
+        const response = await axios.get(
+            `${this.baseUrl}/project/${projectId}/failed-cases-without-tickets${query}`,
+            { withCredentials: true }
+        );
+        return response.data;
+    }
+
+    /**
+     * Chronological per-run trend series (one point per run) with pass rate,
+     * duration and ticket counts — run-over-run analytics.
+     */
+    async getTestRunTrends(
+        projectId: string,
+        params: ReportFilterParams = {}
+    ): Promise<TestRunTrendReport> {
+        const queryString = this.buildQueryString(params);
+        const response = await axios.get(
+            `${this.baseUrl}/project/${projectId}/test-run-trends${queryString}`,
             { withCredentials: true }
         );
         return response.data;

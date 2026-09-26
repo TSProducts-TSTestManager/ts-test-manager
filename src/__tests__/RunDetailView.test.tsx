@@ -35,6 +35,12 @@ vi.mock('lucide-react', () => ({
     FileText: () => <span data-testid="icon-file-text" />,
     Copy: () => <span data-testid="icon-copy" />,
     SlidersHorizontal: () => <span data-testid="icon-sliders-horizontal" />,
+    // Icons used by the nested RunTicketsSection
+    Ticket: () => <span data-testid="icon-ticket" />,
+    AlertTriangle: () => <span data-testid="icon-alert-triangle" />,
+    Clock: () => <span data-testid="icon-clock" />,
+    Loader2: () => <span data-testid="icon-loader" />,
+    User: () => <span data-testid="icon-user" />,
 }));
 
 describe('RunDetailView', () => {

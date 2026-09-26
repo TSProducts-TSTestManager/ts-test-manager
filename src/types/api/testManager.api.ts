@@ -333,6 +333,8 @@ export interface TestRunResponse {
   startedAt?: string;
   completedAt?: string;
   resultsSummary: ResultsSummaryResponse;
+  ticketCount?: number;
+  ticketResolutionRate?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -345,6 +347,7 @@ export interface TestRunListResponse {
   projectId: string;
   suiteId?: string;
   suiteName?: string;
+  groupId?: string;
   status: TestRunStatus;
   environment?: string;
   team?: string;
@@ -355,6 +358,8 @@ export interface TestRunListResponse {
   startedAt?: string;
   completedAt?: string;
   resultsSummary: ResultsSummaryResponse;
+  ticketCount?: number;
+  ticketResolutionRate?: number;
   createdAt: string;
   updatedAt: string;
 }
