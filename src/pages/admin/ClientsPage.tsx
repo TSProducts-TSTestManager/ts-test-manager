@@ -4,6 +4,7 @@ import { getClients, createClient, getClientUsage } from '../../services/clientA
 import { Client, SeatUsage } from '../../types/client';
 import { Search, LayoutGrid, Table2, Eye } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { isValidPhone, normalizePhone } from '../../utils/phone';
 
 const ClientsPage: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
@@ -15,12 +16,6 @@ const ClientsPage: React.FC = () => {
   const [usageMap, setUsageMap] = useState<Record<string, SeatUsage>>({});
   const navigate = useNavigate();
   const indianStates = ["Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal","Delhi","Jammu and Kashmir","Ladakh","Puducherry","Chandigarh","Andaman and Nicobar Islands","Dadra and Nagar Haveli and Daman and Diu","Lakshadweep"];
-  const isValidPhone = (v: string) => {
-    if (!v) return true;
-    const d = v.replace(/[\s\-\(\)]/g, "");
-    const norm = d.startsWith("+91") ? d.slice(3) : d.startsWith("91") && d.length === 12 ? d.slice(2) : d.startsWith("0") ? d.slice(1) : d;
-    return /^[6-9]\d{9}$/.test(norm);
-  };
   const isValidPin = (v: string) => /^[1-9][0-9]{5}$/.test(v.trim());
   const planLimits: Record<string, number> = { free: 3, starter: 10, pro: 25, enterprise: Infinity };
   const getAllowedMax = (plan: string) => {
@@ -80,8 +75,8 @@ const ClientsPage: React.FC = () => {
         maxUsers: form.maxUsers,
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
-        mobile: form.mobile || undefined,
-        whatsapp: form.whatsappSameAsMobile ? form.mobile : (form.whatsapp || undefined),
+        mobile: normalizePhone(form.mobile) || undefined,
+        whatsapp: form.whatsappSameAsMobile ? normalizePhone(form.mobile) || undefined : (normalizePhone(form.whatsapp) || undefined),
         whatsappSameAsMobile: form.whatsappSameAsMobile,
         address: {
           addressLine1: form.addressLine1.trim(),
@@ -144,7 +139,7 @@ const ClientsPage: React.FC = () => {
                   <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${c.status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-red-100 text-red-800'}`}>{c.status}</span>
                 </div>
                 <h3 className="font-semibold mt-3 truncate text-gray-900 dark:text-gray-100" title={c.name}>{c.name}</h3>
-                <p className="text-xs text-gray-600 dark:text-gray-400 truncate mt-1">Contact: {(c as any).contactFirstName || '—'} {(c as any).contactLastName || ''} {(c as any).mobile ? `• ${ (c as any).mobile}` : ''}</p>
+                <p className="text-xs text-gray-600 dark:text-gray-400 truncate mt-1">Contact: {(c as any).contactFirstName || '—'} {(c as any).contactLastName || ''} {(c as any).mobile ? `• ${ normalizePhone((c as any).mobile)}` : ''}</p>
                 {addr && <p className="text-xs text-gray-500 truncate">{addr.city}, {addr.state} - {addr.pinCode}</p>}
                 <p className="text-xs text-gray-400 truncate mt-1">{c.description || '—'}</p>
                 <div className="mt-4 space-y-2">
@@ -227,11 +222,11 @@ const ClientsPage: React.FC = () => {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Mobile Number <span className="font-normal text-gray-400">(10-digit India, optional)</span></label>
-                <input placeholder="9876543210" value={form.mobile} onChange={e => setForm({ ...form, mobile: e.target.value })} className="border p-2 rounded w-full" />
+                <input placeholder="9876543210" value={form.mobile} onChange={e => setForm({ ...form, mobile: normalizePhone(e.target.value) })} className="border p-2 rounded w-full" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Whatsapp Number <span className="font-normal text-gray-400">(optional)</span></label>
-                <input placeholder="9876543210" value={form.whatsappSameAsMobile ? form.mobile : form.whatsapp} onChange={e => setForm({ ...form, whatsapp: e.target.value })} disabled={form.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-500 dark:disabled:text-gray-400" />
+                <input placeholder="9876543210" value={form.whatsappSameAsMobile ? form.mobile : form.whatsapp} onChange={e => setForm({ ...form, whatsapp: normalizePhone(e.target.value) })} disabled={form.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-600 dark:disabled:text-gray-300" />
               </div>
             </div>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.whatsappSameAsMobile} onChange={e => setForm({ ...form, whatsappSameAsMobile: e.target.checked })} /> Whatsapp same as Mobile</label>

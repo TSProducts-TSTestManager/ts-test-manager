@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { Project } from '../../types/testManager';
-import { FolderGit2, MoreHorizontal, Users, Layers, Calendar, Plus, FileText, Pencil, Trash2, Settings, Share2, Bug, AlertTriangle, Search, Table, Grid2x2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FolderGit2, MoreHorizontal, Users, Layers, Calendar, Plus, FileText, Pencil, Trash2, Settings, Share2, Bug, AlertTriangle, Search, Table, Grid2x2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import ProjectMembersModal from './ProjectMembersModal';
 import ProjectActionSheet from './ProjectActionSheet';
@@ -28,6 +28,18 @@ interface DropdownPosition {
 
 const PAGE_SIZE = 10;
 
+type ProjectSortField =
+    | 'displayId'
+    | 'name'
+    | 'suites'
+    | 'cases'
+    | 'bugs'
+    | 'openBugs'
+    | 'members'
+    | 'updatedAt';
+
+const PROJECT_NUMERIC_SORT_FIELDS: ProjectSortField[] = ['suites', 'cases', 'bugs', 'openBugs', 'members'];
+
 const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList({ projects, onProjectClick, onCreate, onEdit, onSettings, onDelete, viewMode = 'card', onViewModeToggle, searchQuery = '', onSearchChange }) {
     const { user } = useAuthStore();
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -36,6 +48,8 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
     const [dropdownPosition, setDropdownPosition] = useState<DropdownPosition | null>(null);
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
     const [tablePage, setTablePage] = useState(1);
+    const [sortField, setSortField] = useState<ProjectSortField>('updatedAt');
+    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     // Reset page when projects/search change
@@ -120,10 +134,68 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
         }
     };
 
-    const totalPages = Math.max(1, Math.ceil(projects.length / PAGE_SIZE));
+    const handleSort = (field: ProjectSortField) => {
+        if (sortField === field) {
+            setSortDir((dir) => (dir === 'asc' ? 'desc' : 'asc'));
+            return;
+        }
+        setSortField(field);
+        setSortDir(field === 'updatedAt' ? 'desc' : 'asc');
+    };
+
+    const numericValue = (project: Project, field: ProjectSortField): number => {
+        switch (field) {
+            case 'suites': return project.stats.suites ?? 0;
+            case 'cases': return project.stats.cases ?? 0;
+            case 'bugs': return project.stats.bugs ?? 0;
+            case 'openBugs': return project.stats.openBugs ?? 0;
+            case 'members': return project.stats.members ?? 0;
+            default: return 0;
+        }
+    };
+
+    const sortedProjects = useMemo(() => {
+        const direction = sortDir === 'asc' ? 1 : -1;
+        return [...projects].sort((a, b) => {
+            if (PROJECT_NUMERIC_SORT_FIELDS.includes(sortField)) {
+                return (numericValue(a, sortField) - numericValue(b, sortField)) * direction;
+            }
+            if (sortField === 'name') {
+                return a.name.localeCompare(b.name) * direction;
+            }
+            if (sortField === 'displayId') {
+                return (a.displayId || '').localeCompare(b.displayId || '', undefined, {
+                    numeric: true,
+                    sensitivity: 'base',
+                }) * direction;
+            }
+            return (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()) * direction;
+        });
+    }, [projects, sortField, sortDir]);
+
+    const sortableHeader = (label: string, field: ProjectSortField, extraClass = '') => (
+        <th
+            onClick={() => handleSort(field)}
+            title={`Sort by ${label}`}
+            className={`px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap cursor-pointer select-none group hover:text-gray-700 dark:hover:text-gray-200 ${extraClass}`}
+        >
+            <span className="inline-flex items-center gap-1">
+                {label}
+                {sortField === field ? (
+                    sortDir === 'asc'
+                        ? <ArrowUp size={12} className="text-blue-500" />
+                        : <ArrowDown size={12} className="text-blue-500" />
+                ) : (
+                    <ArrowUpDown size={12} className="opacity-0 group-hover:opacity-60" />
+                )}
+            </span>
+        </th>
+    );
+
+    const totalPages = Math.max(1, Math.ceil(sortedProjects.length / PAGE_SIZE));
     const safePage = Math.min(tablePage, totalPages);
-    const paginatedProjects = projects.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-    const showPagination = projects.length > PAGE_SIZE;
+    const paginatedProjects = sortedProjects.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+    const showPagination = sortedProjects.length > PAGE_SIZE;
 
     const renderJiraBadge = (project: Project) => {
         if (project.jira?.enabled && project.jira.projectKey) {
@@ -168,7 +240,7 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
     const paginationFooter = showPagination ? (
         <div className="flex items-center justify-between px-1 mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
             <span className="text-xs text-gray-500 dark:text-gray-400">
-                Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, projects.length)} of {projects.length} projects
+                Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, sortedProjects.length)} of {sortedProjects.length} projects
             </span>
             <div className="flex items-center gap-2">
                 <button
@@ -203,16 +275,16 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
                                     <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700">
                                         <tr className="text-left">
                                             <th className="px-3 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap text-center">S.No</th>
-                                            <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Project ID</th>
-                                            <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Name</th>
+                                            {sortableHeader('Project ID', 'displayId')}
+                                            {sortableHeader('Name', 'name')}
                                             <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Description</th>
-                                            <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap text-center">Suites</th>
-                                            <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap text-center">Test Cases</th>
-                                            <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap text-center">Bugs</th>
-                                            <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap text-center">Open Bugs</th>
-                                            <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap text-center">Members</th>
+                                            {sortableHeader('Suites', 'suites', 'text-center')}
+                                            {sortableHeader('Test Cases', 'cases', 'text-center')}
+                                            {sortableHeader('Bugs', 'bugs', 'text-center')}
+                                            {sortableHeader('Open Bugs', 'openBugs', 'text-center')}
+                                            {sortableHeader('Members', 'members', 'text-center')}
                                             <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">JIRA</th>
-                                            <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Updated</th>
+                                            {sortableHeader('Updated', 'updatedAt')}
                                             <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap text-right">Actions</th>
                                         </tr>
                                     </thead>
@@ -463,6 +535,8 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
                 <ProjectMembersModal
                     projectId={selectedProject.id}
                     currentUserId={user._id}
+                    currentUserRole={user.role}
+                    currentClientId={user.clientId}
                     onClose={() => {
                         setShowMembersModal(false);
                         setSelectedProject(null);

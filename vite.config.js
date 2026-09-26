@@ -9,5 +9,9 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/__tests__/setupTests.ts'],
+    // The jsdom suite renders large components (virtualized tables, modals);
+    // under parallel workers the default 5s can be exceeded.
+    testTimeout: 15000,
+    hookTimeout: 15000,
   },
 })

@@ -1,8 +1,10 @@
 import { createWithEqualityFn } from 'zustand/traditional';
 import { persist } from 'zustand/middleware';
-import { ViewMode, TestCase, Project, TestSuite, Priority, Status, Tester, HistoryEntry, ProjectSettings, Ticket, TicketStatus as TicketStatusEnum, TicketPriority as TicketPriorityEnum, TicketSeverity as TicketSeverityEnum, TicketAttachment, ReturnReason as ReturnReasonEnum, FailureType as FailureTypeEnum } from '../types/testManager';
+import { ViewMode, TestCase, Project, TestSuite, Priority, Status, Tester, ProjectMemberRole, HistoryEntry, ProjectSettings, Ticket, TicketStatus as TicketStatusEnum, TicketPriority as TicketPriorityEnum, TicketSeverity as TicketSeverityEnum, TicketAttachment, ReturnReason as ReturnReasonEnum, FailureType as FailureTypeEnum } from '../types/testManager';
 import * as testManagerApi from '../services/testManagerApi';
 import * as ticketApi from '../services/ticketApi';
+import { useAuthStore } from './authStore';
+import { canWriteProject } from '../utils/projectRoles';
 import {
     ProjectResponse,
     TestSuiteResponse,
@@ -31,6 +33,50 @@ const deduplicateRequest = async <T>(
     const promise = requestFn().finally(() => pendingRequests.delete(key));
     pendingRequests.set(key, promise);
     return promise;
+};
+
+export const READ_ONLY_ERROR = 'You have read-only access to this project';
+
+/**
+ * Client-side guard for store write actions. Throws (and records `error` state)
+ * when the signed-in user is a viewer / non-member of the project.
+ *
+ * Deliberately **fails open** when the project id is missing or the project is
+ * not loaded locally: the backend `requireProjectWrite` middleware is the real
+ * enforcement point, and a false positive here would block legitimate editors.
+ */
+const assertCanWriteProject = (projectId?: string | null): void => {
+    if (!projectId) return;
+    const project = useTestManagerStore.getState().projects.find((p) => p.id === projectId);
+    if (!project) return;
+    const user = useAuthStore.getState().user;
+    if (!canWriteProject(project, user)) {
+        useTestManagerStore.setState({ error: READ_ONLY_ERROR });
+        throw new Error(READ_ONLY_ERROR);
+    }
+};
+
+const assertCanWriteSuite = (suiteId?: string | null): void => {
+    assertCanWriteProject(
+        useTestManagerStore.getState().testSuites.find((s) => s.id === suiteId)?.projectId
+    );
+};
+
+const assertCanWriteCase = (caseId?: string | null): void => {
+    assertCanWriteProject(
+        useTestManagerStore.getState().testCases.find((c) => c.id === caseId)?.projectId
+    );
+};
+
+/** Resolves the distinct projects behind a bulk selection, then checks each. */
+const assertCanWriteCases = (ids: string[]): void => {
+    const state = useTestManagerStore.getState();
+    const projectIds = new Set<string>();
+    for (const id of ids) {
+        const testCase = state.testCases.find((c) => c.id === id);
+        if (testCase?.projectId) projectIds.add(testCase.projectId);
+    }
+    for (const projectId of projectIds) assertCanWriteProject(projectId);
 };
 
 export interface TestCaseFilters {
@@ -111,9 +157,12 @@ const mapTestSuiteResponse = (s: TestSuiteResponse): TestSuite => ({
 
 export const mapTicketResponse = (t: TicketListResponse): Ticket => ({
     id: t.id,
+    displayId: t.displayId,
     title: t.title,
     description: t.description,
     projectId: t.projectId,
+    archived: t.archived === true,
+    archivedAt: t.archivedAt,
     status: t.status as TicketStatusEnum,
     priority: t.priority as unknown as TicketPriorityEnum,
     severity: t.severity as unknown as TicketSeverityEnum,
@@ -131,8 +180,11 @@ export const mapTicketResponse = (t: TicketListResponse): Ticket => ({
     lastReturnedAt: t.lastReturnedAt,
     lastReturnReason: t.lastReturnReason as ReturnReasonEnum | undefined,
     divergence: t.divergence,
-    attachments: [],
+    attachments: (t.attachments as TicketAttachment[] | undefined) ?? [],
     tags: t.tags || [],
+    jiraIssueKey: t.jiraIssueKey ?? null,
+    jiraUrl: t.jiraUrl ?? null,
+    jiraStatus: t.jiraStatus ?? null,
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
 });
@@ -204,11 +256,14 @@ interface TestManagerStore {
     // Project actions
     fetchProjects: () => Promise<void>;
     fetchMoreProjects: () => Promise<void>;
+    /** Load a single project (with members) when it is not in the loaded list */
+    ensureProjectLoaded: (projectId: string) => Promise<void>;
     createProject: (data: CreateProjectRequest) => Promise<Project>;
     updateProject: (id: string, data: UpdateProjectRequest) => Promise<Project>;
     deleteProject: (id: string) => Promise<void>;
-    addProjectMember: (projectId: string, email: string) => Promise<Project>;
+    addProjectMember: (projectId: string, userIds: string[], role?: ProjectMemberRole) => Promise<Project>;
     removeProjectMember: (projectId: string, memberId: string) => Promise<Project>;
+    updateMemberRole: (projectId: string, memberId: string, role: ProjectMemberRole) => Promise<Project>;
     
     // Project Settings actions
     fetchProjectSettings: (projectId: string) => Promise<ProjectSettings>;
@@ -269,6 +324,8 @@ interface TestManagerStore {
     markTicketReproduced: (projectId: string, id: string) => Promise<Ticket>;
     returnTicketForInfo: (projectId: string, id: string, reason: ReturnReasonEnum) => Promise<Ticket>;
     deleteTicket: (projectId: string, id: string) => Promise<void>;
+    archiveTicket: (projectId: string, id: string) => Promise<Ticket>;
+    restoreTicket: (projectId: string, id: string) => Promise<Ticket>;
     setTicketView: (view: 'list' | 'kanban') => void;
     setActiveTicket: (ticket: Ticket | null) => void;
     setTicketDetailViewOpen: (isOpen: boolean) => void;
@@ -360,6 +417,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             selectAllTestCases: (ids) => set({ selectedTestCaseIds: ids }),
             clearSelection: () => set({ selectedTestCaseIds: [] }),
             bulkDeleteTestCases: async (ids) => {
+                assertCanWriteCases(ids);
                 set({ isLoading: true, error: null });
                 try {
                     await testManagerApi.bulkDeleteTestCases(ids);
@@ -432,6 +490,22 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
                 }
             },
 
+            ensureProjectLoaded: async (projectId) => {
+                if (!projectId) return;
+                if (get().projects.some((p) => p.id === projectId)) return;
+                try {
+                    const response = await testManagerApi.getProject(projectId);
+                    const project = mapProjectResponse(response);
+                    set((state) => ({
+                        projects: state.projects.some((p) => p.id === project.id)
+                            ? state.projects
+                            : [project, ...state.projects],
+                    }));
+                } catch (error: unknown) {
+                    set({ error: (error as Error).message });
+                }
+            },
+
             createProject: async (data) => {
                 set({ isLoading: true, error: null });
                 const previousProjects = get().projects;
@@ -473,6 +547,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             },
 
             updateProject: async (id, data) => {
+                assertCanWriteProject(id);
                 set({ isLoading: true, error: null });
                 const previousProjects = get().projects;
                 set((state) => ({
@@ -506,6 +581,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             },
 
             deleteProject: async (id) => {
+                assertCanWriteProject(id);
                 set({ isLoading: true, error: null });
                 const previousState = get();
                 set((state) => ({
@@ -535,10 +611,28 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
                 }
             },
 
-            addProjectMember: async (projectId, email) => {
+            addProjectMember: async (projectId, userIds, role) => {
+                assertCanWriteProject(projectId);
                 set({ isLoading: true, error: null });
                 try {
-                    const response = await testManagerApi.addProjectMember(projectId, { email });
+                    const response = await testManagerApi.assignProjectMembers(projectId, { userIds, role });
+                    const project = mapProjectResponse(response);
+                    set((state) => ({
+                        projects: state.projects.map((p) => (p.id === projectId ? project : p)),
+                        isLoading: false,
+                    }));
+                    return project;
+                } catch (error: unknown) {
+                    set({ error: (error as Error).message, isLoading: false });
+                    throw error;
+                }
+            },
+
+            updateMemberRole: async (projectId, memberId, role) => {
+                assertCanWriteProject(projectId);
+                set({ isLoading: true, error: null });
+                try {
+                    const response = await testManagerApi.updateProjectMemberRole(projectId, memberId, role);
                     const project = mapProjectResponse(response);
                     set((state) => ({
                         projects: state.projects.map((p) => (p.id === projectId ? project : p)),
@@ -552,6 +646,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             },
 
             removeProjectMember: async (projectId, memberId) => {
+                assertCanWriteProject(projectId);
                 set({ isLoading: true, error: null });
                 try {
                     const response = await testManagerApi.removeProjectMember(projectId, memberId);
@@ -587,6 +682,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             },
 
             updateProjectSettings: async (projectId, settings) => {
+                assertCanWriteProject(projectId);
                 try {
                     const updatedSettings = await testManagerApi.updateProjectSettings(projectId, settings);
                     set((state) => ({
@@ -621,6 +717,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             },
 
             createTestSuite: async (projectId: string, data: CreateTestSuiteRequest) => {
+                assertCanWriteProject(projectId);
                 set({ isLoading: true, error: null });
                 const previousSuites = get().testSuites;
                 const nowIso = new Date().toISOString();
@@ -657,6 +754,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             },
 
             updateTestSuite: async (id: string, data: UpdateTestSuiteRequest) => {
+                assertCanWriteSuite(id);
                 set({ isLoading: true, error: null });
                 const previousSuites = get().testSuites;
                 set((state) => ({
@@ -690,6 +788,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             },
 
             deleteTestSuite: async (id: string) => {
+                assertCanWriteSuite(id);
                 set({ isLoading: true, error: null });
                 const previousSuites = get().testSuites;
                 const previousTestCases = get().testCases;
@@ -744,6 +843,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             },
 
             createTestCase: async (suiteId: string, data: CreateTestCaseRequest) => {
+                assertCanWriteSuite(suiteId);
                 set({ isLoading: true, error: null });
                 const state = get();
                 const previousTestCases = state.testCases;
@@ -799,6 +899,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             },
 
             updateTestCase: async (id: string, data: UpdateTestCaseRequest) => {
+                assertCanWriteCase(id);
                 set({ isLoading: true, error: null });
                 const previousTestCases = get().testCases;
                 set((state) => ({
@@ -842,6 +943,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             },
 
             cloneTestCase: async (id: string) => {
+                assertCanWriteCase(id);
                 set({ isLoading: true, error: null });
                 try {
                     const response = await testManagerApi.cloneTestCase(id);
@@ -863,6 +965,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             },
 
             deleteTestCase: async (id: string) => {
+                assertCanWriteCase(id);
                 set({ isLoading: true, error: null });
                 const previousTestCases = get().testCases;
                 set({
@@ -883,6 +986,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             },
 
             bulkUpdateStatus: async (ids: string[], status: Status) => {
+                assertCanWriteCases(ids);
                 set({ isLoading: true, error: null });
                 try {
                     await testManagerApi.bulkUpdateStatus(ids, status);
@@ -956,26 +1060,11 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
                 }
             },
             createTicket: async (projectId, data) => {
+                assertCanWriteProject(projectId);
                 set({ isLoading: true, error: null });
                 try {
                     const response = await ticketApi.createTicket(projectId, data);
-                    const ticket: Ticket = {
-                        id: response.id,
-                        title: response.title,
-                        description: response.description,
-                        projectId: response.projectId,
-                        status: response.status as TicketStatusEnum,
-                        priority: response.priority as unknown as TicketPriorityEnum,
-                        severity: response.severity as unknown as TicketSeverityEnum,
-                        assignedTo: response.assignedTo as Tester | undefined,
-                        createdBy: response.createdBy as Tester,
-                        relatedRunId: response.relatedRunId,
-                        relatedRunItemId: response.relatedRunItemId,
-                        attachments: response.attachments as TicketAttachment[],
-                        tags: response.tags || [],
-                        createdAt: response.createdAt,
-                        updatedAt: response.updatedAt,
-                    };
+                    const ticket = mapTicketResponse(response);
                     set((state) => ({
                         tickets: [ticket, ...state.tickets],
                         isLoading: false,
@@ -987,26 +1076,11 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
                 }
             },
             updateTicket: async (projectId, id, data) => {
+                assertCanWriteProject(projectId);
                 set({ isLoading: true, error: null });
                 try {
                     const response = await ticketApi.updateTicket(projectId, id, data);
-                    const ticket: Ticket = {
-                        id: response.id,
-                        title: response.title,
-                        description: response.description,
-                        projectId: response.projectId,
-                        status: response.status as TicketStatusEnum,
-                        priority: response.priority as unknown as TicketPriorityEnum,
-                        severity: response.severity as unknown as TicketSeverityEnum,
-                        assignedTo: response.assignedTo as Tester | undefined,
-                        createdBy: response.createdBy as Tester,
-                        relatedRunId: response.relatedRunId,
-                        relatedRunItemId: response.relatedRunItemId,
-                        attachments: response.attachments as TicketAttachment[],
-                        tags: response.tags || [],
-                        createdAt: response.createdAt,
-                        updatedAt: response.updatedAt,
-                    };
+                    const ticket = mapTicketResponse(response);
                     set((state) => ({
                         tickets: state.tickets.map((t) => (t.id === id ? ticket : t)),
                         activeTicket: state.activeTicket?.id === id ? ticket : state.activeTicket,
@@ -1018,21 +1092,46 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
                     throw error;
                 }
             },
+            // Delete = archive (soft delete). Tickets are never destroyed.
             deleteTicket: async (projectId, id) => {
+                await get().archiveTicket(projectId, id);
+            },
+            archiveTicket: async (projectId, id) => {
+                assertCanWriteProject(projectId);
                 set({ isLoading: true, error: null });
                 try {
-                    await ticketApi.deleteTicket(projectId, id);
+                    const response = await ticketApi.archiveTicket(projectId, id);
+                    const ticket = mapTicketResponse(response);
                     set((state) => ({
                         tickets: state.tickets.filter((t) => t.id !== id),
                         activeTicket: state.activeTicket?.id === id ? null : state.activeTicket,
                         isLoading: false,
                     }));
+                    return ticket;
+                } catch (error: unknown) {
+                    set({ error: (error as Error).message, isLoading: false });
+                    throw error;
+                }
+            },
+            restoreTicket: async (projectId, id) => {
+                assertCanWriteProject(projectId);
+                set({ isLoading: true, error: null });
+                try {
+                    const response = await ticketApi.restoreTicket(projectId, id);
+                    const ticket = mapTicketResponse(response);
+                    set((state) => ({
+                        tickets: state.tickets.filter((t) => t.id !== id),
+                        activeTicket: state.activeTicket?.id === id ? null : state.activeTicket,
+                        isLoading: false,
+                    }));
+                    return ticket;
                 } catch (error: unknown) {
                     set({ error: (error as Error).message, isLoading: false });
                     throw error;
                 }
             },
             updateTicketStatus: async (projectId, id, status) => {
+                assertCanWriteProject(projectId);
                 // Optimistic local update (no page spinner flash for drag-drop)
                 const originalStatus = get().tickets.find((t) => t.id === id)?.status;
                 set((state) => ({
@@ -1042,23 +1141,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
                 }));
                 try {
                     const response = await ticketApi.updateTicket(projectId, id, { status });
-                    const ticket: Ticket = {
-                        id: response.id,
-                        title: response.title,
-                        description: response.description,
-                        projectId: response.projectId,
-                        status: response.status as TicketStatusEnum,
-                        priority: response.priority as unknown as TicketPriorityEnum,
-                        severity: response.severity as unknown as TicketSeverityEnum,
-                        assignedTo: response.assignedTo as Tester | undefined,
-                        createdBy: response.createdBy as Tester,
-                        relatedRunId: response.relatedRunId,
-                        relatedRunItemId: response.relatedRunItemId,
-                        attachments: response.attachments as TicketAttachment[],
-                        tags: response.tags || [],
-                        createdAt: response.createdAt,
-                        updatedAt: response.updatedAt,
-                    };
+                    const ticket = mapTicketResponse(response);
                     set((state) => ({
                         tickets: state.tickets.map((t) => (t.id === id ? ticket : t)),
                         activeTicket: state.activeTicket?.id === id ? ticket : state.activeTicket,

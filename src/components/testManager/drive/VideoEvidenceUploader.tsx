@@ -8,6 +8,7 @@ import {
 } from "../../../services/googleDriveApi";
 import { VideoEvidence } from "../../../types/testManager";
 import { validateVideoFile } from "../../../utils/videoEvidence";
+import { useProjectWriteAccess } from "../../../utils/projectPermissions";
 
 interface VideoEvidenceUploaderProps {
   projectId: string;
@@ -55,6 +56,7 @@ const VideoEvidenceUploader: React.FC<VideoEvidenceUploaderProps> = ({
   const sessionRef = useRef<{ sessionUri: string; accessToken: string } | null>(null);
   const fileRef = useRef<File | null>(null);
   const cancelledRef = useRef(false);
+  const canWrite = useProjectWriteAccess(projectId);
 
   const reset = useCallback(() => {
     xhrRef.current?.abort();
@@ -70,6 +72,10 @@ const VideoEvidenceUploader: React.FC<VideoEvidenceUploaderProps> = ({
 
   const performUpload = useCallback(
     async (file: File) => {
+      if (!canWrite) {
+        toast.error("You have read-only access to this project");
+        return;
+      }
       const invalid = validateVideoFile(file, maxSizeMB);
       if (invalid) {
         setError(invalid);
@@ -236,7 +242,7 @@ const VideoEvidenceUploader: React.FC<VideoEvidenceUploaderProps> = ({
         setStatus("idle");
       }
     },
-    [projectId, scope, maxSizeMB, onUploaded]
+    [projectId, canWrite, scope, maxSizeMB, onUploaded]
   );
 
   const handleFiles = useCallback(

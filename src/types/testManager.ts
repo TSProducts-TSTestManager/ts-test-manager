@@ -44,10 +44,27 @@ export interface TestStep {
     expectedResult: string;
 }
 
+export type ProjectMemberRole = 'lead' | 'editor' | 'viewer';
+
 export interface ProjectMember {
     id: string;
     name: string;
     email: string;
+    /** Project-level role (Lead / Editor / Viewer). Missing on legacy payloads. */
+    role?: ProjectMemberRole;
+    /** false = deactivated client user; kept in the project for history/attribution */
+    active?: boolean;
+    isOwner?: boolean;
+}
+
+/** Client user that can be assigned to a project (never created at project level) */
+export interface ProjectMemberCandidate {
+    id: string;
+    name: string;
+    email: string;
+    clientRole: string;
+    active: boolean;
+    assigned: boolean;
 }
 
 export interface CustomFieldOption {
@@ -252,6 +269,7 @@ export interface ResultsSummary {
 
 export interface TestRun {
     id: string;
+    displayId?: string;
     title: string;
     description?: string;
     projectId: string;
@@ -274,6 +292,7 @@ export interface TestRun {
 
 export interface TestRunListItem {
     id: string;
+    displayId?: string;
     title: string;
     description?: string;
     projectId: string;
@@ -609,6 +628,8 @@ export interface Ticket {
     id: string;
     displayId?: string;
     clientId?: string;
+    archived?: boolean;
+    archivedAt?: string;
     title: string;
     description?: string;
     projectId: string;

@@ -23,11 +23,12 @@ interface TicketModalProps {
         status?: TicketStatus;
         failureType?: FailureType;
         team?: string;
-        assignedToId?: string;
+        /** `null` clears the assignee (Unassigned) */
+        assignedToId?: string | null;
         relatedRunId?: string;
         tags?: string[];
     }) => Promise<void>;
-    projectMembers: { id: string; name: string }[];
+    projectMembers: { id: string; name: string; email?: string; active?: boolean }[];
     testRuns: { id: string; title: string }[];
     /** If provided, operates in edit mode */
     initialTicket?: Ticket | null;
@@ -94,7 +95,9 @@ const TicketModal: React.FC<TicketModalProps> = ({
                 ...(isEditMode ? { status } : {}),
                 failureType,
                 team: team.trim() || undefined,
-                assignedToId: assignedToId || undefined,
+                // Edit mode must send an explicit null to clear the assignee,
+                // otherwise the key is dropped and the old assignee sticks.
+                assignedToId: isEditMode ? (assignedToId || null) : (assignedToId || undefined),
                 relatedRunId: isEditMode ? relatedRunId : (relatedRunId || undefined),
                 tags: tags.length > 0 ? tags : undefined,
             });
@@ -239,12 +242,29 @@ const TicketModal: React.FC<TicketModalProps> = ({
                                     className="w-full appearance-none rounded-lg py-2 pl-3 pr-8 text-sm font-medium outline-none transition-all cursor-pointer border bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 hover:opacity-80 focus:ring-2 focus:ring-offset-1 focus:ring-blue-100"
                                 >
                                     <option value="">Unassigned</option>
+                                    {assignedToId && !projectMembers.some((m) => m.id === assignedToId) && (
+                                        <option value={assignedToId}>
+                                            {initialTicket?.assignedTo?.name || 'Unassigned'}
+                                        </option>
+                                    )}
                                     {projectMembers.map((m) => (
-                                        <option key={m.id} value={m.id}>{m.name}</option>
+                                        <option
+                                            key={m.id}
+                                            value={m.id}
+                                            disabled={m.active === false && assignedToId !== m.id}
+                                        >
+                                            {m.name}{m.email ? ` [${m.email}]` : ''}
+                                            {m.active === false ? ' (inactive)' : ''}
+                                        </option>
                                     ))}
                                 </select>
                                 <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400 dark:text-gray-500 pointer-events-none opacity-50" />
                             </div>
+                            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                                {projectMembers.length === 0
+                                    ? 'No project members available yet — ticket stays Unassigned.'
+                                    : 'Only project members can be assigned.'}
+                            </p>
                         </div>
 
                         {/* Related Test Run */}

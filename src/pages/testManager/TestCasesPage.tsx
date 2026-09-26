@@ -20,6 +20,7 @@ import { reorderTestCases, getTestCase, getTestSuite, bulkImportTestCasesWithSui
 import { exportTestCasesToCSV, exportTestCasesToXLSX, ExportColumn } from '../../utils/exportTestCases';
 import { escapeHtml } from '../../utils/sanitize';
 import { CreateTestCaseWithSuiteRequest, UpdateTestCaseRequest } from '../../types/api/testManager.api';
+import { useProjectWriteAccess } from '../../utils/projectPermissions';
 import { Sparkles, GripVertical, ArrowUp, ArrowDown, RotateCcw, Tag, X, ChevronDown, Check, Loader2 } from 'lucide-react';
 import { getTagColor } from '../../utils/tagColors';
 
@@ -110,6 +111,9 @@ const TestCasesPage: React.FC = () => {
     const { projectUsers } = useProjectPresence({
         projectId: activeProject,
     });
+
+    // Project role guard: viewers are read-only (mirrors backend requireProjectWrite)
+    const canWrite = useProjectWriteAccess(activeProject);
 
     const [selectedCase, setSelectedCase] = useState<TestCase | null>(null);
     const [viewCase, setViewCase] = useState<TestCase | null>(null);
@@ -649,6 +653,10 @@ const TestCasesPage: React.FC = () => {
     }, []);
 
     const handleCloneClick = useCallback(async (item: TestCase) => {
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            return;
+        }
         try {
             await cloneTestCase(item.id);
             toast.success('Test case cloned successfully');
@@ -656,7 +664,7 @@ const TestCasesPage: React.FC = () => {
             toast.error('Failed to clone test case');
             console.error('Clone error:', error);
         }
-    }, [cloneTestCase]);
+    }, [canWrite, cloneTestCase]);
 
     const handleEditFromView = useCallback((item: TestCase) => {
         // Close view modal and open edit modal
@@ -665,12 +673,20 @@ const TestCasesPage: React.FC = () => {
     }, []);
 
     const handleInlineUpdate = useCallback((caseId: string, field: keyof TestCase, value: string | boolean | number | Status | Priority) => {
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            return;
+        }
         updateTestCase(caseId, { [field]: value } as UpdateTestCaseRequest);
-    }, [updateTestCase]);
+    }, [canWrite, updateTestCase]);
 
     const handleStatusChange = useCallback((caseId: string, status: Status) => {
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            return;
+        }
         updateTestCase(caseId, { status: status });
-    }, [updateTestCase]);
+    }, [canWrite, updateTestCase]);
 
     const allSuiteTags = useMemo(
         () => Array.from(new Set(testSuites.flatMap(suite => suite.tags || []))).sort(),
@@ -813,6 +829,9 @@ const TestCasesPage: React.FC = () => {
     }, [displayedCases, selectAllTestCases, clearSelection]);
 
     const handleSaveCase = async (updatedCase: TestCase): Promise<TestCase | void> => {
+        if (!canWrite) {
+            throw new Error('You have read-only access to this project');
+        }
         const exists = testCases.find(c => c.id === updatedCase.id);
         if (exists) {
             await updateTestCase(updatedCase.id, {
@@ -855,6 +874,10 @@ const TestCasesPage: React.FC = () => {
 
     // Handle drag-and-drop reordering of test cases
     const handleReorder = async (reorderedCases: TestCase[]) => {
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            return;
+        }
         if (!activeSuiteId) {
             toast.error('Reordering is only available within a specific suite');
             return;
@@ -875,6 +898,10 @@ const TestCasesPage: React.FC = () => {
         // We need to save these cases to the backend
         // Iterate and create each one
         // Note: createTestCase expects a suiteId.
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            return;
+        }
         if (!activeSuiteId) return;
 
         for (const testCase of cases) {
@@ -945,6 +972,10 @@ const TestCasesPage: React.FC = () => {
         skipDuplicates: boolean,
         createMissingSuites: boolean
     ) => {
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            throw new Error('You have read-only access to this project');
+        }
         if (!activeProject) {
             throw new Error('No project selected');
         }
@@ -972,7 +1003,7 @@ const TestCasesPage: React.FC = () => {
             console.error('Import error:', error);
             throw error;
         }
-    }, [activeProject, activeSuiteId, fetchTestSuites, fetchTestCases, loadProjectCases]);
+    }, [activeProject, activeSuiteId, canWrite, fetchTestSuites, fetchTestCases, loadProjectCases]);
 
     if (!activeProject && !selectedCase) {
         return (
@@ -1264,7 +1295,7 @@ const TestCasesPage: React.FC = () => {
                     projectMembers={
                         projects
                             .find((p) => p.id === activeProject)
-                            ?.members.map((m) => ({ id: m.id, name: m.name })) || []
+                            ?.members.map((m) => ({ id: m.id, name: m.name, active: m.active })) || []
                     }
                     availableSuites={testSuites.map((s) => ({ id: s.id, name: s.name }))}
                     defaultSuiteId={activeSuiteId || undefined}

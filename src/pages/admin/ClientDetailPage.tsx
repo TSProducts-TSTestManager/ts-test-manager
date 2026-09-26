@@ -6,6 +6,7 @@ import { connectJira, disconnectJira, getJiraConfig } from '../../services/jiraA
 import { SeatUsage, ClientUser, Client } from '../../types/client';
 import { Eye, EyeOff, ShieldCheck, User as UserIcon, Eye as EyeIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { isValidPhone, normalizePhone } from '../../utils/phone';
 
 const ClientDetailPage: React.FC = () => {
   const { displayId } = useParams<{ displayId: string }>();
@@ -40,12 +41,6 @@ const ClientDetailPage: React.FC = () => {
   const isClientAdmin = (user as any)?.role === 'client_admin';
   const indianStates = ["Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal","Delhi","Jammu and Kashmir","Ladakh","Puducherry","Chandigarh","Andaman and Nicobar Islands","Dadra and Nagar Haveli and Daman and Diu","Lakshadweep"];
   const isValidEmail = (v: string) => /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(v);
-  const isValidPhone = (v: string) => {
-    if (!v) return true;
-    const d = v.replace(/[\s\-\(\)]/g, "");
-    const norm = d.startsWith("+91") ? d.slice(3) : d.startsWith("91") && d.length === 12 ? d.slice(2) : d.startsWith("0") ? d.slice(1) : d;
-    return /^[6-9]\d{9}$/.test(norm);
-  };
   const isValidPin = (v: string) => /^[1-9][0-9]{5}$/.test(v.trim());
   const planLimits: Record<string, number> = { free: 3, starter: 10, pro: 25, enterprise: Infinity };
   const getAllowedMax = (plan: string) => {
@@ -72,8 +67,8 @@ const ClientDetailPage: React.FC = () => {
           lastName: c.contactLastName || '',
           description: c.description || '',
           plan: c.plan,
-          mobile: c.mobile || '',
-          whatsapp: c.whatsapp || '',
+          mobile: normalizePhone(c.mobile || ''),
+          whatsapp: normalizePhone(c.whatsapp || ''),
           whatsappSameAsMobile: !!c.whatsappSameAsMobile,
           addressLine1: (c as any).address?.addressLine1 || '',
           addressLine2: (c as any).address?.addressLine2 || '',
@@ -103,8 +98,8 @@ const ClientDetailPage: React.FC = () => {
         firstName: invite.firstName.trim(),
         lastName: invite.lastName.trim(),
         name: `${invite.firstName} ${invite.lastName}`.trim(),
-        mobile: invite.mobile || undefined,
-        whatsapp: invite.whatsappSameAsMobile ? invite.mobile : (invite.whatsapp || undefined),
+        mobile: normalizePhone(invite.mobile) || undefined,
+        whatsapp: invite.whatsappSameAsMobile ? normalizePhone(invite.mobile) || undefined : (normalizePhone(invite.whatsapp) || undefined),
         whatsappSameAsMobile: invite.whatsappSameAsMobile,
         tempPassword: invite.tempPassword || undefined,
         role: invite.role,
@@ -163,8 +158,8 @@ const ClientDetailPage: React.FC = () => {
         plan: editForm.plan as any,
         contactFirstName: editForm.firstName.trim(),
         contactLastName: editForm.lastName.trim(),
-        mobile: editForm.mobile || undefined,
-        whatsapp: editForm.whatsappSameAsMobile ? editForm.mobile : (editForm.whatsapp || undefined),
+        mobile: normalizePhone(editForm.mobile) || undefined,
+        whatsapp: editForm.whatsappSameAsMobile ? normalizePhone(editForm.mobile) || undefined : (normalizePhone(editForm.whatsapp) || undefined),
         whatsappSameAsMobile: editForm.whatsappSameAsMobile,
         address: {
           addressLine1: editForm.addressLine1.trim(),
@@ -189,8 +184,8 @@ const ClientDetailPage: React.FC = () => {
     setEditUserForm({
       firstName: u.firstName || u.name.split(' ')[0] || '',
       lastName: u.lastName || u.name.split(' ').slice(1).join(' ') || '',
-      mobile: u.mobile || '',
-      whatsapp: u.whatsapp || '',
+      mobile: normalizePhone(u.mobile || ''),
+      whatsapp: normalizePhone(u.whatsapp || ''),
       whatsappSameAsMobile: !!u.whatsappSameAsMobile,
     });
     setShowEditUserModal(true);
@@ -206,8 +201,8 @@ const ClientDetailPage: React.FC = () => {
       await updateClientUser(displayId!, editUserTarget._id, {
         firstName: editUserForm.firstName.trim(),
         lastName: editUserForm.lastName.trim(),
-        mobile: editUserForm.mobile || undefined,
-        whatsapp: editUserForm.whatsappSameAsMobile ? editUserForm.mobile : (editUserForm.whatsapp || undefined),
+        mobile: normalizePhone(editUserForm.mobile) || undefined,
+        whatsapp: editUserForm.whatsappSameAsMobile ? normalizePhone(editUserForm.mobile) || undefined : (normalizePhone(editUserForm.whatsapp) || undefined),
         whatsappSameAsMobile: editUserForm.whatsappSameAsMobile,
       });
       toast.success('User updated');
@@ -431,11 +426,11 @@ const ClientDetailPage: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Mobile Number <span className="font-normal text-gray-400">(10-digit India, optional)</span></label>
-                  <input placeholder="9876543210" value={editForm.mobile} onChange={e=>setEditForm({...editForm,mobile:e.target.value})} className="border p-2 rounded w-full" />
+                  <input placeholder="9876543210" value={editForm.mobile} onChange={e=>setEditForm({...editForm,mobile:normalizePhone(e.target.value)})} className="border p-2 rounded w-full" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Whatsapp Number <span className="font-normal text-gray-400">(optional)</span></label>
-                  <input placeholder="9876543210" value={editForm.whatsappSameAsMobile ? editForm.mobile : editForm.whatsapp} onChange={e=>setEditForm({...editForm,whatsapp:e.target.value})} disabled={editForm.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-500 dark:disabled:text-gray-400" />
+                  <input placeholder="9876543210" value={editForm.whatsappSameAsMobile ? editForm.mobile : editForm.whatsapp} onChange={e=>setEditForm({...editForm,whatsapp:normalizePhone(e.target.value)})} disabled={editForm.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-600 dark:disabled:text-gray-300" />
                 </div>
               </div>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editForm.whatsappSameAsMobile} onChange={e=>setEditForm({...editForm,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
@@ -561,11 +556,11 @@ const ClientDetailPage: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Mobile Number <span className="font-normal text-gray-400">(10-digit India, optional)</span></label>
-                  <input placeholder="9876543210" value={invite.mobile} onChange={e=>setInvite({...invite,mobile:e.target.value})} className="border p-2 rounded w-full" />
+                  <input placeholder="9876543210" value={invite.mobile} onChange={e=>setInvite({...invite,mobile:normalizePhone(e.target.value)})} className="border p-2 rounded w-full" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Whatsapp Number <span className="font-normal text-gray-400">(optional)</span></label>
-                  <input placeholder="9876543210" value={invite.whatsappSameAsMobile ? invite.mobile : invite.whatsapp} onChange={e=>setInvite({...invite,whatsapp:e.target.value})} disabled={invite.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-500 dark:disabled:text-gray-400" />
+                  <input placeholder="9876543210" value={invite.whatsappSameAsMobile ? invite.mobile : invite.whatsapp} onChange={e=>setInvite({...invite,whatsapp:normalizePhone(e.target.value)})} disabled={invite.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-600 dark:disabled:text-gray-300" />
                 </div>
               </div>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={invite.whatsappSameAsMobile} onChange={e=>setInvite({...invite,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
@@ -612,11 +607,11 @@ const ClientDetailPage: React.FC = () => {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Mobile Number <span className="font-normal text-gray-400">(10-digit India, optional)</span></label>
-                <input placeholder="9876543210" value={editUserForm.mobile} onChange={e=>setEditUserForm({...editUserForm,mobile:e.target.value})} className="border p-2 rounded w-full" />
+                <input placeholder="9876543210" value={editUserForm.mobile} onChange={e=>setEditUserForm({...editUserForm,mobile:normalizePhone(e.target.value)})} className="border p-2 rounded w-full" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Whatsapp Number <span className="font-normal text-gray-400">(optional)</span></label>
-                <input placeholder="9876543210" value={editUserForm.whatsappSameAsMobile ? editUserForm.mobile : editUserForm.whatsapp} onChange={e=>setEditUserForm({...editUserForm,whatsapp:e.target.value})} disabled={editUserForm.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-500 dark:disabled:text-gray-400" />
+                <input placeholder="9876543210" value={editUserForm.whatsappSameAsMobile ? editUserForm.mobile : editUserForm.whatsapp} onChange={e=>setEditUserForm({...editUserForm,whatsapp:normalizePhone(e.target.value)})} disabled={editUserForm.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-600 dark:disabled:text-gray-300" />
               </div>
             </div>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editUserForm.whatsappSameAsMobile} onChange={e=>setEditUserForm({...editUserForm,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>

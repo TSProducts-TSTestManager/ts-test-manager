@@ -15,6 +15,7 @@ import TagInput from '../../components/testManager/TagInput';
 import { getTagColor } from '../../utils/tagColors';
 import { TestSuite } from '../../types/testManager';
 import { useProjectPresence } from '../../hooks/useProjectPresence';
+import { useProjectWriteAccess } from '../../utils/projectPermissions';
 import { Tag, X, ChevronDown, Check } from 'lucide-react';
 
 const getSuiteTagFilterStorageKey = (projectId: string) => `testSuitesTagFilter:${projectId}`;
@@ -58,6 +59,9 @@ const TestSuitesPage: React.FC = () => {
     const { projectUsers } = useProjectPresence({
         projectId: activeProject,
     });
+
+    const canWrite = useProjectWriteAccess(activeProject);
+    const readOnlyToast = () => toast.error('You have read-only access to this project');
 
     // Track processed projectId to prevent double loading
     const processedProjectIdRef = useRef<string | null>(null);
@@ -281,6 +285,7 @@ const TestSuitesPage: React.FC = () => {
     };
 
     const handleBulkAddTags = async () => {
+        if (!canWrite) { readOnlyToast(); return; }
         if (selectedSuiteIds.length === 0 || bulkTags.length === 0) return;
 
         setIsBulkUpdatingTags(true);
@@ -319,6 +324,7 @@ const TestSuitesPage: React.FC = () => {
     };
 
     const confirmBulkDeleteSuites = async () => {
+        if (!canWrite) { readOnlyToast(); return; }
         if (selectedSuiteIds.length === 0) return;
 
         setIsBulkDeleting(true);
@@ -377,18 +383,22 @@ const TestSuitesPage: React.FC = () => {
     };
 
     const handleCreateSuite = () => {
+        if (!canWrite) { readOnlyToast(); return; }
         setIsCreateOpen(true);
     };
 
     const handleEditSuite = (suite: TestSuite) => {
+        if (!canWrite) { readOnlyToast(); return; }
         setSuiteToEdit(suite);
     };
 
     const handleDeleteSuite = (suite: TestSuite) => {
+        if (!canWrite) { readOnlyToast(); return; }
         setSuiteToDelete(suite);
     };
 
     const confirmDeleteSuite = async () => {
+        if (!canWrite) { readOnlyToast(); return; }
         if (!suiteToDelete) return;
 
         const suiteName = suiteToDelete.name;
@@ -415,14 +425,18 @@ const TestSuitesPage: React.FC = () => {
         try {
             const open = (location.state as { openNewSuite?: boolean } | null)?.openNewSuite;
             if (open) {
-                setIsCreateOpen(true);
-                // clear navigation state
+                // clear navigation state first
                 navigate(location.pathname, { replace: true, state: {} });
+                if (canWrite) {
+                    setIsCreateOpen(true);
+                } else {
+                    readOnlyToast();
+                }
             }
         } catch {
             // ignore
         }
-    }, [location, navigate]);
+    }, [canWrite, location, navigate]);
 
     if (!activeProject) {
         return (

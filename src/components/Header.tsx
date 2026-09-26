@@ -9,6 +9,15 @@ interface HeaderProps {
   toggleSidebar: () => void;
 }
 
+// The top bar must never claim a privilege the signed-in user does not have —
+// earlier this was a hardcoded "Admin" that hid read-only / member sessions.
+const ROLE_LABELS: Record<string, string> = {
+  super_admin: 'Super Admin',
+  client_admin: 'Client Admin',
+  member: 'Member',
+  viewer: 'Viewer',
+};
+
 const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
   const { user } = useAuthStore();
   const { searchQuery, setSearchQuery, clearSearchQuery } = useTestManagerStore();
@@ -96,7 +105,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
           <div className="flex items-center space-x-3 pl-2 border-l border-gray-100 dark:border-gray-700">
             <div className="hidden md:block text-right">
               <p className="text-sm font-medium text-gray-900 leading-none dark:text-gray-100">{user?.name || 'User'}</p>
-              <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Admin</p>
+              <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">{ROLE_LABELS[user?.role ?? ''] ?? 'User'}</p>
             </div>
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-system-blue to-system-indigo flex items-center justify-center text-white font-semibold shadow-sm text-sm">
               {user?.name?.charAt(0).toUpperCase() || 'U'}

@@ -1,7 +1,8 @@
 import React from 'react';
-import { Plus, Filter, Download, Upload, Layers, Trash2, X, Check } from 'lucide-react';
+import { Plus, Filter, Download, Upload, Layers, Trash2, X, Check, Eye } from 'lucide-react';
 import { ViewMode } from '../../types/testManager';
 import { useTestManagerStore } from '../../store/testManagerStore';
+import { useProjectWriteAccess } from '../../utils/projectPermissions';
 
 interface ToolbarProps {
     viewMode: ViewMode;
@@ -33,6 +34,7 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
         onNew,
         hideNewButton = false,
         activeSuite,
+        activeProject,
         showEditToggle,
         isSelectionMode,
         onToggleSelectionMode,
@@ -41,6 +43,12 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
         onDownload,
         onUpload
     } = props;
+
+    // Viewers / non-members of the active project get a badge and no create,
+    // import or delete controls. The Projects view is unaffected (you can
+    // always create your own project there).
+    const canWrite = useProjectWriteAccess(activeProject);
+    const isReadOnly = viewMode !== 'projects' && !!activeProject && !canWrite;
 
     const getTitle = () => {
         switch (viewMode) {
@@ -75,6 +83,16 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
                 )}
                 <h1 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 tracking-tight truncate min-w-0">{getTitle()}</h1>
 
+                {isReadOnly && (
+                    <span
+                        title="You have read-only access to this project"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-700/60 flex-shrink-0"
+                    >
+                        <Eye size={12} />
+                        <span className="hidden sm:inline">Read-only</span>
+                    </span>
+                )}
+
                 {/* Segmented control compact on mobile */}
                 <div className="ml-2 bg-gray-100 dark:bg-gray-700 p-0.5 rounded-full flex items-center h-8 overflow-x-auto">
                     <div className="flex items-center gap-1 px-1">
@@ -102,7 +120,8 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
                         {isSelectionMode && selectedCount > 0 && (
                             <button
                                 onClick={onDelete}
-                                className="flex items-center gap-1 px-3 py-1.5 rounded-md transition-colors text-sm font-medium bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40"
+                                disabled={isReadOnly}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-md transition-colors text-sm font-medium bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                                 <Trash2 className="h-4 w-4" />
                                 <span className="hidden sm:inline">Delete ({selectedCount})</span>
@@ -112,7 +131,8 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
 
                         <button
                             onClick={onToggleSelectionMode}
-                            className={`flex items-center gap-1 px-3 py-1.5 rounded-md transition-colors text-sm font-medium ${isSelectionMode
+                            disabled={isReadOnly}
+                            className={`flex items-center gap-1 px-3 py-1.5 rounded-md transition-colors text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed ${isSelectionMode
                                 ? 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                                 : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                                 }`}
@@ -143,8 +163,9 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
                 {viewMode === 'cases' && onUpload && (
                     <button
                         onClick={onUpload}
-                        className="p-1 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                        title="Import test cases from CSV"
+                        disabled={isReadOnly}
+                        className="p-1 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={isReadOnly ? 'You have read-only access to this project' : 'Import test cases from CSV'}
                     >
                         <Upload className="h-4 w-4" strokeWidth={1.5} />
                     </button>
@@ -162,7 +183,9 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
                 {!hideNewButton && (
                     <button
                         onClick={onNew}
-                        className="mac-button ml-2 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-white px-3 py-1 rounded-md shadow-sm active:scale-95 text-sm font-medium"
+                        disabled={isReadOnly}
+                        title={isReadOnly ? 'You have read-only access to this project' : undefined}
+                        className="mac-button ml-2 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-white px-3 py-1 rounded-md shadow-sm active:scale-95 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
                     >
                         <Plus className="h-4 w-4" strokeWidth={2.5} />
                         <span className="inline">New {getNewButtonText()}</span>
