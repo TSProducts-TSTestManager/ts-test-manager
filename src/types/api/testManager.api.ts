@@ -35,10 +35,24 @@ export interface ApiResponse<T = unknown> {
 }
 
 // Member in a project
+export type ProjectMemberRole = 'lead' | 'editor' | 'viewer';
+
 export interface ProjectMember {
   id: string;
   name: string;
   email: string;
+  role?: ProjectMemberRole;
+  active?: boolean;
+  isOwner?: boolean;
+}
+
+export interface ProjectMemberCandidate {
+  id: string;
+  name: string;
+  email: string;
+  clientRole: string;
+  active: boolean;
+  assigned: boolean;
 }
 
 // Tester attached to test case
@@ -150,7 +164,8 @@ export interface UpdateProjectRequest {
 }
 
 export interface AddMemberRequest {
-  email: string;
+  userIds: string[];
+  role?: ProjectMemberRole;
 }
 
 export interface CreateTestSuiteRequest {
@@ -302,6 +317,7 @@ export interface ResultsSummaryResponse {
 
 export interface TestRunResponse {
   id: string;
+  displayId?: string;
   title: string;
   description?: string;
   projectId: string;
@@ -323,6 +339,7 @@ export interface TestRunResponse {
 
 export interface TestRunListResponse {
   id: string;
+  displayId?: string;
   title: string;
   description?: string;
   projectId: string;
@@ -479,9 +496,12 @@ export interface TicketDivergenceResponse {
 
 export interface TicketResponse {
   id: string;
+  displayId?: string;
   title: string;
   description?: string;
   projectId: string;
+  archived?: boolean;
+  archivedAt?: string;
   status: TicketStatus;
   priority: TicketPriority;
   severity: TicketSeverity;
@@ -501,15 +521,21 @@ export interface TicketResponse {
   divergence?: TicketDivergenceResponse;
   attachments: AttachmentResponse[];
   tags: string[];
+  jiraIssueKey?: string | null;
+  jiraUrl?: string | null;
+  jiraStatus?: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface TicketListResponse {
   id: string;
+  displayId?: string;
   title: string;
   description?: string;
   projectId: string;
+  archived?: boolean;
+  archivedAt?: string;
   status: TicketStatus;
   priority: TicketPriority;
   severity: TicketSeverity;
@@ -527,7 +553,11 @@ export interface TicketListResponse {
   lastReturnedAt?: string;
   lastReturnReason?: ReturnReason;
   divergence?: TicketDivergenceResponse;
+  attachments?: AttachmentResponse[];
   tags: string[];
+  jiraIssueKey?: string | null;
+  jiraUrl?: string | null;
+  jiraStatus?: string | null;
   createdAt: string;
   updatedAt: string;
 }

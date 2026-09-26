@@ -6,6 +6,7 @@ import { useAuthStore } from '../../store/authStore';
 import type { Client, ClientUser, SeatUsage } from '../../types/client';
 import { Eye, EyeOff, ShieldCheck, User as UserIcon, Eye as EyeIcon, ChevronLeft, ChevronRight, LayoutDashboard, Users, Layers, UserCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { isValidPhone, normalizePhone } from '../../utils/phone';
 
 const MyClientPage: React.FC = () => {
   const { user } = useAuthStore();
@@ -40,9 +41,10 @@ const MyClientPage: React.FC = () => {
   const [editingClient, setEditingClient] = useState(false);
   const [editForm, setEditForm] = useState({ clientName: '', firstName: '', lastName: '', description: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false, addressLine1: '', addressLine2: '', city: '', state: '', country: 'India', pinCode: '' });
 
-  const isClientAdmin = (user as any)?.role === 'client_admin';
+  // Client record + seat + user management is restricted to admins:
+  // members / viewers get a read-only user directory (backend enforces too).
+  const canManage = ['super_admin', 'client_admin'].includes(user?.role ?? '');
   const indianStates = ["Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal","Delhi","Jammu and Kashmir","Ladakh","Puducherry","Chandigarh","Andaman and Nicobar Islands","Dadra and Nagar Haveli and Daman and Diu","Lakshadweep"];
-  const isValidPhone = (v: string) => { if (!v) return true; const d = v.replace(/[\s\-\(\)]/g, ""); const norm = d.startsWith("+91") ? d.slice(3) : d.startsWith("91") && d.length === 12 ? d.slice(2) : d.startsWith("0") ? d.slice(1) : d; return /^[6-9]\d{9}$/.test(norm); };
   const isValidPin = (v: string) => /^[1-9][0-9]{5}$/.test(v.trim());
   const isValidEmail = (v: string) => /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(v);
 
@@ -50,7 +52,7 @@ const MyClientPage: React.FC = () => {
     try {
       const all = await getClients();
       // client_admin has exactly one, find by user.clientId or first
-      const userClientId = (user as any)?.clientId;
+      const userClientId = user?.clientId;
       let c: Client | null = null;
       if (userClientId) c = all.find(x => x._id === userClientId || x.displayId === userClientId) || all[0] || null;
       else c = all[0] || null;
@@ -61,8 +63,8 @@ const MyClientPage: React.FC = () => {
         firstName: c.contactFirstName || '',
         lastName: c.contactLastName || '',
         description: c.description || '',
-        mobile: c.mobile || '',
-        whatsapp: c.whatsapp || '',
+        mobile: normalizePhone(c.mobile || ''),
+        whatsapp: normalizePhone(c.whatsapp || ''),
         whatsappSameAsMobile: !!c.whatsappSameAsMobile,
         addressLine1: (c as any).address?.addressLine1 || '',
         addressLine2: (c as any).address?.addressLine2 || '',
@@ -71,7 +73,7 @@ const MyClientPage: React.FC = () => {
         country: (c as any).address?.country || 'India',
         pinCode: (c as any).address?.pinCode || '',
       });
-      try { setUsage(await getClientUsage(c.displayId)); } catch {}
+      try { setUsage(await getClientUsage(c.displayId)); } catch (e:any) { console.warn('Seat usage unavailable:', e?.message); }
       try { setUsers(await getClientUsers(c.displayId, 'all')); } catch (e:any) { toast.error(e.message); }
       try { setMyJira(await getMyJira()); } catch {}
       try {
@@ -93,6 +95,7 @@ const MyClientPage: React.FC = () => {
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!client) return;
+    if (!canManage) { toast.error('Only client admins can add users'); return; }
     if (!invite.email.trim() || !isValidEmail(invite.email.trim())) { toast.error('Valid Email required'); return; }
     if (!invite.firstName.trim() || !invite.lastName.trim()) { toast.error('First & Last required'); return; }
     if (invite.mobile && !isValidPhone(invite.mobile)) { toast.error('Mobile must be 10 digits (India)'); return; }
@@ -101,8 +104,8 @@ const MyClientPage: React.FC = () => {
     try {
       await createClientAdmin(client.displayId, {
         email: invite.email, firstName: invite.firstName.trim(), lastName: invite.lastName.trim(),
-        name: `${invite.firstName} ${invite.lastName}`.trim(), mobile: invite.mobile || undefined,
-        whatsapp: invite.whatsappSameAsMobile ? invite.mobile : (invite.whatsapp || undefined), whatsappSameAsMobile: invite.whatsappSameAsMobile,
+        name: `${invite.firstName} ${invite.lastName}`.trim(), mobile: normalizePhone(invite.mobile) || undefined,
+        whatsapp: invite.whatsappSameAsMobile ? normalizePhone(invite.mobile) || undefined : (normalizePhone(invite.whatsapp) || undefined), whatsappSameAsMobile: invite.whatsappSameAsMobile,
         tempPassword: invite.tempPassword || undefined, role: invite.role
       } as any);
       toast.success('User invited');
@@ -114,6 +117,7 @@ const MyClientPage: React.FC = () => {
 
   const handleSaveClient = async () => {
     if (!client) return;
+    if (!canManage) { toast.error('Only client admins can edit the client'); return; }
     if (!editForm.clientName.trim() || !editForm.firstName.trim() || !editForm.lastName.trim()) { toast.error('Client Name, First & Last required'); return; }
     if (editForm.mobile && !isValidPhone(editForm.mobile)) { toast.error('Mobile must be 10 digits'); return; }
     const ewp = editForm.whatsappSameAsMobile ? editForm.mobile : editForm.whatsapp;
@@ -124,7 +128,7 @@ const MyClientPage: React.FC = () => {
       await updateClient(client.displayId, {
         name: editForm.clientName.trim(), description: editForm.description,
         contactFirstName: editForm.firstName.trim(), contactLastName: editForm.lastName.trim(),
-        mobile: editForm.mobile || undefined, whatsapp: editForm.whatsappSameAsMobile ? editForm.mobile : (editForm.whatsapp || undefined), whatsappSameAsMobile: editForm.whatsappSameAsMobile,
+        mobile: normalizePhone(editForm.mobile) || undefined, whatsapp: editForm.whatsappSameAsMobile ? normalizePhone(editForm.mobile) || undefined : (normalizePhone(editForm.whatsapp) || undefined), whatsappSameAsMobile: editForm.whatsappSameAsMobile,
         address: { addressLine1: editForm.addressLine1.trim(), addressLine2: editForm.addressLine2?.trim(), city: editForm.city.trim(), state: editForm.state.trim(), country: editForm.country.trim() || 'India', pinCode: editForm.pinCode.trim() }
       } as any);
       toast.success('Client updated');
@@ -133,20 +137,26 @@ const MyClientPage: React.FC = () => {
     } catch(e:any){ toast.error(e.message); }
   };
 
-  const handleDeactivate = async (uid: string) => { if(!client) return; try { await deactivateUser(client.displayId, uid); toast.success('Deactivated'); load(); } catch(e:any){ toast.error(e.message);} };
-  const handleRestore = async (uid: string) => { if(!client) return; try { await restoreUser(client.displayId, uid); toast.success('Restored'); load(); } catch(e:any){ toast.error(e.message);} };
-  const openReset = (u: ClientUser) => { setResetTarget(u); setResetPwd(''); setShowResetEye(false); setShowResetModal(true); };
+  const handleDeactivate = async (uid: string) => { if(!client) return; if(!canManage){ toast.error('Only client admins can manage users'); return; } try { await deactivateUser(client.displayId, uid); toast.success('Deactivated'); load(); } catch(e:any){ toast.error(e.message);} };
+  const handleRestore = async (uid: string) => { if(!client) return; if(!canManage){ toast.error('Only client admins can manage users'); return; } try { await restoreUser(client.displayId, uid); toast.success('Restored'); load(); } catch(e:any){ toast.error(e.message);} };
+  const openReset = (u: ClientUser) => {
+    if(!canManage){ toast.error('Only client admins can manage users'); return; }
+    setResetTarget(u); setResetPwd(''); setShowResetEye(false); setShowResetModal(true);
+  };
   const handleResetConfirm = async () => {
     if (!client || !resetTarget || !resetPwd) { toast.error('Password required'); return; }
+    if(!canManage){ toast.error('Only client admins can manage users'); return; }
     try { await resetClientAdminPassword(client.displayId, resetTarget._id, resetPwd); toast.success('Password reset'); setShowResetModal(false); } catch(e:any){ toast.error(e.message); }
   };
   const openEditUser = (u: ClientUser) => {
+    if(!canManage){ toast.error('Only client admins can manage users'); return; }
     setEditUserTarget(u);
-    setEditUserForm({ firstName: u.firstName || u.name.split(' ')[0] || '', lastName: u.lastName || u.name.split(' ').slice(1).join(' ') || '', mobile: u.mobile || '', whatsapp: u.whatsapp || '', whatsappSameAsMobile: !!u.whatsappSameAsMobile });
+    setEditUserForm({ firstName: u.firstName || u.name.split(' ')[0] || '', lastName: u.lastName || u.name.split(' ').slice(1).join(' ') || '', mobile: normalizePhone(u.mobile || ''), whatsapp: normalizePhone(u.whatsapp || ''), whatsappSameAsMobile: !!u.whatsappSameAsMobile });
     setShowEditUserModal(true);
   };
   const handleEditUserSave = async () => {
     if (!client || !editUserTarget) return;
+    if (!canManage) { toast.error('Only client admins can manage users'); return; }
     if (!editUserForm.firstName.trim() || !editUserForm.lastName.trim()) { toast.error('First & Last required'); return; }
     if (editUserForm.mobile && !isValidPhone(editUserForm.mobile)) { toast.error('Mobile 10 digits'); return; }
     const uw = editUserForm.whatsappSameAsMobile ? editUserForm.mobile : editUserForm.whatsapp;
@@ -154,7 +164,7 @@ const MyClientPage: React.FC = () => {
     try {
       await updateClientUser(client.displayId, editUserTarget._id, {
         firstName: editUserForm.firstName.trim(), lastName: editUserForm.lastName.trim(),
-        mobile: editUserForm.mobile || undefined, whatsapp: editUserForm.whatsappSameAsMobile ? editUserForm.mobile : (editUserForm.whatsapp || undefined), whatsappSameAsMobile: editUserForm.whatsappSameAsMobile
+        mobile: normalizePhone(editUserForm.mobile) || undefined, whatsapp: editUserForm.whatsappSameAsMobile ? normalizePhone(editUserForm.mobile) || undefined : (normalizePhone(editUserForm.whatsapp) || undefined), whatsappSameAsMobile: editUserForm.whatsappSameAsMobile
       } as any);
       toast.success('User updated'); setShowEditUserModal(false); load();
     } catch(e:any){ toast.error(e.message); }
@@ -175,7 +185,7 @@ const MyClientPage: React.FC = () => {
     <div className="bg-white dark:bg-gray-900 min-h-full p-4 sm:p-6 space-y-6">
       <div className="bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl p-5 text-white">
         <h1 className="text-xl font-bold">My Client — {client.displayId}</h1>
-        <p className="text-blue-100 text-sm">{client.name} • Contact: {client.contactFirstName} {client.contactLastName} • {client.mobile || ''}</p>
+        <p className="text-blue-100 text-sm">{client.name} • Contact: {client.contactFirstName} {client.contactLastName} • {normalizePhone(client.mobile) || ''}</p>
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-4">
@@ -194,7 +204,7 @@ const MyClientPage: React.FC = () => {
               <div>Mobile: {client.mobile || '—'} • Whatsapp: {client.whatsapp || '—'} {client.whatsappSameAsMobile && '(same)'}</div>
             </div>
           </div>
-          {isClientAdmin && <button onClick={()=>setEditingClient(true)} className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg h-fit">Edit</button>}
+          {canManage && <button onClick={()=>setEditingClient(true)} className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg h-fit">Edit</button>}
         </div>
       </div>
 
@@ -237,8 +247,10 @@ const MyClientPage: React.FC = () => {
       {tab==='users' && (
         <>
           <div className="flex justify-between items-center">
-            <h3 className="font-semibold flex items-center gap-2"><Users size={16} className="text-blue-600" /> Users <span className="text-xs font-normal text-gray-400">— Manage team, roles & seats</span></h3>
-            <button onClick={()=>setShowInviteModal(true)} disabled={!!full} className={`px-3 py-1.5 rounded-lg text-sm text-white ${full?'bg-gray-400':'bg-blue-600'}`}>+ Add User</button>
+            <h3 className="font-semibold flex items-center gap-2"><Users size={16} className="text-blue-600" /> Users <span className="text-xs font-normal text-gray-400">{canManage ? '— Manage team, roles & seats' : '— View team (read-only)'}</span></h3>
+            {canManage
+              ? <button onClick={()=>setShowInviteModal(true)} disabled={!!full} className={`px-3 py-1.5 rounded-lg text-sm text-white ${full?'bg-gray-400':'bg-blue-600'}`}>+ Add User</button>
+              : <span className="text-xs px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/60">Read-only — only client admins can add or manage users</span>}
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
@@ -253,7 +265,7 @@ const MyClientPage: React.FC = () => {
                     <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Whatsapp</th>
                     <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Role</th>
                     <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap">Status</th>
-                    <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap text-right">Actions</th>
+                    {canManage && <th className="px-4 py-3 font-semibold text-xs uppercase tracking-wider text-gray-500 whitespace-nowrap text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -275,16 +287,18 @@ const MyClientPage: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-4 py-3 align-middle whitespace-nowrap"><span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border ${u.status==='active' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800' : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-700 dark:text-gray-300'}`}>{u.status === 'active' ? 'Active' : 'Inactive'}</span></td>
+                      {canManage && (
                       <td className="px-4 py-3 align-middle whitespace-nowrap">
                         <div className="flex gap-1 justify-end">
-                          {isClientAdmin && <button onClick={()=>openEditUser(u)} className="text-gray-700 dark:text-gray-300 text-xs border border-gray-200 dark:border-gray-600 px-2.5 py-1 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 whitespace-nowrap">Edit</button>}
+                          <button onClick={()=>openEditUser(u)} className="text-gray-700 dark:text-gray-300 text-xs border border-gray-200 dark:border-gray-600 px-2.5 py-1 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 whitespace-nowrap">Edit</button>
                           {u.status==='active' ? <button onClick={()=>setShowDeactivateConfirm(u)} className="text-red-600 text-xs border border-red-200 px-2.5 py-1 rounded-lg hover:bg-red-50 whitespace-nowrap">Deactivate</button> : <button onClick={()=>handleRestore(u._id)} className="text-green-600 text-xs border border-green-200 px-2.5 py-1 rounded-lg hover:bg-green-50 whitespace-nowrap">Restore</button>}
                           <button onClick={()=>openReset(u)} className="text-blue-600 text-xs border border-blue-200 px-2.5 py-1 rounded-lg hover:bg-blue-50 whitespace-nowrap">Reset Pwd</button>
                         </div>
                       </td>
+                      )}
                     </tr>
                   )})}
-                  {paginatedUsers.length===0 && <tr><td colSpan={9} className="p-6 text-center text-gray-400">No users yet</td></tr>}
+                  {paginatedUsers.length===0 && <tr><td colSpan={canManage ? 9 : 8} className="p-6 text-center text-gray-400">No users yet</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -339,7 +353,7 @@ const MyClientPage: React.FC = () => {
                     <span className="font-medium text-sm">{(p as any).name} <span className="font-mono text-xs text-gray-500">{(p as any).displayId || ''}</span></span>
                     <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700">{pj?.enabled ? `${pj.domain} / ${pj.projectKey}` : 'Not mapped'}</span>
                   </div>
-                  {isClientAdmin ? (
+                  {canManage ? (
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">JIRA Domain</label>
@@ -365,7 +379,7 @@ const MyClientPage: React.FC = () => {
         </div>
       )}
 
-      {editingClient && isClientAdmin && (
+      {editingClient && canManage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={()=>setEditingClient(false)} />
           <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -398,11 +412,11 @@ const MyClientPage: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Mobile Number <span className="font-normal text-gray-400">(10-digit India)</span></label>
-                  <input placeholder="9876543210" value={editForm.mobile} onChange={e=>setEditForm({...editForm,mobile:e.target.value})} className="border p-2 rounded w-full" />
+                  <input placeholder="9876543210" value={editForm.mobile} onChange={e=>setEditForm({...editForm,mobile:normalizePhone(e.target.value)})} className="border p-2 rounded w-full" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Whatsapp Number</label>
-                  <input placeholder="9876543210" value={editForm.whatsappSameAsMobile ? editForm.mobile : editForm.whatsapp} onChange={e=>setEditForm({...editForm,whatsapp:e.target.value})} disabled={editForm.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200 dark:disabled:bg-gray-700" />
+                  <input placeholder="9876543210" value={editForm.whatsappSameAsMobile ? editForm.mobile : editForm.whatsapp} onChange={e=>setEditForm({...editForm,whatsapp:normalizePhone(e.target.value)})} disabled={editForm.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-600 dark:disabled:text-gray-300" />
                 </div>
               </div>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editForm.whatsappSameAsMobile} onChange={e=>setEditForm({...editForm,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
@@ -466,11 +480,11 @@ const MyClientPage: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Mobile Number <span className="font-normal text-gray-400">(10-digit India)</span></label>
-                  <input placeholder="9876543210" value={invite.mobile} onChange={e=>setInvite({...invite,mobile:e.target.value})} className="border p-2 rounded w-full" />
+                  <input placeholder="9876543210" value={invite.mobile} onChange={e=>setInvite({...invite,mobile:normalizePhone(e.target.value)})} className="border p-2 rounded w-full" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Whatsapp Number</label>
-                  <input placeholder="9876543210" value={invite.whatsappSameAsMobile ? invite.mobile : invite.whatsapp} onChange={e=>setInvite({...invite,whatsapp:e.target.value})} disabled={invite.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200" />
+                  <input placeholder="9876543210" value={invite.whatsappSameAsMobile ? invite.mobile : invite.whatsapp} onChange={e=>setInvite({...invite,whatsapp:normalizePhone(e.target.value)})} disabled={invite.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-600 dark:disabled:text-gray-300" />
                 </div>
               </div>
               <label className="flex gap-2 text-sm"><input type="checkbox" checked={invite.whatsappSameAsMobile} onChange={e=>setInvite({...invite,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
@@ -518,7 +532,7 @@ const MyClientPage: React.FC = () => {
           <div className="absolute inset-0 bg-black/50" onClick={()=>setShowDeactivateConfirm(null)} />
           <div className="relative bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-md space-y-3">
             <h3 className="font-semibold">Deactivate {showDeactivateConfirm.email}?</h3>
-            <p className="text-sm text-gray-500">This will free 1 seat. You can restore later.</p>
+            <p className="text-sm text-gray-500">This frees 1 seat. The account is only deactivated — their tickets, test cases and project assignments are kept, and they will show as &quot;inactive&quot; in project member pickers. You can restore them anytime.</p>
             <div className="flex justify-end gap-2">
               <button onClick={()=>setShowDeactivateConfirm(null)} className="border px-4 py-2 rounded">Cancel</button>
               <button onClick={async()=>{ await handleDeactivate(showDeactivateConfirm._id); setShowDeactivateConfirm(null); }} className="bg-red-600 text-white px-4 py-2 rounded">Deactivate</button>
@@ -545,11 +559,11 @@ const MyClientPage: React.FC = () => {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Mobile Number <span className="font-normal text-gray-400">(10-digit India)</span></label>
-                <input placeholder="9876543210" value={editUserForm.mobile} onChange={e=>setEditUserForm({...editUserForm,mobile:e.target.value})} className="border p-2 rounded w-full" />
+                <input placeholder="9876543210" value={editUserForm.mobile} onChange={e=>setEditUserForm({...editUserForm,mobile:normalizePhone(e.target.value)})} className="border p-2 rounded w-full" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Whatsapp Number</label>
-                <input placeholder="9876543210" value={editUserForm.whatsappSameAsMobile ? editUserForm.mobile : editUserForm.whatsapp} onChange={e=>setEditUserForm({...editUserForm,whatsapp:e.target.value})} disabled={editUserForm.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200" />
+                <input placeholder="9876543210" value={editUserForm.whatsappSameAsMobile ? editUserForm.mobile : editUserForm.whatsapp} onChange={e=>setEditUserForm({...editUserForm,whatsapp:normalizePhone(e.target.value)})} disabled={editUserForm.whatsappSameAsMobile} className="border p-2 rounded w-full disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-600 dark:disabled:text-gray-300" />
               </div>
             </div>
             <label className="flex gap-2 text-sm"><input type="checkbox" checked={editUserForm.whatsappSameAsMobile} onChange={e=>setEditUserForm({...editUserForm,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>

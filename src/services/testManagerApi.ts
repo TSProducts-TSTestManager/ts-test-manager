@@ -17,6 +17,7 @@ import {
   CreateProjectRequest,
   UpdateProjectRequest,
   AddMemberRequest,
+  ProjectMemberCandidate,
   CreateTestSuiteRequest,
   UpdateTestSuiteRequest,
   CreateTestCaseRequest,
@@ -160,9 +161,25 @@ export const deleteProject = async (id: string): Promise<void> => {
 };
 
 /**
- * Add a member to a project
+ * Users of the project's client that can be assigned (owner / client_admin only)
  */
-export const addProjectMember = async (
+export const listMemberCandidates = async (
+  projectId: string
+): Promise<ProjectMemberCandidate[]> => {
+  try {
+    const response = await axios.get<ApiResponse<ProjectMemberCandidate[]>>(
+      `${API_URL}/projects/${projectId}/members/candidates`
+    );
+    return response.data.data || [];
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * Assign existing client users to a project (no user is created here)
+ */
+export const assignProjectMembers = async (
   projectId: string,
   data: AddMemberRequest
 ): Promise<ProjectResponse> => {
@@ -170,6 +187,28 @@ export const addProjectMember = async (
     const response = await axios.post<ApiResponse<ProjectResponse>>(
       `${API_URL}/projects/${projectId}/members`,
       data
+    );
+    if (!response.data.data) {
+      throw new Error("No data returned from server");
+    }
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * Change a member's project role (lead / editor / viewer)
+ */
+export const updateProjectMemberRole = async (
+  projectId: string,
+  memberId: string,
+  role: string
+): Promise<ProjectResponse> => {
+  try {
+    const response = await axios.patch<ApiResponse<ProjectResponse>>(
+      `${API_URL}/projects/${projectId}/members/${memberId}`,
+      { role }
     );
     if (!response.data.data) {
       throw new Error("No data returned from server");
@@ -672,7 +711,9 @@ export const testManagerApi = {
   getProject,
   updateProject,
   deleteProject,
-  addProjectMember,
+  listMemberCandidates,
+  assignProjectMembers,
+  updateProjectMemberRole,
   removeProjectMember,
   // Test Suites
   createTestSuite,

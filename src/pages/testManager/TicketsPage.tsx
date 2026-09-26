@@ -26,8 +26,18 @@ import {
     Filter,
     LayoutList,
     SquareKanban,
+    ArrowUp,
+    ArrowDown,
+    ArrowUpDown,
+    Archive,
+    ArchiveRestore,
+    Search,
+    Download,
 } from 'lucide-react';
+import IdDisplay from '../../components/testManager/IdDisplay';
+import { exportTicketsToXLSX } from '../../utils/exportTickets';
 import { CreateTicketRequest, UpdateTicketRequest, TicketListResponse } from '../../types/api/testManager.api';
+import { useProjectWriteAccess } from '../../utils/projectPermissions';
 import { ticketApi } from '../../services/ticketApi';
 import { testRunApi } from '../../services/testRunApi';
 import { useRealtimeTickets } from '../../hooks/useRealtimeTickets';
@@ -40,6 +50,19 @@ import {
 } from '../../utils/ticketColors';
 
 const TICKETS_PAGE_SIZE = 30;
+
+type TicketSortField =
+    | 'createdAt'
+    | 'updatedAt'
+    | 'title'
+    | 'status'
+    | 'priority'
+    | 'severity'
+    | 'displayId'
+    | 'team'
+    | 'assignedTo';
+
+const DATE_SORT_FIELDS: TicketSortField[] = ['createdAt', 'updatedAt'];
 
 const getTicketPriorityBarColor = (priority: TicketPriority): string => {
     switch (priority) {
@@ -58,7 +81,6 @@ const TicketsPage: React.FC = () => {
         isLoading,
         createTicket,
         updateTicket,
-        deleteTicket,
         setActiveTicket,
         activeTicket,
         setTicketDetailViewOpen,
@@ -69,6 +91,11 @@ const TicketsPage: React.FC = () => {
         ticketView,
         setTicketView,
         updateTicketStatus,
+        archiveTicket,
+        restoreTicket,
+        searchQuery,
+        setSearchQuery,
+        ensureProjectLoaded,
     } = useTestManagerStore(
         (state) => ({
             activeProject: state.activeProject,
@@ -76,7 +103,6 @@ const TicketsPage: React.FC = () => {
             isLoading: state.isLoading,
             createTicket: state.createTicket,
             updateTicket: state.updateTicket,
-            deleteTicket: state.deleteTicket,
             setActiveTicket: state.setActiveTicket,
             activeTicket: state.activeTicket,
             setTicketDetailViewOpen: state.setTicketDetailViewOpen,
@@ -87,6 +113,11 @@ const TicketsPage: React.FC = () => {
             ticketView: state.ticketView,
             setTicketView: state.setTicketView,
             updateTicketStatus: state.updateTicketStatus,
+            archiveTicket: state.archiveTicket,
+            restoreTicket: state.restoreTicket,
+            searchQuery: state.searchQuery,
+            setSearchQuery: state.setSearchQuery,
+            ensureProjectLoaded: state.ensureProjectLoaded,
         }),
         shallow
     );
@@ -119,6 +150,47 @@ const TicketsPage: React.FC = () => {
     const [ticketsHasMore, setTicketsHasMore] = useState(false);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
 
+    // Table scope (active / archived) + server-side sort
+    const [ticketScope, setTicketScope] = useState<'active' | 'archived'>('active');
+    const [isExporting, setIsExporting] = useState(false);
+    const [sortField, setSortField] = useState<TicketSortField>('createdAt');
+    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+    // Debounce the global header search before hitting the API
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    useEffect(() => {
+        const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+        return () => clearTimeout(handle);
+    }, [searchQuery]);
+
+    const handleSort = useCallback((field: TicketSortField) => {
+        if (sortField === field) {
+            setSortDir((dir) => (dir === 'asc' ? 'desc' : 'asc'));
+            return;
+        }
+        setSortField(field);
+        setSortDir(DATE_SORT_FIELDS.includes(field) ? 'desc' : 'asc');
+    }, [sortField]);
+
+    const renderSortableHeader = (label: string, field: TicketSortField, extraClass = '') => (
+        <th
+            onClick={() => handleSort(field)}
+            title={`Sort by ${label}`}
+            className={`text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer select-none group hover:text-gray-700 dark:hover:text-gray-200 ${extraClass}`}
+        >
+            <span className="inline-flex items-center gap-1">
+                {label}
+                {sortField === field ? (
+                    sortDir === 'asc'
+                        ? <ArrowUp size={12} className="text-blue-500" />
+                        : <ArrowDown size={12} className="text-blue-500" />
+                ) : (
+                    <ArrowUpDown size={12} className="opacity-0 group-hover:opacity-60" />
+                )}
+            </span>
+        </th>
+    );
+
     const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
     const listContainerRef = useRef<HTMLDivElement>(null);
     const ticketsHasMoreRef = useRef(ticketsHasMore);
@@ -132,6 +204,16 @@ const TicketsPage: React.FC = () => {
 
     const currentProject = projects.find((p) => p.id === activeProject);
     const projectMembers = currentProject?.members || [];
+    // Project role guard: viewers are read-only (mirrors backend requireProjectWrite)
+    const canWrite = useProjectWriteAccess(activeProject);
+
+    // The assignee dropdown needs the active project's members. After a hard
+    // refresh / deep link the project list is empty, so load that project on demand.
+    useEffect(() => {
+        if (activeProject && !projects.some((p) => p.id === activeProject)) {
+            ensureProjectLoaded(activeProject);
+        }
+    }, [activeProject, projects, ensureProjectLoaded]);
 
     // Compute all unique tags from all tickets for auto-suggestions
     const allTags = useMemo(() => {
@@ -140,9 +222,9 @@ const TicketsPage: React.FC = () => {
         return Array.from(tagSet).sort();
     }, [tickets]);
 
-    // Client-side filtered tickets based on quick filters
-    const filteredTickets = useMemo(() => {
-        let result = tickets;
+    // Client-side filtered tickets based on quick filters (shared by the table and the Excel export)
+    const applyTicketFilters = useCallback((rows: Ticket[]) => {
+        let result = rows;
         if (selectedStatusFilters.length > 0) {
             result = result.filter((t) => selectedStatusFilters.includes(t.status));
         }
@@ -159,7 +241,12 @@ const TicketsPage: React.FC = () => {
             result = result.filter((t) => t.team === selectedTeamFilter);
         }
         return result;
-    }, [tickets, selectedStatusFilters, selectedPriorityFilters, selectedSeverityFilters, selectedFailureTypeFilter, selectedTeamFilter]);
+    }, [selectedStatusFilters, selectedPriorityFilters, selectedSeverityFilters, selectedFailureTypeFilter, selectedTeamFilter]);
+
+    const filteredTickets = useMemo(
+        () => applyTicketFilters(tickets),
+        [tickets, applyTicketFilters]
+    );
 
     // All unique teams for the team filter dropdown
     const allTeams = useMemo(() => {
@@ -214,7 +301,7 @@ const TicketsPage: React.FC = () => {
         };
     }, [filteredTickets.length, rowVirtualizer]);
 
-    const hasActiveFilters = selectedStatusFilters.length > 0 || selectedPriorityFilters.length > 0 || selectedSeverityFilters.length > 0 || !!selectedFailureTypeFilter || !!selectedTeamFilter;
+    const hasActiveFilters = selectedStatusFilters.length > 0 || selectedPriorityFilters.length > 0 || selectedSeverityFilters.length > 0 || !!selectedFailureTypeFilter || !!selectedTeamFilter || !!searchQuery.trim();
 
     const handleApplyFilters = useCallback((
         status: TicketStatus[],
@@ -229,6 +316,48 @@ const TicketsPage: React.FC = () => {
         setSelectedFailureTypeFilter(failureType);
         setSelectedTeamFilter(team);
     }, []);
+
+    // Export every ticket matching the active search/scope/quick filters — not just
+    // the rows already loaded by the infinite-scroll list.
+    const handleExportTickets = useCallback(async () => {
+        if (!activeProject || isExporting) return;
+        setIsExporting(true);
+        try {
+            const EXPORT_PAGE_SIZE = 200; // matches the backend limit cap
+            const MAX_EXPORT_ROWS = 10000;
+            const rows: Ticket[] = [];
+            let offset = 0;
+            let hasMore = true;
+
+            while (hasMore && rows.length < MAX_EXPORT_ROWS) {
+                const result = await ticketApi.getTicketsPaginated(activeProject, {
+                    limit: EXPORT_PAGE_SIZE,
+                    offset,
+                    search: debouncedSearch || undefined,
+                    sortField,
+                    sortDir,
+                    archived: ticketScope === 'archived' ? ('true' as const) : undefined,
+                });
+                const items = result.items.map(mapTicketResponse);
+                rows.push(...items);
+                offset += items.length;
+                hasMore = result.meta.hasMore && items.length > 0 && offset < result.meta.total;
+            }
+
+            const exportable = applyTicketFilters(rows);
+            exportTicketsToXLSX(exportable, {
+                projectName: currentProject?.name,
+                scope: ticketScope,
+            });
+            toast.success(
+                `Exported ${exportable.length} ticket${exportable.length === 1 ? '' : 's'} to Excel`
+            );
+        } catch (error: unknown) {
+            toast.error((error as Error).message || 'Failed to export tickets');
+        } finally {
+            setIsExporting(false);
+        }
+    }, [activeProject, isExporting, debouncedSearch, sortField, sortDir, ticketScope, currentProject, applyTicketFilters]);
 
     // Check for URL state to open create modal
     useEffect(() => {
@@ -314,14 +443,21 @@ const TicketsPage: React.FC = () => {
         setSearchParams(next, { replace: true });
     }, [searchParams, setSearchParams]);
 
-    // Fetch tickets (paginated) when project changes
+    // Fetch tickets (paginated) when project or query params change
     const loadTickets = useCallback(async (reset = true, offsetValue = 0) => {
         if (!activeProject) return;
+        const queryParams = {
+            limit: TICKETS_PAGE_SIZE,
+            search: debouncedSearch || undefined,
+            sortField,
+            sortDir,
+            archived: ticketScope === 'archived' ? ('true' as const) : undefined,
+        };
         if (reset) {
             useTestManagerStore.setState({ isLoading: true, error: null });
             try {
                 const result = await ticketApi.getTicketsPaginated(activeProject, {
-                    limit: TICKETS_PAGE_SIZE,
+                    ...queryParams,
                     offset: 0,
                 });
                 useTestManagerStore.setState({
@@ -341,7 +477,7 @@ const TicketsPage: React.FC = () => {
             setIsLoadingMore(true);
             try {
                 const result = await ticketApi.getTicketsPaginated(activeProject, {
-                    limit: TICKETS_PAGE_SIZE,
+                    ...queryParams,
                     offset: offsetValue,
                 });
 
@@ -364,21 +500,25 @@ const TicketsPage: React.FC = () => {
                 setIsLoadingMore(false);
             }
         }
-    }, [activeProject, setTicketsTotal]);
+    }, [activeProject, setTicketsTotal, debouncedSearch, sortField, sortDir, ticketScope]);
 
     const loadTicketsRef = useRef(loadTickets);
     loadTicketsRef.current = loadTickets;
 
-    // Fetch tickets and test runs when project changes
+    // Fetch tickets whenever the project or the query params change
     useEffect(() => {
         if (activeProject) {
             loadTickets(true);
-            // Fetch test runs for the create modal dropdown
-            testRunApi.getTestRuns(activeProject)
-                .then((runs) => setTestRunOptions(runs.map((r) => ({ id: r.id, title: r.title }))))
-                .catch(() => {});
         }
     }, [activeProject, loadTickets]);
+
+    // Fetch test runs for the create modal dropdown when the project changes
+    useEffect(() => {
+        if (!activeProject) return;
+        testRunApi.getTestRuns(activeProject)
+            .then((runs) => setTestRunOptions(runs.map((r) => ({ id: r.id, title: r.title }))))
+            .catch(() => {});
+    }, [activeProject]);
 
     // Stable ref-based load-more handler — avoids recreating the IntersectionObserver
     // on every pagination load, preventing disconnect/reconnect churn.
@@ -443,11 +583,15 @@ const TicketsPage: React.FC = () => {
         status?: TicketStatus;
         failureType?: FailureType;
         team?: string;
-        assignedToId?: string;
+        assignedToId?: string | null;
         relatedRunId?: string;
         tags?: string[];
     }) => {
         if (!activeProject) return;
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            return;
+        }
         const request: CreateTicketRequest = {
             title: data.title,
             description: data.description,
@@ -455,13 +599,13 @@ const TicketsPage: React.FC = () => {
             severity: data.severity,
             failureType: data.failureType,
             team: data.team,
-            assignedToId: data.assignedToId,
+            assignedToId: data.assignedToId || undefined,
             relatedRunId: data.relatedRunId,
             tags: data.tags,
         };
         await createTicket(activeProject, request);
         toast.success('Ticket created successfully');
-    }, [activeProject, createTicket]);
+    }, [activeProject, canWrite, createTicket]);
 
     const handleUpdateTicket = useCallback(async (data: {
         title?: string;
@@ -471,11 +615,15 @@ const TicketsPage: React.FC = () => {
         severity?: TicketSeverity;
         failureType?: FailureType;
         team?: string;
-        assignedToId?: string;
+        assignedToId?: string | null;
         relatedRunId?: string;
         tags?: string[];
     }) => {
         if (!activeProject || !activeTicket) return;
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            return;
+        }
         const request: UpdateTicketRequest = {
             title: data.title,
             description: data.description,
@@ -490,15 +638,41 @@ const TicketsPage: React.FC = () => {
         };
         await updateTicket(activeProject, activeTicket.id, request);
         toast.success('Ticket updated');
-    }, [activeProject, activeTicket, updateTicket]);
+    }, [activeProject, activeTicket, canWrite, updateTicket]);
 
-    const handleDeleteTicket = useCallback(async () => {
+    const handleArchiveTicket = useCallback(async () => {
         if (!activeProject || !activeTicket) return;
-        await deleteTicket(activeProject, activeTicket.id);
-        setActiveTicket(null);
-        setTicketDetailViewOpen(false);
-        toast.success('Ticket deleted');
-    }, [activeProject, activeTicket, deleteTicket, setActiveTicket, setTicketDetailViewOpen]);
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            return;
+        }
+        try {
+            await archiveTicket(activeProject, activeTicket.id);
+            setActiveTicket(null);
+            setTicketDetailViewOpen(false);
+            toast.success('Ticket archived');
+            loadTicketsRef.current(true);
+        } catch (error: unknown) {
+            toast.error((error as Error).message || 'Failed to archive ticket');
+        }
+    }, [activeProject, activeTicket, canWrite, archiveTicket, setActiveTicket, setTicketDetailViewOpen]);
+
+    const handleRestoreTicket = useCallback(async () => {
+        if (!activeProject || !activeTicket) return;
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            return;
+        }
+        try {
+            await restoreTicket(activeProject, activeTicket.id);
+            setActiveTicket(null);
+            setTicketDetailViewOpen(false);
+            toast.success('Ticket restored');
+            loadTicketsRef.current(true);
+        } catch (error: unknown) {
+            toast.error((error as Error).message || 'Failed to restore ticket');
+        }
+    }, [activeProject, activeTicket, canWrite, restoreTicket, setActiveTicket, setTicketDetailViewOpen]);
 
     const openTicketDetail = useCallback(async (ticket: Ticket) => {
         setActiveTicket(ticket);
@@ -514,13 +688,17 @@ const TicketsPage: React.FC = () => {
 
     const handleStatusChange = useCallback(async (ticketId: string, status: TicketStatus) => {
         if (!activeProject) return;
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            return;
+        }
         try {
             await updateTicketStatus(activeProject, ticketId, status);
             toast.success(`Ticket moved to ${status}`);
         } catch {
             toast.error('Failed to update ticket status');
         }
-    }, [activeProject, updateTicketStatus]);
+    }, [activeProject, canWrite, updateTicketStatus]);
 
     const closeTicketDetail = useCallback(() => {
         setActiveTicket(null);
@@ -545,7 +723,7 @@ const TicketsPage: React.FC = () => {
                     <div className="flex items-center gap-2 min-w-0">
                         <Bug size={18} className="text-red-500 flex-shrink-0" />
                         <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">
-                            Tickets ({ticketsTotal || tickets.length})
+                            {ticketScope === 'archived' ? 'Archived Tickets' : 'Tickets'} ({ticketsTotal || tickets.length})
                         </h2>
                     </div>
 
@@ -853,6 +1031,7 @@ const TicketsPage: React.FC = () => {
                                 setSelectedSeverityFilters([]);
                                 setSelectedFailureTypeFilter(null);
                                 setSelectedTeamFilter(null);
+                                setSearchQuery('');
                             }}
                             className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
                             title="Clear all filters"
@@ -862,6 +1041,56 @@ const TicketsPage: React.FC = () => {
                         </button>
                     )}
                     </div>
+                </div>
+
+                {/* Table search */}
+                <div className="relative flex-shrink-0 w-full sm:w-56">
+                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search tickets by ID, title, tag..."
+                        aria-label="Search tickets"
+                        className="w-full h-8 pl-8 pr-7 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-700 dark:text-gray-300 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    />
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                            aria-label="Clear search"
+                        >
+                            <X size={13} />
+                        </button>
+                    )}
+                </div>
+
+                {/* Scope toggle: active / archived */}
+                <div className="flex items-center p-0.5 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex-shrink-0">
+                    <button
+                        onClick={() => setTicketScope('active')}
+                        className={`flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-medium transition-colors ${
+                            ticketScope === 'active'
+                                ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                        }`}
+                        title="Show active tickets"
+                    >
+                        <ArchiveRestore size={13} />
+                        Active
+                    </button>
+                    <button
+                        onClick={() => setTicketScope('archived')}
+                        className={`flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-medium transition-colors ${
+                            ticketScope === 'archived'
+                                ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                        }`}
+                        title="Show archived tickets"
+                    >
+                        <Archive size={13} />
+                        Archived
+                    </button>
                 </div>
 
                 {/* View toggle: list / kanban */}
@@ -892,6 +1121,21 @@ const TicketsPage: React.FC = () => {
                     </button>
                 </div>
 
+                {/* Export the filtered ticket list to Excel */}
+                <button
+                    onClick={handleExportTickets}
+                    disabled={isExporting}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 rounded-lg transition-colors flex-shrink-0 disabled:opacity-60 disabled:cursor-wait"
+                    title="Export all tickets matching the current filters to Excel"
+                >
+                    {isExporting ? (
+                        <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                        <Download size={13} />
+                    )}
+                    {isExporting ? 'Exporting…' : 'Export Excel'}
+                </button>
+
                 {/* Mobile Filters button */}
                 <button
                     onClick={() => setIsMobileFilterSheetOpen(true)}
@@ -919,20 +1163,42 @@ const TicketsPage: React.FC = () => {
                 </div>
             )}
 
-            {/* Empty state - no tickets at all */}
+            {/* Empty state - no tickets at all / no search results */}
             {!isLoading && tickets.length === 0 && (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
                     <Bug size={48} className="text-gray-300 dark:text-gray-600 mb-4" />
-                    <h3 className="text-lg font-medium text-gray-600 dark:text-gray-400 mb-2">No tickets yet</h3>
+                    <h3 className="text-lg font-medium text-gray-600 dark:text-gray-400 mb-2">
+                        {searchQuery.trim()
+                            ? 'No tickets match your search'
+                            : ticketScope === 'archived'
+                            ? 'No archived tickets'
+                            : 'No tickets yet'}
+                    </h3>
                     <p className="text-sm text-gray-500 dark:text-gray-500 mb-4 max-w-sm">
-                        Create your first ticket to track bugs, issues, or tasks for this project.
+                        {searchQuery.trim()
+                            ? `Nothing found for "${searchQuery.trim()}". Try a ticket ID, title, or tag.`
+                            : ticketScope === 'archived'
+                            ? 'Tickets you archive will be listed here and can be restored at any time.'
+                            : 'Create your first ticket to track bugs, issues, or tasks for this project.'}
                     </p>
-                    <button
-                        onClick={() => setIsCreateModalOpen(true)}
-                        className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                        Create Ticket
-                    </button>
+                    {searchQuery.trim() ? (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                            <X size={16} />
+                            Clear Search
+                        </button>
+                    ) : ticketScope === 'active' && (
+                        <button
+                            onClick={() => setIsCreateModalOpen(true)}
+                            disabled={!canWrite}
+                            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={canWrite ? undefined : 'You have read-only access to this project'}
+                        >
+                            Create Ticket
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -997,12 +1263,13 @@ const TicketsPage: React.FC = () => {
                     <table className="w-full">
                         <thead>
                             <tr className="border-b border-gray-100 dark:border-gray-700 sticky top-0 z-10 bg-white dark:bg-gray-900">
-                                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Title</th>
-                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Priority</th>
-                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Severity</th>
-                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Assigned To</th>
-                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created</th>
+                                {renderSortableHeader('Ticket ID', 'displayId')}
+                                {renderSortableHeader('Title', 'title', 'px-6')}
+                                {renderSortableHeader('Status', 'status')}
+                                {renderSortableHeader('Priority', 'priority')}
+                                {renderSortableHeader('Severity', 'severity')}
+                                {renderSortableHeader('Assigned To', 'assignedTo')}
+                                {renderSortableHeader('Created', 'createdAt')}
                                 <th className="w-10 px-4 py-3"></th>
                             </tr>
                         </thead>
@@ -1022,6 +1289,17 @@ const TicketsPage: React.FC = () => {
                                     onClick={() => openTicketDetail(ticket)}
                                     className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors"
                                 >
+                                    <td className="px-4 py-3 whitespace-nowrap">
+                                        <IdDisplay
+                                            id={ticket.displayId || ticket.id}
+                                            className="text-xs text-gray-600 dark:text-gray-300"
+                                        />
+                                        {ticket.archived && (
+                                            <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
+                                                Archived
+                                            </span>
+                                        )}
+                                    </td>
                                     <td className="px-6 py-3">
                                         <div className="flex flex-col gap-0.5">
                                             <div className="flex items-center gap-2">
@@ -1184,7 +1462,18 @@ const TicketsPage: React.FC = () => {
                                                 )}
                                             </div>
 
-                                            {/* Title */}
+                                            {/* Ticket ID + Title */}
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <IdDisplay
+                                                    id={ticket.displayId || ticket.id}
+                                                    className="text-[11px] text-gray-500 dark:text-gray-400"
+                                                />
+                                                {ticket.archived && (
+                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
+                                                        Archived
+                                                    </span>
+                                                )}
+                                            </div>
                                             <h4 className="text-[15px] font-semibold text-gray-900 dark:text-gray-100 leading-snug line-clamp-2">
                                                 {ticket.title}
                                             </h4>
@@ -1272,7 +1561,7 @@ const TicketsPage: React.FC = () => {
                 isOpen={isCreateModalOpen}
                 onClose={() => setIsCreateModalOpen(false)}
                 onSubmit={handleCreateTicket}
-                projectMembers={projectMembers.map((m) => ({ id: m.id, name: m.name }))}
+                    projectMembers={projectMembers.map((m) => ({ id: m.id, name: m.name, email: m.email, active: m.active }))}
                 testRuns={testRunOptions}
                 tagSuggestions={allTags}
             />
@@ -1296,8 +1585,9 @@ const TicketsPage: React.FC = () => {
                     ticket={activeTicket}
                     onClose={closeTicketDetail}
                     onUpdate={handleUpdateTicket}
-                    onDelete={handleDeleteTicket}
-                    projectMembers={projectMembers.map((m) => ({ id: m.id, name: m.name }))}
+                    onArchive={handleArchiveTicket}
+                    onRestore={handleRestoreTicket}
+                projectMembers={projectMembers.map((m) => ({ id: m.id, name: m.name, email: m.email, active: m.active }))}
                     testRuns={testRunOptions}
                     tagSuggestions={allTags}
                 />

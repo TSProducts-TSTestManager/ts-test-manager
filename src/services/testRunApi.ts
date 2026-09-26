@@ -79,7 +79,15 @@ export const getTestRuns = async (
  */
 export const getTestRunsPaginated = async (
   projectId: string,
-  params: { limit: number; offset: number }
+  params: {
+    limit: number;
+    offset: number;
+    /** Free-text search over run id / title / status / tags */
+    search?: string;
+    /** Column to sort by (createdAt, updatedAt, title, status, displayId) */
+    sortField?: string;
+    sortDir?: "asc" | "desc";
+  }
 ): Promise<PaginatedTestRunsResult> => {
   try {
     const response = await axios.get<ApiResponse<TestRunListResponse[]>>(

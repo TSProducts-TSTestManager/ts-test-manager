@@ -30,6 +30,18 @@ export interface PaginatedTicketsResult {
   meta: PaginationMeta;
 }
 
+export interface TicketListParams {
+  limit: number;
+  offset: number;
+  /** Free-text search over ticket id / title / description / tags / team */
+  search?: string;
+  /** Column to sort by (title, status, priority, severity, displayId, team, createdAt, updatedAt) */
+  sortField?: string;
+  sortDir?: "asc" | "desc";
+  /** "true" = archived only, "all" = active + archived, omitted = active only */
+  archived?: "true" | "all";
+}
+
 // ============================================================================
 // TICKET API
 // ============================================================================
@@ -76,7 +88,7 @@ export const getTickets = async (
  */
 export const getTicketsPaginated = async (
   projectId: string,
-  params: { limit: number; offset: number }
+  params: TicketListParams
 ): Promise<PaginatedTicketsResult> => {
   try {
     const response = await axios.get<ApiResponse<TicketListResponse[]>>(
@@ -171,6 +183,46 @@ export const deleteTicket = async (
 ): Promise<void> => {
   try {
     await axios.delete(`${API_URL}/projects/${projectId}/tickets/${id}`);
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * Archive a ticket (soft delete) — restorable later
+ */
+export const archiveTicket = async (
+  projectId: string,
+  id: string
+): Promise<TicketResponse> => {
+  try {
+    const response = await axios.post<ApiResponse<TicketResponse>>(
+      `${API_URL}/projects/${projectId}/tickets/${id}/archive`
+    );
+    if (!response.data.data) {
+      throw new Error("No data returned from server");
+    }
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * Restore an archived ticket
+ */
+export const restoreTicket = async (
+  projectId: string,
+  id: string
+): Promise<TicketResponse> => {
+  try {
+    const response = await axios.post<ApiResponse<TicketResponse>>(
+      `${API_URL}/projects/${projectId}/tickets/${id}/restore`
+    );
+    if (!response.data.data) {
+      throw new Error("No data returned from server");
+    }
+    return response.data.data;
   } catch (error) {
     throw new Error(getErrorMessage(error));
   }
@@ -274,6 +326,8 @@ export const ticketApi = {
   getTicketById,
   updateTicket,
   deleteTicket,
+  archiveTicket,
+  restoreTicket,
   getTicketsByRun,
   getTicketsByRunPaginated,
   markTicketReproduced,

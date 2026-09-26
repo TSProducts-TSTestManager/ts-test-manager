@@ -19,6 +19,7 @@ import {
 } from '../../services/ticketDiscussionApi';
 import { uploadImage, validateImageFile } from '../../utils/imageUpload';
 import { sanitizeHtml } from '../../utils/sanitize';
+import { useProjectWriteAccess } from '../../utils/projectPermissions';
 import toast from 'react-hot-toast';
 
 interface DiscussionPanelProps {
@@ -157,6 +158,7 @@ const renderMessageBody = (msg: DiscussionMessage, entityId: string, isOwn: bool
 
 const DiscussionPanel: React.FC<DiscussionPanelProps> = React.memo(function DiscussionPanel({ entityId, projectId, entityType, mode = 'sidebar' }) {
     const { user } = useAuthStore();
+    const canWrite = useProjectWriteAccess(projectId);
     const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 1024);
     const [isOpen, setIsOpen] = useState(() => window.innerWidth >= 1024);
     const [messages, setMessages] = useState<DiscussionMessage[]>([]);
@@ -312,6 +314,7 @@ const DiscussionPanel: React.FC<DiscussionPanelProps> = React.memo(function Disc
 
     const handleSend = async () => {
         const body = inputValue.trim();
+        if (!canWrite) { toast.error('You have read-only access to this project'); return; }
         if (!body && pendingAttachments.length === 0 && !pastedFile) return;
         if (isSending) return;
 
@@ -433,6 +436,7 @@ const DiscussionPanel: React.FC<DiscussionPanelProps> = React.memo(function Disc
     };
 
     const handleFixStateChange = async (messageId: string, fixState: DiscussionMessageFixState) => {
+        if (!canWrite) { toast.error('You have read-only access to this project'); return; }
         if (updatingMessageId === messageId) return;
 
         const currentMessage = messages.find((message) => message.id === messageId);
@@ -460,6 +464,7 @@ const DiscussionPanel: React.FC<DiscussionPanelProps> = React.memo(function Disc
     };
 
     const handleDeleteMessage = async (messageId: string) => {
+        if (!canWrite) { toast.error('You have read-only access to this project'); return; }
         if (deletingMessageId === messageId) {
             return;
         }
@@ -901,8 +906,9 @@ const DiscussionPanel: React.FC<DiscussionPanelProps> = React.memo(function Disc
                     <div className="flex items-end gap-1.5">
                         <button
                             onClick={() => fileInputRef.current?.click()}
-                            className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors flex-shrink-0"
-                            title="Attach file"
+                            disabled={!canWrite}
+                            className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                            title={canWrite ? 'Attach file' : 'You have read-only access to this project'}
                         >
                             <Paperclip className="h-4 w-4" />
                         </button>
@@ -912,15 +918,16 @@ const DiscussionPanel: React.FC<DiscussionPanelProps> = React.memo(function Disc
                             onChange={(e) => setInputValue(e.target.value)}
                             onKeyDown={handleKeyDown}
                             onPaste={handlePaste}
-                            placeholder="Type a comment..."
+                            placeholder={canWrite ? 'Type a comment...' : 'Read-only access to this project'}
                             rows={1}
-                            className="flex-1 resize-none rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+                            disabled={!canWrite}
+                            className="flex-1 resize-none rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 disabled:cursor-not-allowed"
                         />
                         <button
                             onClick={handleSend}
-                            disabled={isSending || (!inputValue.trim() && pendingAttachments.length === 0 && !pastedFile)}
+                            disabled={!canWrite || isSending || (!inputValue.trim() && pendingAttachments.length === 0 && !pastedFile)}
                             className="p-1.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-500 hover:text-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-                            title="Send"
+                            title={canWrite ? 'Send' : 'You have read-only access to this project'}
                         >
                             <Send className="h-4 w-4" />
                         </button>

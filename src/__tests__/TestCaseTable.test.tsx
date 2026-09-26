@@ -149,7 +149,9 @@ describe('TestCaseTable – virtualized rendering', () => {
         // the grid element is present and accessible.
         expect(grid!.getAttribute('aria-rowcount')).toBe('200');
         expect(grid!.getAttribute('aria-label')).toBe('Test cases table');
-    });
+        // Rendering 200 rows in jsdom can exceed the default 5s timeout when the
+        // whole suite runs in parallel.
+    }, 20000);
 
     it('displays test case titles for rendered rows', () => {
         const cases = [

@@ -18,6 +18,7 @@ import { CreateTicketRequest } from '../../types/api/testManager.api';
 import { testRunApi } from '../../services/testRunApi';
 import { useRealtimeTestRuns } from '../../hooks/useRealtimeTestRuns';
 import { useProjectSettings } from '../../hooks/useTestManagerSelectors';
+import { useProjectWriteAccess } from '../../utils/projectPermissions';
 import {
     Play,
     Clock,
@@ -33,7 +34,15 @@ import {
     Edit2,
     Loader2,
     Share2,
+    ArrowUpDown,
+    ArrowUp,
+    ArrowDown,
+    Table2,
+    LayoutDashboard,
+    Search,
+    X,
 } from 'lucide-react';
+import IdDisplay from '../../components/testManager/IdDisplay';
 import CreateGroupModal from './components/CreateGroupModal';
 import RunGroupsSidebar from '../../components/testManager/RunGroupsSidebar';
 import CreateRunModal from './components/CreateRunModal';
@@ -46,6 +55,7 @@ const RUNS_PAGE_SIZE = 40;
 
 const mapRunResponseToListItem = (run: TestRun): TestRunListItem => ({
     id: run.id,
+    displayId: run.displayId,
     title: run.title,
     description: run.description,
     projectId: run.projectId,
@@ -77,6 +87,7 @@ const TestRunsPage: React.FC = () => {
         fetchTestSuites,
         setActiveProject,
         searchQuery,
+        setSearchQuery,
         clearSearchQuery,
         createTicket,
     } = useTestManagerStore(
@@ -89,6 +100,7 @@ const TestRunsPage: React.FC = () => {
             fetchTestSuites: state.fetchTestSuites,
             setActiveProject: state.setActiveProject,
             searchQuery: state.searchQuery,
+            setSearchQuery: state.setSearchQuery,
             clearSearchQuery: state.clearSearchQuery,
             createTicket: state.createTicket,
         }),
@@ -96,6 +108,8 @@ const TestRunsPage: React.FC = () => {
     );
     const [searchParams, setSearchParams] = useSearchParams();
     const projectSettings = useProjectSettings(activeProject || '');
+    const canWrite = useProjectWriteAccess(activeProject);
+    const readOnlyToast = () => toast.error('You have read-only access to this project');
     const customFieldDefinitions: CustomFieldDefinition[] = (projectSettings?.testCases?.customFields || []).filter((f: CustomFieldDefinition) => !f.deleted);
     const [testRuns, setTestRuns] = useState<TestRunListItem[]>([]);
     const [testRunGroups, setTestRunGroups] = useState<TestRunGroup[]>([]);
@@ -116,6 +130,48 @@ const TestRunsPage: React.FC = () => {
     const [executeItemOrder, setExecuteItemOrder] = useState<number[] | undefined>(undefined);
     const [selectedGroupFilter, setSelectedGroupFilter] = useState<string>('all');
     const [selectedRunStatusFilter, setSelectedRunStatusFilter] = useState<TestRunStatus | 'all'>('all');
+    const [runSortField, setRunSortField] = useState<'createdAt' | 'title' | 'status' | 'displayId' | 'suiteName' | 'environment' | 'team' | 'buildVersion'>('createdAt');
+    const [runSortDir, setRunSortDir] = useState<'asc' | 'desc'>('desc');
+    const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+
+    // Debounce search query from store
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchQuery.trim());
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
+    const handleRunSort = useCallback((field: typeof runSortField) => {
+        if (runSortField === field) {
+            setRunSortDir((dir) => (dir === 'asc' ? 'desc' : 'asc'));
+            return;
+        }
+        setRunSortField(field);
+        // Default sort direction: dates descending, text ascending
+        const dateFields = ['createdAt'];
+        setRunSortDir(dateFields.includes(field) ? 'desc' : 'asc');
+    }, [runSortField]);
+
+    const renderRunSortableHeader = (label: string, field: typeof runSortField, extraClass = '') => (
+        <th
+            onClick={() => handleRunSort(field)}
+            title={`Sort by ${label}`}
+            className={`text-left px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 ${extraClass}`}
+        >
+            <span className="inline-flex items-center gap-1">
+                {label}
+                {runSortField === field ? (
+                    runSortDir === 'asc'
+                        ? <ArrowUp size={12} className="text-blue-500" />
+                        : <ArrowDown size={12} className="text-blue-500" />
+                ) : (
+                    <ArrowUpDown size={12} className="opacity-0 group-hover:opacity-60" />
+                )}
+            </span>
+        </th>
+    );
     const [isRunStatusFilterOpen, setIsRunStatusFilterOpen] = useState(false);
     const runStatusFilterRef = useRef<HTMLDivElement>(null);
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -249,6 +305,8 @@ const TestRunsPage: React.FC = () => {
             const result = await testRunApi.getTestRunsPaginated(activeProject, {
                 limit: RUNS_PAGE_SIZE,
                 offset: nextOffset,
+                sortField: runSortField,
+                sortDir: runSortDir,
             });
 
             setTestRuns((previous) => {
@@ -276,7 +334,7 @@ const TestRunsPage: React.FC = () => {
                 setIsLoadingMore(false);
             }
         }
-    }, [activeProject]);
+    }, [activeProject, runSortField, runSortDir]);
 
     const closeDetailView = useCallback(() => {
         detailRequestSequenceRef.current += 1;
@@ -385,11 +443,15 @@ const TestRunsPage: React.FC = () => {
         }
     }, [activeProject]);
 
+    // Reload the list whenever the sort changes
     useEffect(() => {
         fetchRuns(true);
+    }, [fetchRuns]);
+
+    useEffect(() => {
         fetchGroups();
         fetchTags();
-    }, [fetchRuns, fetchGroups, fetchTags]);
+    }, [fetchGroups, fetchTags]);
 
     const handleLoadMoreRuns = useCallback(() => {
         if (!hasMoreRuns || isLoadingMore || isLoading) return;
@@ -463,6 +525,7 @@ const TestRunsPage: React.FC = () => {
     }, [detailRun, fetchTestCasesByProject, fetchTestSuites]);
 
     const handleCreateRun = async (title: string, description: string, caseIds: string[], groupId?: string, tags?: string[], environment?: string, team?: string, buildVersion?: string) => {
+        if (!canWrite) { readOnlyToast(); return; }
         if (!activeProject) return;
         const createdRun = await testRunApi.createTestRun(activeProject, {
             title,
@@ -487,6 +550,7 @@ const TestRunsPage: React.FC = () => {
     };
 
     const handleCreateGroup = async (name: string, description: string, color: string, parentId?: string | null) => {
+        if (!canWrite) { readOnlyToast(); throw new Error('You have read-only access to this project'); }
         if (!activeProject) return;
         try {
             await testRunApi.createTestRunGroup(activeProject, { name, description, parentId, color });
@@ -499,6 +563,7 @@ const TestRunsPage: React.FC = () => {
     };
 
     const handleUpdateGroup = async (name: string, description: string, color: string, parentId?: string | null) => {
+        if (!canWrite) { readOnlyToast(); throw new Error('You have read-only access to this project'); }
         if (!editingGroup) return;
         try {
             await testRunApi.updateTestRunGroup(editingGroup.id, { name, description, parentId, color });
@@ -513,11 +578,13 @@ const TestRunsPage: React.FC = () => {
     };
 
     const handleDeleteGroup = (groupId: string) => {
+        if (!canWrite) { readOnlyToast(); return; }
         setDeleteGroupId(groupId);
         setIsDeleteGroupModalOpen(true);
     };
 
     const confirmDeleteGroup = async () => {
+        if (!canWrite) { readOnlyToast(); return; }
         if (!deleteGroupId) return;
         try {
             await testRunApi.deleteTestRunGroup(deleteGroupId);
@@ -535,6 +602,7 @@ const TestRunsPage: React.FC = () => {
     };
 
     const handleDeleteRun = async (runId: string) => {
+        if (!canWrite) { readOnlyToast(); return; }
         if (!confirm('Are you sure you want to delete this test run?')) return;
         try {
             await testRunApi.deleteTestRun(runId);
@@ -547,6 +615,7 @@ const TestRunsPage: React.FC = () => {
     };
 
     const handleCloneRun = async (runId: string) => {
+        if (!canWrite) { readOnlyToast(); return; }
         try {
             const clonedRun = await testRunApi.cloneTestRun(runId);
             toast.success('Test run cloned');
@@ -564,6 +633,7 @@ const TestRunsPage: React.FC = () => {
     };
 
     const handleEditRun = (run: TestRunListItem) => {
+        if (!canWrite) { readOnlyToast(); return; }
         setEditingRun(run);
         setIsEditRunModalOpen(true);
     };
@@ -581,6 +651,7 @@ const TestRunsPage: React.FC = () => {
     };
 
     const handleUpdateRun = async (runId: string, data: { title: string; groupId: string | null; tags: string[]; environment?: string; team?: string; buildVersion?: string; additionalTestCaseIds?: string[] }) => {
+        if (!canWrite) { readOnlyToast(); throw new Error('You have read-only access to this project'); }
         try {
             await testRunApi.updateTestRun(runId, {
                 title: data.title,
@@ -619,6 +690,7 @@ const TestRunsPage: React.FC = () => {
 
     const handleOpenExecuteFromDetail = (itemIndex: number, itemOrder?: number[]) => {
         if (!detailRun) return;
+        if (!canWrite) { readOnlyToast(); return; }
         setExecuteRun(detailRun);
         setExecuteStartIndex(itemIndex);
         setExecuteItemOrder(itemOrder);
@@ -626,6 +698,7 @@ const TestRunsPage: React.FC = () => {
     };
 
     const handleUpdateRunItem = async (itemId: string, status: RunItemStatus, actualResult?: string) => {
+        if (!canWrite) { readOnlyToast(); return; }
         const currentRun = executeRun || detailRun;
         if (!currentRun) return;
         const updated = await testRunApi.updateRunItem(currentRun.id, itemId, {
@@ -638,6 +711,7 @@ const TestRunsPage: React.FC = () => {
     };
 
     const handleDetailUpdateItem = async (itemId: string, status: RunItemStatus, actualResult?: string) => {
+        if (!canWrite) { readOnlyToast(); return; }
         if (!detailRun) return;
         const updated = await testRunApi.updateRunItem(detailRun.id, itemId, {
             status,
@@ -648,6 +722,7 @@ const TestRunsPage: React.FC = () => {
     };
 
     const handleCompleteRun = async () => {
+        if (!canWrite) { readOnlyToast(); return; }
         const currentRun = executeRun || detailRun;
         if (!currentRun) return;
         await testRunApi.completeTestRun(currentRun.id);
@@ -664,11 +739,15 @@ const TestRunsPage: React.FC = () => {
     };
 
     const handleCreateBugFromRun = useCallback(async (data: CreateTicketRequest) => {
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            throw new Error('You have read-only access to this project');
+        }
         if (!activeProject) {
             throw new Error('No active project selected');
         }
         await createTicket(activeProject, data);
-    }, [activeProject, createTicket]);
+    }, [activeProject, canWrite, createTicket]);
 
     const groupNameById = useMemo(
         () => new Map(testRunGroups.map((group) => [group.id, group.name])),
@@ -705,8 +784,8 @@ const TestRunsPage: React.FC = () => {
             ? groupFilteredRuns
             : groupFilteredRuns.filter((run) => run.status === selectedRunStatusFilter);
 
-        return filterTestRunsBySearch(statusFilteredRuns, searchQuery, groupNameById);
-    }, [testRuns, selectedGroupFilter, selectedRunStatusFilter, searchQuery, groupNameById, allDescendantGroupIds]);
+        return filterTestRunsBySearch(statusFilteredRuns, debouncedSearch, groupNameById);
+    }, [testRuns, selectedGroupFilter, selectedRunStatusFilter, debouncedSearch, groupNameById, allDescendantGroupIds]);
 
     const isDetailLoading = Boolean(detailRunId) && (!detailRun || detailRun.id !== detailRunId);
 
@@ -899,6 +978,81 @@ const TestRunsPage: React.FC = () => {
                                 Clear
                             </button>
                         )}
+                        {/* Search input */}
+                        <div className="relative flex-shrink-0 w-full sm:w-64 md:w-80">
+                            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="Search by Run ID, Title, Suite, Env, Team, Build..."
+                                aria-label="Search test runs"
+                                className="w-full h-8 pl-8 pr-7 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-700 dark:text-gray-300 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                            />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => setSearchQuery('')}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                    aria-label="Clear search"
+                                >
+                                    <X size={13} />
+                                </button>
+                            )}
+                        </div>
+                        {/* Sort control */}
+                        <label className="flex items-center gap-1.5 ml-auto text-sm text-gray-500 dark:text-gray-400">
+                            <ArrowUpDown size={13} />
+                            <span className="hidden sm:inline">Sort</span>
+                            <select
+                                value={`${runSortField}:${runSortDir}`}
+                                onChange={(event) => {
+                                    const [field, dir] = event.target.value.split(':') as [
+                                        typeof runSortField,
+                                        'asc' | 'desc',
+                                    ];
+                                    setRunSortField(field);
+                                    setRunSortDir(dir);
+                                }}
+                                className="h-8 pl-2 pr-7 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                            >
+                                <option value="createdAt:desc">Newest first</option>
+                                <option value="createdAt:asc">Oldest first</option>
+                                <option value="title:asc">Title A - Z</option>
+                                <option value="title:desc">Title Z - A</option>
+                                <option value="displayId:asc">Run ID (asc)</option>
+                                <option value="displayId:desc">Run ID (desc)</option>
+                                <option value="status:asc">Status A - Z</option>
+                                <option value="status:desc">Status Z - A</option>
+                            </select>
+                        </label>
+
+                        {/* View mode toggle */}
+                        <div className="flex items-center gap-1 p-0.5 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex-shrink-0">
+                            <button
+                                onClick={() => setViewMode('card')}
+                                className={`flex items-center justify-center h-7 w-7 rounded-md transition-colors ${
+                                    viewMode === 'card'
+                                        ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                                }`}
+                                title="Card view"
+                                aria-label="Switch to card view"
+                            >
+                                <LayoutDashboard size={14} />
+                            </button>
+                            <button
+                                onClick={() => setViewMode('table')}
+                                className={`flex items-center justify-center h-7 w-7 rounded-md transition-colors ${
+                                    viewMode === 'table'
+                                        ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                                }`}
+                                title="Table view"
+                                aria-label="Switch to table view"
+                            >
+                                <Table2 size={14} />
+                            </button>
+                        </div>
                     </div>
                     {isLoading ? (
                         <div className="flex items-center justify-center h-full">
@@ -919,154 +1073,245 @@ const TestRunsPage: React.FC = () => {
                             </p>
                         </div>
                     ) : (
-                        <div className="grid gap-4">
-                            {filteredRuns.map((run) => {
-                                const executedCount = run.resultsSummary.passed + run.resultsSummary.failed;
-                                const computedPassRate = executedCount > 0
-                                    ? Math.round((run.resultsSummary.passed / executedCount) * 100)
-                                    : 0;
+                        <>
+                            {/* Card View */}
+                            {viewMode === 'card' && (
+                                <div className="grid gap-4">
+                                    {filteredRuns.map((run) => {
+                                        const executedCount = run.resultsSummary.passed + run.resultsSummary.failed;
+                                        const computedPassRate = executedCount > 0
+                                            ? Math.round((run.resultsSummary.passed / executedCount) * 100)
+                                            : 0;
 
-                                return (
-                                <div
-                                    key={run.id}
-                                    className="group bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-4 hover:shadow-[0_4px_12px_rgba(0,0,0,0.05)] dark:hover:shadow-none transition-shadow cursor-pointer"
-                                    onClick={() => handleExecuteRun(run.id)}
-                                >
-                                    <div className="flex items-start justify-between gap-2 mb-3">
-                                        <div className="min-w-0">
-                                            <div className="flex items-center flex-wrap gap-2 mb-1">
-                                                <h3 className="text-base font-medium text-gray-900 dark:text-gray-100">{run.title}</h3>
-                                                <span className={`px-2 py-0.5 text-xs font-medium rounded-full border ${getRunStatusColor(run.status)}`}>
-                                                    {run.status}
-                                                </span>
-                                                {run.groupId && (
-                                                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800">
-                                                        {testRunGroups.find(g => g.id === run.groupId)?.name || 'Group'}
-                                                    </span>
-                                                )}
-                                                {run.tags && run.tags.length > 0 && run.tags.map((tag) => (
-                                                    <span
-                                                        key={tag}
-                                                        className="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800"
+                                        return (
+                                        <div
+                                            key={run.id}
+                                            className="group bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-4 hover:shadow-[0_4px_12px_rgba(0,0,0,0.05)] dark:hover:shadow-none transition-shadow cursor-pointer"
+                                            onClick={() => handleExecuteRun(run.id)}
+                                        >
+                                            <div className="flex items-start justify-between gap-2 mb-3">
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center flex-wrap gap-2 mb-1">
+                                                        <IdDisplay
+                                                            id={run.displayId || run.id}
+                                                            className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 px-1.5 py-0.5 rounded-md"
+                                                        />
+                                                        <h3 className="text-base font-medium text-gray-900 dark:text-gray-100">{run.title}</h3>
+                                                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full border ${getRunStatusColor(run.status)}`}>
+                                                            {run.status}
+                                                        </span>
+                                                        {run.groupId && (
+                                                            <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800">
+                                                                {testRunGroups.find(g => g.id === run.groupId)?.name || 'Group'}
+                                                            </span>
+                                                        )}
+                                                        {run.tags && run.tags.length > 0 && run.tags.map((tag) => (
+                                                            <span
+                                                                key={tag}
+                                                                className="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800"
+                                                            >
+                                                                {tag}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                    <div className="flex flex-wrap items-center gap-x-3 sm:gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
+                                                        <span className="flex items-center gap-1">
+                                                            <Clock className="w-3.5 h-3.5" />
+                                                            {new Date(run.createdAt).toLocaleDateString()}
+                                                        </span>
+                                                        {run.suiteName && (
+                                                            <span className="flex items-center gap-1">
+                                                                <Layers className="w-3.5 h-3.5" />
+                                                                {run.suiteName}
+                                                            </span>
+                                                        )}
+                                                        <span className="flex items-center gap-1">
+                                                            <CheckCircle className="w-3.5 h-3.5" />
+                                                            {computedPassRate}% Pass Rate
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
+                                                    <button
+                                                        onClick={(e) => handleShareRun(e, run.id)}
+                                                        className="p-1.5 sm:p-2 text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                                                        title="Copy link to Test Run"
+                                                        aria-label="Copy link to test run"
                                                     >
-                                                        {tag}
-                                                    </span>
-                                                ))}
+                                                        <Share2 className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleEditRun(run);
+                                                        }}
+                                                        className="p-1.5 sm:p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                                                        title="Edit Run"
+                                                    >
+                                                        <Edit2 className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleCloneRun(run.id);
+                                                        }}
+                                                        className="p-1.5 sm:p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                                                        title="Clone Run"
+                                                    >
+                                                        <Copy className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDeleteRun(run.id);
+                                                        }}
+                                                        className="p-1.5 sm:p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-full hover:bg-red-50 dark:hover:bg-red-900/30"
+                                                        title="Delete Run"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                    <ChevronRight className="hidden sm:block w-5 h-5 text-gray-300 dark:text-gray-600" />
+                                                </div>
                                             </div>
-                                            <div className="flex flex-wrap items-center gap-x-3 sm:gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
-                                                <span className="flex items-center gap-1">
-                                                    <Clock className="w-3.5 h-3.5" />
-                                                    {new Date(run.createdAt).toLocaleDateString()}
-                                                </span>
-                                                {run.suiteName && (
-                                                    <span className="flex items-center gap-1">
-                                                        <Layers className="w-3.5 h-3.5" />
-                                                        {run.suiteName}
-                                                    </span>
-                                                )}
-                                                <span className="flex items-center gap-1">
-                                                    <CheckCircle className="w-3.5 h-3.5" />
-                                                    {computedPassRate}% Pass Rate
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
-                                            <button
-                                                onClick={(e) => handleShareRun(e, run.id)}
-                                                className="p-1.5 sm:p-2 text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                                                title="Copy link to Test Run"
-                                                aria-label="Copy link to test run"
-                                            >
-                                                <Share2 className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleEditRun(run);
-                                                }}
-                                                className="p-1.5 sm:p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30"
-                                                title="Edit Run"
-                                            >
-                                                <Edit2 className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleCloneRun(run.id);
-                                                }}
-                                                className="p-1.5 sm:p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30"
-                                                title="Clone Run"
-                                            >
-                                                <Copy className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleDeleteRun(run.id);
-                                                }}
-                                                className="p-1.5 sm:p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-full hover:bg-red-50 dark:hover:bg-red-900/30"
-                                                title="Delete Run"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                            <ChevronRight className="hidden sm:block w-5 h-5 text-gray-300 dark:text-gray-600" />
-                                        </div>
-                                    </div>
 
-                                    {/* Progress Bar */}
-                                    <div className="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden flex">
-                                        {run.resultsSummary.passed > 0 && (
-                                            <div
-                                                className="bg-green-500"
-                                                style={{
-                                                    width: `${(run.resultsSummary.passed / run.resultsSummary.total) * 100}%`,
-                                                }}
-                                            />
-                                        )}
-                                        {run.resultsSummary.failed > 0 && (
-                                            <div
-                                                className="bg-red-500"
-                                                style={{
-                                                    width: `${(run.resultsSummary.failed / run.resultsSummary.total) * 100}%`,
-                                                }}
-                                            />
-                                        )}
-                                        {run.resultsSummary.blocked > 0 && (
-                                            <div
-                                                className="bg-yellow-500"
-                                                style={{
-                                                    width: `${(run.resultsSummary.blocked / run.resultsSummary.total) * 100}%`,
-                                                }}
-                                            />
-                                        )}
-                                        {run.resultsSummary.skipped > 0 && (
-                                            <div
-                                                className="bg-gray-400 dark:bg-gray-500"
-                                                style={{
-                                                    width: `${(run.resultsSummary.skipped / run.resultsSummary.total) * 100}%`,
-                                                }}
-                                            />
-                                        )}
-                                    </div>
-                                </div>
-                                );
-                            })}
-                            {hasMoreRuns && (
-                                <div ref={loadMoreSentinelRef} className="flex justify-center py-2">
-                                    {isLoadingMore && (
-                                        <div className="inline-flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                            Loading more runs...
+                                            {/* Progress Bar */}
+                                            <div className="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden flex">
+                                                {run.resultsSummary.passed > 0 && (
+                                                    <div
+                                                        className="bg-green-500"
+                                                        style={{
+                                                            width: `${(run.resultsSummary.passed / run.resultsSummary.total) * 100}%`,
+                                                        }}
+                                                    />
+                                                )}
+                                                {run.resultsSummary.failed > 0 && (
+                                                    <div
+                                                        className="bg-red-500"
+                                                        style={{
+                                                            width: `${(run.resultsSummary.failed / run.resultsSummary.total) * 100}%`,
+                                                        }}
+                                                    />
+                                                )}
+                                                {run.resultsSummary.blocked > 0 && (
+                                                    <div
+                                                        className="bg-yellow-500"
+                                                        style={{
+                                                            width: `${(run.resultsSummary.blocked / run.resultsSummary.total) * 100}%`,
+                                                        }}
+                                                    />
+                                                )}
+                                                {run.resultsSummary.skipped > 0 && (
+                                                    <div
+                                                        className="bg-gray-400 dark:bg-gray-500"
+                                                        style={{
+                                                            width: `${(run.resultsSummary.skipped / run.resultsSummary.total) * 100}%`,
+                                                        }}
+                                                    />
+                                                )}
+                                            </div>
+                                        </div>
+                                        );
+                                    })}
+                                    {hasMoreRuns && (
+                                        <div ref={loadMoreSentinelRef} className="flex justify-center py-2">
+                                            {isLoadingMore && (
+                                                <div className="inline-flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    Loading more runs...
+                                                </div>
+                                            )}
                                         </div>
                                     )}
+                                    <div className="flex justify-end">
+                                        <div className="text-xs text-gray-400 dark:text-gray-500">
+                                            Loaded {Math.min(runsOffset, filteredRuns.length)} / {runsTotal || filteredRuns.length} runs
+                                        </div>
+                                    </div>
                                 </div>
                             )}
-                            <div className="flex justify-end">
-                                <div className="text-xs text-gray-400 dark:text-gray-500">
-                                    Loaded {Math.min(runsOffset, filteredRuns.length)} / {runsTotal || filteredRuns.length} runs
+
+                            {/* Table View */}
+                            {viewMode === 'table' && (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-[0_1px_2px_rgba(0,0,0,0.02)] dark:shadow-none">
+                                            <tr>
+                                                {renderRunSortableHeader('Run ID', 'displayId', 'w-32')}
+                                                {renderRunSortableHeader('Title', 'title', 'w-1/4')}
+                                                {renderRunSortableHeader('Status', 'status', 'w-28')}
+                                                {renderRunSortableHeader('Suite', 'suiteName', 'w-32')}
+                                                {renderRunSortableHeader('Environment', 'environment', 'w-32')}
+                                                {renderRunSortableHeader('Team', 'team', 'w-28')}
+                                                {renderRunSortableHeader('Build', 'buildVersion', 'w-28')}
+                                                {renderRunSortableHeader('Created', 'createdAt', 'w-32')}
+                                                <th className="py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-40">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700 bg-white dark:bg-gray-900">
+                                            {filteredRuns.map((run) => {
+                                                return (
+                                                <tr key={run.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer" onClick={() => handleExecuteRun(run.id)}>
+                                                    <td className="py-3 px-4 text-sm text-gray-900 dark:text-gray-100 font-mono">
+                                                        <IdDisplay id={run.displayId || run.id} className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 px-1.5 py-0.5 rounded-md" />
+                                                    </td>
+                                                    <td className="py-3 px-4 text-sm font-medium text-gray-900 dark:text-gray-100 truncate max-w-xs">{run.title}</td>
+                                                    <td className="py-3 px-4 text-sm">
+                                                        <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full border ${getRunStatusColor(run.status)}`}>
+                                                            {run.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">{run.suiteName || '—'}</td>
+                                                    <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">{run.environment || '—'}</td>
+                                                    <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">{run.team || '—'}</td>
+                                                    <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">{run.buildVersion || '—'}</td>
+                                                    <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{new Date(run.createdAt).toLocaleDateString()}</td>
+                                                    <td className="py-3 px-4 text-sm">
+                                                        <div className="flex items-center gap-1">
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleShareRun(e, run.id); }}
+                                                                className="text-blue-600 dark:text-blue-400 hover:underline text-xs font-medium"
+                                                                title="Share"
+                                                            >
+                                                                <Share2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleEditRun(run); }}
+                                                                className="text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline text-xs font-medium"
+                                                                title="Edit"
+                                                            >
+                                                                <Edit2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleCloneRun(run.id); }}
+                                                                className="text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline text-xs font-medium"
+                                                                title="Clone"
+                                                            >
+                                                                <Copy className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleDeleteRun(run.id); }}
+                                                                className="text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:underline text-xs font-medium"
+                                                                title="Delete"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleExecuteRun(run.id); }}
+                                                                className="text-green-600 dark:text-green-400 hover:underline text-xs font-medium"
+                                                                title="Execute"
+                                                            >
+                                                                <Play className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
                                 </div>
-                            </div>
-                        </div>
+                            )}
+                        </>
                     )}
                 </div>
             </div>

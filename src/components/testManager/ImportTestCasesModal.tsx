@@ -9,7 +9,7 @@ interface ImportTestCasesModalProps {
     onClose: () => void;
     onImport: (testCases: CreateTestCaseWithSuiteRequest[], skipDuplicates: boolean, createMissingSuites: boolean) => Promise<BulkImportWithSuiteResult>;
     customFieldDefinitions: CustomFieldDefinition[];
-    projectMembers: Array<{ id: string; name: string }>;
+    projectMembers: Array<{ id: string; name: string; active?: boolean }>;
     availableSuites: Array<{ id: string; name: string }>;
     defaultSuiteId?: string; // Current suite selected in UI as fallback
 }
@@ -394,7 +394,7 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
             if (testCase.assignedTesterName) {
                 const testerName = testCase.assignedTesterName.toLowerCase();
                 const matchedMember = projectMembers.find(
-                    (member) => member.name.toLowerCase() === testerName
+                    (member) => member.active !== false && member.name.toLowerCase() === testerName
                 );
                 if (matchedMember) {
                     testCase.assignedTesterId = matchedMember.id;

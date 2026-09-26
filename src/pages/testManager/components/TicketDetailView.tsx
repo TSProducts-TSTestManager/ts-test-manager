@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
-import { X, User, Calendar, Tag, Share2, Edit2, Trash2, ChevronDown, ExternalLink, CheckCircle2, RotateCcw, AlertTriangle, Box, Users, GitCommitHorizontal } from 'lucide-react';
+import { X, User, Calendar, Tag, Share2, Edit2, ChevronDown, ExternalLink, CheckCircle2, RotateCcw, AlertTriangle, Box, Users, GitCommitHorizontal, Archive, ArchiveRestore } from 'lucide-react';
 import { Ticket, TicketStatus, TicketPriority, TicketSeverity, FailureType, ReturnReason } from '../../../types/testManager';
 import { getTagColor } from '../../../utils/tagColors';
 import {
@@ -46,13 +46,15 @@ interface TicketDetailViewProps {
         severity?: TicketSeverity;
         failureType?: FailureType;
         team?: string;
-        assignedToId?: string;
+        /** `null` clears the assignee (Unassigned) */
+        assignedToId?: string | null;
         relatedRunId?: string;
         relatedRunItemId?: string;
         tags?: string[];
     }) => Promise<void>;
-    onDelete: () => Promise<void>;
-    projectMembers: { id: string; name: string }[];
+    onArchive: () => Promise<void>;
+    onRestore?: () => Promise<void>;
+    projectMembers: { id: string; name: string; email?: string; active?: boolean }[];
     testRuns: { id: string; title: string }[];
     tagSuggestions?: string[];
 }
@@ -61,14 +63,15 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
     ticket,
     onClose,
     onUpdate,
-    onDelete,
+    onArchive,
+    onRestore,
     projectMembers,
     testRuns,
     tagSuggestions = [],
 }) => {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-    const [isDeleting, setIsDeleting] = useState(false);
+    const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+    const [isArchiving, setIsArchiving] = useState(false);
     const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
     const [savingField, setSavingField] = useState<string | null>(null);
     const [isMarkingReproduced, setIsMarkingReproduced] = useState(false);
@@ -207,7 +210,7 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
         status?: TicketStatus;
         failureType?: FailureType;
         team?: string;
-        assignedToId?: string;
+        assignedToId?: string | null;
         relatedRunId?: string;
         tags?: string[];
     }) => {
@@ -228,12 +231,22 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
         setIsEditModalOpen(false);
     };
 
-    const handleDelete = async () => {
-        setIsDeleting(true);
+    const handleArchive = async () => {
+        setIsArchiving(true);
         try {
-            await onDelete();
+            await onArchive();
         } catch {
-            setIsDeleting(false);
+            setIsArchiving(false);
+        }
+    };
+
+    const handleRestore = async () => {
+        if (!onRestore) return;
+        setIsArchiving(true);
+        try {
+            await onRestore();
+        } catch {
+            setIsArchiving(false);
         }
     };
 
@@ -250,9 +263,15 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
                     <div className="flex items-center justify-between px-3 sm:px-6 py-2.5 sm:py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
                         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                             <IdDisplay
-                                id={ticket.id}
+                                id={ticket.displayId || ticket.id}
                                 className="text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-md"
                             />
+                            {ticket.archived && (
+                                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
+                                    <Archive size={12} />
+                                    Archived
+                                </span>
+                            )}
                             <span className="hidden sm:inline text-xs text-gray-400 dark:text-gray-500">View Mode</span>
                         </div>
                         <div className="flex items-center gap-1 sm:gap-2">
@@ -445,13 +464,13 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
                                         <span className="text-gray-500 dark:text-gray-500 flex-shrink-0">Created by:</span>
                                         <span className="text-gray-900 dark:text-gray-100 font-medium truncate min-w-0">{ticket.createdBy.name}</span>
                                     </div>
-                                    {ticket.assignedTo && (
-                                        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 min-w-0">
-                                            <User size={14} className="text-gray-400 flex-shrink-0" />
-                                            <span className="text-gray-500 dark:text-gray-500 flex-shrink-0">Assigned to:</span>
-                                            <span className="text-gray-900 dark:text-gray-100 font-medium truncate min-w-0">{ticket.assignedTo.name}</span>
-                                        </div>
-                                    )}
+                                    <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 min-w-0">
+                                        <User size={14} className="text-gray-400 flex-shrink-0" />
+                                        <span className="text-gray-500 dark:text-gray-500 flex-shrink-0">Assigned to:</span>
+                                        <span className={`${ticket.assignedTo ? 'text-gray-900 dark:text-gray-100 font-medium' : 'text-gray-400 dark:text-gray-500 italic'} truncate min-w-0`}>
+                                            {ticket.assignedTo ? ticket.assignedTo.name : 'Unassigned'}
+                                        </span>
+                                    </div>
                                     <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 min-w-0">
                                         <Calendar size={14} className="text-gray-400 flex-shrink-0" />
                                         <span className="text-gray-500 dark:text-gray-500 flex-shrink-0">Created:</span>
@@ -653,36 +672,47 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
                                 </div>
                             )}
 
-                            {/* Delete */}
+                            {/* Archive / Restore */}
                             <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
-                                <button
-                                    onClick={() => setShowDeleteConfirm(true)}
-                                    className="px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors flex items-center gap-1.5"
-                                >
-                                    <Trash2 size={14} />
-                                    Delete Ticket
-                                </button>
+                                {ticket.archived ? (
+                                    <button
+                                        onClick={handleRestore}
+                                        disabled={isArchiving || !onRestore}
+                                        className="px-3 py-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                                    >
+                                        <ArchiveRestore size={14} />
+                                        {isArchiving ? 'Restoring...' : 'Restore Ticket'}
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => setShowArchiveConfirm(true)}
+                                        className="px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors flex items-center gap-1.5"
+                                    >
+                                        <Archive size={14} />
+                                        Archive Ticket
+                                    </button>
+                                )}
                             </div>
 
-                            {/* Delete Confirmation */}
-                            {showDeleteConfirm && (
+                            {/* Archive Confirmation */}
+                            {showArchiveConfirm && (
                                 <div className="px-6 py-4 bg-red-50 dark:bg-red-900/20 border-t border-red-100 dark:border-red-900/30 rounded-lg">
                                     <p className="text-sm text-red-700 dark:text-red-400 mb-3">
-                                        Are you sure you want to delete this ticket? This action cannot be undone.
+                                        Archive this ticket? It will be removed from the active list but can be restored later from the Archived view.
                                     </p>
                                     <div className="flex justify-end gap-2">
                                         <button
-                                            onClick={() => setShowDeleteConfirm(false)}
+                                            onClick={() => setShowArchiveConfirm(false)}
                                             className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
                                         >
                                             Cancel
                                         </button>
                                         <button
-                                            onClick={handleDelete}
-                                            disabled={isDeleting}
+                                            onClick={handleArchive}
+                                            disabled={isArchiving}
                                             className="px-3 py-1.5 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
                                         >
-                                            {isDeleting ? 'Deleting...' : 'Delete'}
+                                            {isArchiving ? 'Archiving...' : 'Archive'}
                                         </button>
                                     </div>
                                 </div>

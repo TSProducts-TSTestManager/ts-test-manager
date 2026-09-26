@@ -11,6 +11,7 @@ import {
     getPriorityColor,
     matchesRunItemSearch,
 } from './testRunUtils';
+import IdDisplay from '../../../components/testManager/IdDisplay';
 
 export interface RunDetailViewProps {
     testRun: TestRun;
@@ -514,6 +515,12 @@ const activeFilterCount = [selectedSuiteFilter, selectedAreaFilter, selectedRunS
                     </button>
 
                     <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-0.5">
+                            <IdDisplay
+                                id={testRun.displayId || testRun.id}
+                                className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-md"
+                            />
+                        </div>
                         <h2 className="truncate text-base font-semibold text-gray-900 dark:text-gray-100">{testRun.title}</h2>
                         <div className="hidden sm:flex flex-wrap items-center gap-x-3 sm:gap-x-4 gap-y-0.5 text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                             <span>{executedCount} / {totalItems} executed ({totalItems > 0 ? Math.round((executedCount / totalItems) * 100) : 0}%)</span>

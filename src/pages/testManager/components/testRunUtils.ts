@@ -104,10 +104,13 @@ export const filterTestRunsBySearch = (
         const groupName = run.groupId ? groupNameById?.get(run.groupId) ?? '' : '';
         const searchableValues = [
             run.id,
+            run.displayId,
             run.title,
             run.description,
             run.suiteName,
             run.environment,
+            run.team,
+            run.buildVersion,
             run.status,
             run.createdBy?.name,
             groupName,

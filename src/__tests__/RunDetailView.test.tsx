@@ -33,6 +33,8 @@ vi.mock('lucide-react', () => ({
     CheckCircle2: () => <span data-testid="icon-check-circle-2" />,
     Download: () => <span data-testid="icon-download" />,
     FileText: () => <span data-testid="icon-file-text" />,
+    Copy: () => <span data-testid="icon-copy" />,
+    SlidersHorizontal: () => <span data-testid="icon-sliders-horizontal" />,
 }));
 
 describe('RunDetailView', () => {
