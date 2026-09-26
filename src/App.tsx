@@ -12,6 +12,7 @@ const SettingsPage = React.lazy(() => import("./pages/SettingsPage"));
 const OAuthRedirect = React.lazy(() => import("./pages/OAuthRedirect"));
 const DriveOAuthRedirect = React.lazy(() => import("./pages/DriveOAuthRedirect"));
 const AnalyticsPage = React.lazy(() => import("./pages/analytics"));
+const TestRunAnalyticsPage = React.lazy(() => import("./pages/runAnalytics"));
 const ClientLoginPage = React.lazy(() => import("./pages/ClientLoginPage"));
 const SuperAdminLoginPage = React.lazy(() => import("./pages/SuperAdminLoginPage"));
 
@@ -215,6 +216,9 @@ function App() {
               <Route path='dashboard' element={<ClientRoute><DashboardPage /></ClientRoute>} />
 
               <Route path='analytics' element={<ClientRoute><AnalyticsPage /></ClientRoute>} />
+
+              {/* Test Run Analytics — run comparison, trends and single-run reports */}
+              <Route path='test-run-analytics' element={<ClientRoute><TestRunAnalyticsPage /></ClientRoute>} />
 
               <Route path='settings' element={<SettingsPage />} />
 

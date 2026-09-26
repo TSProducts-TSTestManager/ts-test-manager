@@ -41,6 +41,7 @@ import {
     LayoutDashboard,
     Search,
     X,
+    Ticket,
 } from 'lucide-react';
 import IdDisplay from '../../components/testManager/IdDisplay';
 import CreateGroupModal from './components/CreateGroupModal';
@@ -72,6 +73,8 @@ const mapRunResponseToListItem = (run: TestRun): TestRunListItem => ({
     completedAt: run.completedAt,
     resultsSummary: run.resultsSummary,
     groupId: run.groupId,
+    ticketCount: run.ticketCount,
+    ticketResolutionRate: run.ticketResolutionRate,
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
 });
@@ -133,6 +136,7 @@ const TestRunsPage: React.FC = () => {
     const [runSortField, setRunSortField] = useState<'createdAt' | 'title' | 'status' | 'displayId' | 'suiteName' | 'environment' | 'team' | 'buildVersion'>('createdAt');
     const [runSortDir, setRunSortDir] = useState<'asc' | 'desc'>('desc');
     const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
+    const [hasTicketsFilter, setHasTicketsFilter] = useState<'all' | 'yes' | 'no'>('all');
     const [debouncedSearch, setDebouncedSearch] = useState('');
 
     // Debounce search query from store
@@ -784,8 +788,16 @@ const TestRunsPage: React.FC = () => {
             ? groupFilteredRuns
             : groupFilteredRuns.filter((run) => run.status === selectedRunStatusFilter);
 
-        return filterTestRunsBySearch(statusFilteredRuns, debouncedSearch, groupNameById);
-    }, [testRuns, selectedGroupFilter, selectedRunStatusFilter, debouncedSearch, groupNameById, allDescendantGroupIds]);
+        // "Has tickets" toggle
+        const ticketFilteredRuns =
+            hasTicketsFilter === 'all'
+                ? statusFilteredRuns
+                : hasTicketsFilter === 'yes'
+                  ? statusFilteredRuns.filter((run) => (run.ticketCount ?? 0) > 0)
+                  : statusFilteredRuns.filter((run) => (run.ticketCount ?? 0) === 0);
+
+        return filterTestRunsBySearch(ticketFilteredRuns, debouncedSearch, groupNameById);
+    }, [testRuns, selectedGroupFilter, selectedRunStatusFilter, hasTicketsFilter, debouncedSearch, groupNameById, allDescendantGroupIds]);
 
     const isDetailLoading = Boolean(detailRunId) && (!detailRun || detailRun.id !== detailRunId);
 
@@ -978,6 +990,27 @@ const TestRunsPage: React.FC = () => {
                                 Clear
                             </button>
                         )}
+                        {/* Has tickets toggle */}
+                        <div className="flex items-center p-0.5 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex-shrink-0">
+                            {([
+                                { key: 'all', label: 'All' },
+                                { key: 'yes', label: 'With tickets' },
+                                { key: 'no', label: 'No tickets' },
+                            ] as const).map((opt) => (
+                                <button
+                                    key={opt.key}
+                                    onClick={() => setHasTicketsFilter(opt.key)}
+                                    className={`h-7 px-2.5 rounded-md text-xs font-medium transition-colors ${
+                                        hasTicketsFilter === opt.key
+                                            ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                                    }`}
+                                    title={`Show ${opt.label.toLowerCase()}`}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
                         {/* Search input */}
                         <div className="relative flex-shrink-0 w-full sm:w-64 md:w-80">
                             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
@@ -1100,11 +1133,25 @@ const TestRunsPage: React.FC = () => {
                                                         <span className={`px-2 py-0.5 text-xs font-medium rounded-full border ${getRunStatusColor(run.status)}`}>
                                                             {run.status}
                                                         </span>
-                                                        {run.groupId && (
-                                                            <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800">
-                                                                {testRunGroups.find(g => g.id === run.groupId)?.name || 'Group'}
+                                                {run.groupId && (
+                                                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800">
+                                                        {testRunGroups.find(g => g.id === run.groupId)?.name || 'Group'}
+                                                    </span>
+                                                )}
+                                                {(run.ticketCount ?? 0) > 0 && (
+                                                    <span
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-800"
+                                                        title={`${run.ticketCount} ticket(s) raised from this run`}
+                                                    >
+                                                        <Ticket size={11} />
+                                                        {run.ticketCount}
+                                                        {run.ticketResolutionRate !== undefined && run.ticketResolutionRate > 0 && (
+                                                            <span className="text-red-500 dark:text-red-400">
+                                                                · {run.ticketResolutionRate}% resolved
                                                             </span>
                                                         )}
+                                                    </span>
+                                                )}
                                                         {run.tags && run.tags.length > 0 && run.tags.map((tag) => (
                                                             <span
                                                                 key={tag}
@@ -1244,6 +1291,7 @@ const TestRunsPage: React.FC = () => {
                                                 {renderRunSortableHeader('Team', 'team', 'w-28')}
                                                 {renderRunSortableHeader('Build', 'buildVersion', 'w-28')}
                                                 {renderRunSortableHeader('Created', 'createdAt', 'w-32')}
+                                                <th className="py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24 text-center">Tickets</th>
                                                 <th className="py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-40">Actions</th>
                                             </tr>
                                         </thead>
@@ -1265,6 +1313,19 @@ const TestRunsPage: React.FC = () => {
                                                     <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">{run.team || '—'}</td>
                                                     <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs">{run.buildVersion || '—'}</td>
                                                     <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{new Date(run.createdAt).toLocaleDateString()}</td>
+                                                    <td className="py-3 px-4 text-sm text-center">
+                                                        {(run.ticketCount ?? 0) > 0 ? (
+                                                            <span
+                                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-800"
+                                                                title={`${run.ticketCount} ticket(s) · ${run.ticketResolutionRate ?? 0}% resolved`}
+                                                            >
+                                                                <Ticket size={11} />
+                                                                {run.ticketCount}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-xs text-gray-300 dark:text-gray-600">—</span>
+                                                        )}
+                                                    </td>
                                                     <td className="py-3 px-4 text-sm">
                                                         <div className="flex items-center gap-1">
                                                             <button

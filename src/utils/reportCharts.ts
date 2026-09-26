@@ -34,6 +34,12 @@ export interface HorizontalBarItem {
     color?: string;
 }
 
+/** A single titled chart ready to embed in print HTML or rasterize to PNG. */
+export interface ReportChart {
+    title: string;
+    svg: string;
+}
+
 function esc(text: string): string {
     return text
         .replace(/&/g, '&amp;')
@@ -117,7 +123,8 @@ export function multiLineChartSVG(
 
     const padL = 50;
     const padR = 24;
-    const padT = 40;
+    // Leave room for the frame title (y≈24) and the legend row beneath it
+    const padT = 72;
     const padB = 56;
     const plotW = width - padL - padR;
     const plotH = height - padT - padB;
@@ -159,8 +166,8 @@ export function multiLineChartSVG(
     const legend = seriesNames.map((name, i) => {
         const x = padL + i * 120;
         return (
-            `<rect x="${x}" y="14" width="12" height="12" rx="2" fill="${seriesColors[i] || COLORS.primary}"/>` +
-            `<text x="${x + 18}" y="24" font-size="12" fill="#374151">${esc(name)}</text>`
+            `<rect x="${x}" y="44" width="12" height="12" rx="2" fill="${seriesColors[i] || COLORS.primary}"/>` +
+            `<text x="${x + 18}" y="54" font-size="12" fill="#374151">${esc(name)}</text>`
         );
     }).join('');
 
@@ -189,7 +196,8 @@ export function stackedBarChartSVG(
 
     const padL = 50;
     const padR = 24;
-    const padT = 40;
+    // Leave room for the frame title (y≈24) and the legend row beneath it
+    const padT = 72;
     const padB = 56;
     const plotW = width - padL - padR;
     const plotH = height - padT - padB;
@@ -235,8 +243,8 @@ export function stackedBarChartSVG(
     const legend = seriesNames.map((name, i) => {
         const x = padL + i * 100;
         return (
-            `<rect x="${x}" y="14" width="12" height="12" rx="2" fill="${seriesColors[i] || COLORS.primary}"/>` +
-            `<text x="${x + 18}" y="24" font-size="12" fill="#374151">${esc(name)}</text>`
+            `<rect x="${x}" y="44" width="12" height="12" rx="2" fill="${seriesColors[i] || COLORS.primary}"/>` +
+            `<text x="${x + 18}" y="54" font-size="12" fill="#374151">${esc(name)}</text>`
         );
     }).join('');
 

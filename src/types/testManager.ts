@@ -286,6 +286,10 @@ export interface TestRun {
     completedAt?: string;
     resultsSummary: ResultsSummary;
     groupId?: string;
+    /** Non-archived tickets raised from this run */
+    ticketCount?: number;
+    /** % of those tickets that are Resolved or Closed */
+    ticketResolutionRate?: number;
     createdAt: string;
     updatedAt: string;
 }
@@ -309,6 +313,10 @@ export interface TestRunListItem {
     completedAt?: string;
     resultsSummary: ResultsSummary;
     groupId?: string;
+    /** Non-archived tickets raised from this run */
+    ticketCount?: number;
+    /** % of those tickets that are Resolved or Closed */
+    ticketResolutionRate?: number;
     createdAt: string;
     updatedAt: string;
 }
@@ -509,6 +517,7 @@ export interface MostFailingTestItem {
 
 export interface DetailedRunReport {
     runId: string;
+    displayId?: string;
     title: string;
     description: string;
     status: TestRunStatus;
@@ -519,12 +528,24 @@ export interface DetailedRunReport {
         id: string;
         name: string;
     } | null;
+    /** Project the run's suite belongs to (resolved for report headers) */
+    project: {
+        id: string;
+        name: string;
+    } | null;
+    /** Client that owns the project (resolved for report headers) */
+    client: {
+        id: string;
+        name: string;
+    } | null;
     group: {
         id: string;
         name: string;
         color: string;
     } | null;
     environment: string;
+    team?: string;
+    buildVersion?: string;
     tags: string[];
     duration: number;
     statistics: {
@@ -538,6 +559,9 @@ export interface DetailedRunReport {
     };
     items: DetailedRunItem[];
     timeline: RunTimelineEntry[];
+    /** Every non-archived ticket raised from this run */
+    tickets: LinkedTicket[];
+    ticketSummary: RunTicketSummary;
 }
 
 export interface DetailedRunItem {
@@ -549,13 +573,192 @@ export interface DetailedRunItem {
     executedAt: Date | null;
     timeSpent: number;
     actualResult: string;
+    suiteName?: string;
+    area?: string;
+    priority?: string;
+    /** Tickets raised from this specific run item */
+    linkedTickets: LinkedTicket[];
 }
+
+// ===== Run ↔ Ticket Analytics =====
+
+export interface LinkedTicket {
+    ticketId: string;
+    displayId?: string;
+    title: string;
+    status: TicketStatus;
+    priority: TicketPriority;
+    severity: TicketSeverity;
+    failureType?: FailureType;
+    team?: string;
+    assignedTo?: { id: string; name: string } | null;
+    relatedRunItemId?: string;
+    createdAt: Date;
+    updatedAt: Date;
+    firstReproducedAt: Date | null;
+    returnedCount: number;
+    lastReturnReason?: ReturnReason;
+}
+
+export interface RunTicketSummary {
+    total: number;
+    byStatus: Record<string, number>;
+    byFailureType: Record<string, number>;
+    bySeverity: Record<string, number>;
+    byPriority: Record<string, number>;
+    /** % of tickets in Resolved or Closed */
+    resolutionRate: number;
+    /** % of tickets reproduced at least once */
+    reproductionRate: number;
+    reproducedCount: number;
+    ticketsWithNoRepro: number;
+    ticketsUnassigned: number;
+    avgTimeToReproduceHours: number | null;
+    returnedCount: number;
+    returnedRate: number;
+}
+
+export type RunTimelineAction =
+    | 'created'
+    | 'started'
+    | 'item_executed'
+    | 'completed'
+    | 'abandoned'
+    | 'ticket_created'
+    | 'ticket_reproduced'
+    | 'ticket_status_changed'
+    | 'ticket_resolved'
+    | 'ticket_returned'
+    | 'ticket_archived';
 
 export interface RunTimelineEntry {
     timestamp: Date;
-    action: 'created' | 'started' | 'item_executed' | 'completed' | 'abandoned';
+    action: RunTimelineAction;
     user: string;
     details: string;
+    ticketId?: string;
+    ticketDisplayId?: string;
+    statusChange?: { from: TicketStatus; to: TicketStatus };
+}
+
+export interface RunComparisonItem {
+    runId: string;
+    displayId?: string;
+    title: string;
+    status: TestRunStatus;
+    environment: string;
+    team?: string;
+    buildVersion?: string;
+    completedAt: Date | null;
+    statistics: {
+        total: number;
+        passed: number;
+        failed: number;
+        blocked: number;
+        skipped: number;
+        notRun: number;
+        passRate: number;
+    };
+    duration: number;
+    ticketSummary: RunTicketSummary;
+    failedCasesWithoutTickets: number;
+}
+
+export interface RunTicketComparisonReport {
+    projectId: string;
+    runs: RunComparisonItem[];
+    totals: {
+        runs: number;
+        tickets: number;
+        passed: number;
+        failed: number;
+        blocked: number;
+        skipped: number;
+        notRun: number;
+        passRate: number;
+        duration: number;
+        ticketsResolved: number;
+        ticketResolutionRate: number;
+        failedCasesWithoutTickets: number;
+    };
+}
+
+export interface FailedCaseWithoutTicketItem {
+    runId: string;
+    runDisplayId?: string;
+    runTitle: string;
+    itemId: string;
+    caseId: string;
+    caseTitle: string;
+    suiteName?: string;
+    area?: string;
+    status: RunItemStatus;
+    executedBy: string | null;
+    executedAt: Date | null;
+    timeSpent: number;
+}
+
+export interface FailedCasesWithoutTicketsReport {
+    runIds: string[];
+    items: FailedCaseWithoutTicketItem[];
+    summary: {
+        totalFailedCases: number;
+        failedCasesWithTickets: number;
+        failedCasesWithoutTickets: number;
+        /** % of failed cases that were ticketed */
+        ticketedRate: number;
+    };
+}
+
+// ===== Per-Run Trend (chronological, one point per test run) =====
+
+export interface TestRunTrendPoint {
+    runId: string;
+    displayId?: string;
+    title: string;
+    status: TestRunStatus;
+    /** 1-based chronological index (oldest = 1) */
+    sequence: number;
+    completedAt: Date | string | null;
+    environment: string;
+    team?: string;
+    buildVersion?: string;
+    total: number;
+    passed: number;
+    failed: number;
+    blocked: number;
+    skipped: number;
+    notRun: number;
+    passRate: number;
+    /** seconds */
+    duration: number;
+    ticketCount: number;
+    ticketResolvedCount: number;
+    ticketResolutionRate: number;
+}
+
+export interface TestRunTrendReport {
+    projectId: string;
+    projectName: string;
+    clientName: string;
+    dateRange: { startDate: string; endDate: string };
+    /** Oldest → newest */
+    points: TestRunTrendPoint[];
+    summary: {
+        totalRuns: number;
+        averagePassRate: number;
+        trendDirection: 'improving' | 'declining' | 'stable';
+        /** avg pass rate of newest third minus oldest third (percentage points) */
+        changePercentage: number;
+        averageDuration: number;
+        durationChangePercentage: number;
+        totalTickets: number;
+        averageTicketResolutionRate: number;
+        bestRun: TestRunTrendPoint | null;
+        worstRun: TestRunTrendPoint | null;
+        runsWithTickets: number;
+        runsWithoutTickets: number;
+    };
 }
 
 // ===== Ticket Types =====

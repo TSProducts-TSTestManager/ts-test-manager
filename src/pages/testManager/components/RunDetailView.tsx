@@ -12,6 +12,7 @@ import {
     matchesRunItemSearch,
 } from './testRunUtils';
 import IdDisplay from '../../../components/testManager/IdDisplay';
+import RunTicketsSection from './RunTicketsSection';
 
 export interface RunDetailViewProps {
     testRun: TestRun;
@@ -650,6 +651,9 @@ const activeFilterCount = [selectedSuiteFilter, selectedAreaFilter, selectedRunS
                     <div className="bg-gray-400 dark:bg-gray-500" style={{ width: `${(testRun.resultsSummary.skipped / totalItems) * 100}%` }} />
                 )}
             </div>
+
+            {/* Tickets raised from this run (summary, tickets, unticketed failures) */}
+            <RunTicketsSection runId={testRun.id} ticketCount={testRun.ticketCount} />
 
             {/* Desktop table – virtualized */}
             <div
