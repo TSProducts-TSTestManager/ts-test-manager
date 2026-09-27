@@ -483,7 +483,7 @@ const SecurityTab = () => {
 
 // Integrations Tab Component
 const IntegrationsTab = () => {
-    const [connection, setConnection] = useState<{ connected: boolean; googleEmail?: string; connectedAt?: string } | null>(null);
+    const [connection, setConnection] = useState<{ connected: boolean; googleEmail?: string; connectedAt?: string; status?: string } | null>(null);
     const [loading, setLoading] = useState(true);
     const [connecting, setConnecting] = useState(false);
     const [disconnecting, setDisconnecting] = useState(false);
@@ -543,6 +543,36 @@ const IntegrationsTab = () => {
                     <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                         <Loader2 className="w-4 h-4 animate-spin" />
                         Checking connection…
+                    </div>
+                ) : connection?.connected && connection.status === 'expired' ? (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/20">
+                        <div className="flex items-center gap-3 min-w-0">
+                            <RefreshCw className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                            <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Connection expired — {connection.googleEmail || 'your Google account'}</p>
+                                <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                                    Google no longer recognizes this authorization. Reconnect to keep uploading and playing evidence.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={handleConnect}
+                                disabled={connecting}
+                                className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors disabled:opacity-60"
+                            >
+                                {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                                {connecting ? 'Redirecting…' : 'Reconnect'}
+                            </button>
+                            <button
+                                onClick={handleDisconnect}
+                                disabled={disconnecting}
+                                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                            >
+                                {disconnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                                {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+                            </button>
+                        </div>
                     </div>
                 ) : connection?.connected ? (
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-green-200 dark:border-green-900/50 bg-green-50 dark:bg-green-900/20">

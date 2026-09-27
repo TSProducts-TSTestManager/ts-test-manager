@@ -124,10 +124,20 @@ export interface ProjectSettings {
     videoEvidence?: VideoEvidenceSettings;
 }
 
+/**
+ * Health of the user's stored Drive connection.
+ * - `ok`      refresh token still valid
+ * - `expired` Google rejected the refresh token — needs reconnection
+ * - `unknown` health could not be determined (Google/network outage)
+ */
+export type DriveConnectionStatus = "ok" | "expired" | "unknown";
+
 export interface DriveConnection {
     connected: boolean;
     googleEmail?: string;
     connectedAt?: string;
+    /** Absent when the backend did not probe connection health. */
+    status?: DriveConnectionStatus;
 }
 
 export interface VideoEvidence {
