@@ -6,17 +6,42 @@ interface UseRealtimeTestRunsOptions {
     projectId: string | null;
     setTestRuns: React.Dispatch<React.SetStateAction<TestRunListItem[]>>;
     setExecuteRun?: React.Dispatch<React.SetStateAction<TestRun | null>>;
+    /**
+     * Mirror of the list the page is holding. Socket handlers run outside
+     * React, so they need it to tell a duplicate event from a real change
+     * before the page's "Loaded X / Y" counters are adjusted.
+     */
+    runsRef: React.RefObject<TestRunListItem[]>;
+    /**
+     * True while the view has no server-side filter narrowing it.
+     *
+     * A filtered list is the server's answer. Guessing whether a freshly
+     * created run belongs in it (search, group subtree, ticket counts) would
+     * be wrong more often than right, so those pushes are skipped entirely
+     * and the next fetch reconciles the totals.
+     */
+    isUnfilteredView: boolean;
+    /** The list really gained a run — bump the loaded count and the total. */
+    onRunAdded: () => void;
+    /** The list really lost a run — drop the loaded count and the total. */
+    onRunRemoved: () => void;
 }
 
 export const useRealtimeTestRuns = ({
     projectId,
     setTestRuns,
-    setExecuteRun
+    setExecuteRun,
+    runsRef,
+    isUnfilteredView,
+    onRunAdded,
+    onRunRemoved
 }: UseRealtimeTestRunsOptions) => {
     // Track if listeners are set up
     const listenersSetup = useRef(false);
 
     const handleTestRunCreated = useCallback((data: SocketEvents['testrun:created']) => {
+        if (!isUnfilteredView) return;
+
         // Convert TestRun to TestRunListItem (simplified mapping)
         const newItem: TestRunListItem = {
             id: data.testRun.id,
@@ -38,13 +63,18 @@ export const useRealtimeTestRuns = ({
             updatedAt: data.testRun.updatedAt,
         };
 
+        // An echo of a run the page already inserted (just created through the
+        // UI) must not be counted a second time.
+        if (runsRef.current.some((run) => run.id === newItem.id)) return;
+
         setTestRuns((prev) => {
             if (prev.some((run) => run.id === newItem.id)) {
                 return prev;
             }
             return [newItem, ...prev];
         });
-    }, [setTestRuns]);
+        onRunAdded();
+    }, [isUnfilteredView, runsRef, setTestRuns, onRunAdded]);
 
     const handleTestRunUpdated = useCallback((data: SocketEvents['testrun:updated']) => {
         setTestRuns(prev => prev.map(run => {
@@ -77,8 +107,16 @@ export const useRealtimeTestRuns = ({
     }, [setTestRuns, setExecuteRun]);
 
     const handleTestRunDeleted = useCallback((data: SocketEvents['testrun:deleted']) => {
+        // Only count it as a removal if the list actually held it; an event for
+        // a run this view never showed would otherwise shrink the total.
+        const wasPresent = runsRef.current.some((run) => run.id === data.testRunId);
+
         setTestRuns(prev => prev.filter(run => run.id !== data.testRunId));
-        
+
+        if (wasPresent) {
+            onRunRemoved();
+        }
+
         if (setExecuteRun) {
             setExecuteRun(prev => {
                 if (prev && prev.id === data.testRunId) {
@@ -87,7 +125,7 @@ export const useRealtimeTestRuns = ({
                 return prev;
             });
         }
-    }, [setTestRuns, setExecuteRun]);
+    }, [runsRef, setTestRuns, onRunRemoved, setExecuteRun]);
 
     const handleTestRunItemUpdated = useCallback((data: SocketEvents['testrun:item-updated']) => {
         // We only need to update the executeRun state here, 

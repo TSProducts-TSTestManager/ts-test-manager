@@ -15,6 +15,7 @@ import {
     TicketPriority,
     TicketSeverity,
     FailureType,
+    TicketAttachment,
 } from '../../types/testManager';
 import {
     Bug,
@@ -33,13 +34,15 @@ import {
     ArchiveRestore,
     Search,
     Download,
+    ExternalLink,
 } from 'lucide-react';
 import IdDisplay from '../../components/testManager/IdDisplay';
 import { exportTicketsToXLSX } from '../../utils/exportTickets';
 import { CreateTicketRequest, UpdateTicketRequest, TicketListResponse } from '../../types/api/testManager.api';
 import { useProjectWriteAccess } from '../../utils/projectPermissions';
-import { ticketApi } from '../../services/ticketApi';
+import { ticketApi, TicketListParams } from '../../services/ticketApi';
 import { testRunApi } from '../../services/testRunApi';
+import { bulkSyncJira } from '../../services/jiraApi';
 import { useRealtimeTickets } from '../../hooks/useRealtimeTickets';
 import { getTagColor } from '../../utils/tagColors';
 import {
@@ -83,11 +86,13 @@ const TicketsPage: React.FC = () => {
         updateTicket,
         setActiveTicket,
         activeTicket,
+        isTicketDetailViewOpen,
         setTicketDetailViewOpen,
         setActiveProject,
         projects,
-        ticketsTotal,
-        setTicketsTotal,
+    ticketsTotal,
+    setTicketsTotal,
+    setRefreshTicketsCallback,
         ticketView,
         setTicketView,
         updateTicketStatus,
@@ -105,11 +110,13 @@ const TicketsPage: React.FC = () => {
             updateTicket: state.updateTicket,
             setActiveTicket: state.setActiveTicket,
             activeTicket: state.activeTicket,
+            isTicketDetailViewOpen: state.isTicketDetailViewOpen,
             setTicketDetailViewOpen: state.setTicketDetailViewOpen,
             setActiveProject: state.setActiveProject,
             projects: state.projects,
             ticketsTotal: state.ticketsTotal,
             setTicketsTotal: state.setTicketsTotal,
+            setRefreshTicketsCallback: state.setRefreshTicketsCallback,
             ticketView: state.ticketView,
             setTicketView: state.setTicketView,
             updateTicketStatus: state.updateTicketStatus,
@@ -130,6 +137,8 @@ const TicketsPage: React.FC = () => {
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const processedTicketIdRef = useRef<string | null>(null);
     const [testRunOptions, setTestRunOptions] = useState<{ id: string; title: string }[]>([]);
+    /** True while the toolbar Refresh is reloading tickets and re-syncing JIRA. */
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     // Quick filter state
     const [selectedStatusFilters, setSelectedStatusFilters] = useState<TicketStatus[]>([]);
@@ -162,6 +171,34 @@ const TicketsPage: React.FC = () => {
         const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
         return () => clearTimeout(handle);
     }, [searchQuery]);
+
+    // Every ticket list input the server filters on, as one memo so the loaders
+    // re-run only when a value actually changes. Sent with each request so a
+    // quick filter matches every row, not just the ones already loaded.
+    const ticketListParams = useMemo<Omit<TicketListParams, 'limit' | 'offset'>>(
+        () => ({
+            search: debouncedSearch || undefined,
+            sortField,
+            sortDir,
+            archived: ticketScope === 'archived' ? 'true' : undefined,
+            status: selectedStatusFilters.length > 0 ? selectedStatusFilters : undefined,
+            priority: selectedPriorityFilters.length > 0 ? selectedPriorityFilters : undefined,
+            severity: selectedSeverityFilters.length > 0 ? selectedSeverityFilters : undefined,
+            failureType: selectedFailureTypeFilter ?? undefined,
+            team: selectedTeamFilter ?? undefined,
+        }),
+        [
+            debouncedSearch,
+            selectedFailureTypeFilter,
+            selectedPriorityFilters,
+            selectedSeverityFilters,
+            selectedStatusFilters,
+            selectedTeamFilter,
+            sortDir,
+            sortField,
+            ticketScope,
+        ]
+    );
 
     const handleSort = useCallback((field: TicketSortField) => {
         if (sortField === field) {
@@ -215,47 +252,42 @@ const TicketsPage: React.FC = () => {
         }
     }, [activeProject, projects, ensureProjectLoaded]);
 
-    // Compute all unique tags from all tickets for auto-suggestions
-    const allTags = useMemo(() => {
-        const tagSet = new Set<string>();
-        tickets.forEach((t) => t.tags.forEach((tag) => tagSet.add(tag)));
-        return Array.from(tagSet).sort();
-    }, [tickets]);
+    // Quick filters, search and sort are all applied by the server, so the
+    // loaded rows are already the matches. Keeping a second client-side pass
+    // here would only ever narrow what a page returned.
+    const filteredTickets = tickets;
 
-    // Client-side filtered tickets based on quick filters (shared by the table and the Excel export)
-    const applyTicketFilters = useCallback((rows: Ticket[]) => {
-        let result = rows;
-        if (selectedStatusFilters.length > 0) {
-            result = result.filter((t) => selectedStatusFilters.includes(t.status));
-        }
-        if (selectedPriorityFilters.length > 0) {
-            result = result.filter((t) => selectedPriorityFilters.includes(t.priority));
-        }
-        if (selectedSeverityFilters.length > 0) {
-            result = result.filter((t) => selectedSeverityFilters.includes(t.severity));
-        }
-        if (selectedFailureTypeFilter) {
-            result = result.filter((t) => t.failureType === selectedFailureTypeFilter);
-        }
-        if (selectedTeamFilter) {
-            result = result.filter((t) => t.team === selectedTeamFilter);
-        }
-        return result;
-    }, [selectedStatusFilters, selectedPriorityFilters, selectedSeverityFilters, selectedFailureTypeFilter, selectedTeamFilter]);
+    // Distinct tags and teams for the filter controls. Read from the server
+    // rather than from the loaded page, so an option that only appears on
+    // ticket #400 is still offered.
+    const [ticketFilterOptions, setTicketFilterOptions] = useState<{ tags: string[]; teams: string[] }>({
+        tags: [],
+        teams: [],
+    });
 
-    const filteredTickets = useMemo(
-        () => applyTicketFilters(tickets),
-        [tickets, applyTicketFilters]
-    );
+    useEffect(() => {
+        if (!activeProject) {
+            setTicketFilterOptions({ tags: [], teams: [] });
+            return;
+        }
 
-    // All unique teams for the team filter dropdown
-    const allTeams = useMemo(() => {
-        const teamSet = new Set<string>();
-        tickets.forEach((t) => {
-            if (t.team) teamSet.add(t.team);
-        });
-        return Array.from(teamSet).sort();
-    }, [tickets]);
+        let cancelled = false;
+        ticketApi
+            .getTicketFilterOptions(activeProject)
+            .then((options) => {
+                if (!cancelled) setTicketFilterOptions(options);
+            })
+            .catch(() => {
+                // The dropdowns stay usable with an empty list; nothing else breaks.
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeProject]);
+
+    const allTags = ticketFilterOptions.tags;
+    const allTeams = ticketFilterOptions.teams;
 
     // Virtualization setup
     const ROW_HEIGHT_ESTIMATE = 60;
@@ -333,10 +365,7 @@ const TicketsPage: React.FC = () => {
                 const result = await ticketApi.getTicketsPaginated(activeProject, {
                     limit: EXPORT_PAGE_SIZE,
                     offset,
-                    search: debouncedSearch || undefined,
-                    sortField,
-                    sortDir,
-                    archived: ticketScope === 'archived' ? ('true' as const) : undefined,
+                    ...ticketListParams,
                 });
                 const items = result.items.map(mapTicketResponse);
                 rows.push(...items);
@@ -344,20 +373,21 @@ const TicketsPage: React.FC = () => {
                 hasMore = result.meta.hasMore && items.length > 0 && offset < result.meta.total;
             }
 
-            const exportable = applyTicketFilters(rows);
-            exportTicketsToXLSX(exportable, {
+            // The request already carried search, sort and the quick filters, so
+            // every row that came back is in scope for the export.
+            exportTicketsToXLSX(rows, {
                 projectName: currentProject?.name,
                 scope: ticketScope,
             });
             toast.success(
-                `Exported ${exportable.length} ticket${exportable.length === 1 ? '' : 's'} to Excel`
+                `Exported ${rows.length} ticket${rows.length === 1 ? '' : 's'} to Excel`
             );
         } catch (error: unknown) {
             toast.error((error as Error).message || 'Failed to export tickets');
         } finally {
             setIsExporting(false);
         }
-    }, [activeProject, isExporting, debouncedSearch, sortField, sortDir, ticketScope, currentProject, applyTicketFilters]);
+    }, [activeProject, isExporting, ticketListParams, ticketScope, currentProject]);
 
     // Check for URL state to open create modal
     useEffect(() => {
@@ -448,10 +478,7 @@ const TicketsPage: React.FC = () => {
         if (!activeProject) return;
         const queryParams = {
             limit: TICKETS_PAGE_SIZE,
-            search: debouncedSearch || undefined,
-            sortField,
-            sortDir,
-            archived: ticketScope === 'archived' ? ('true' as const) : undefined,
+            ...ticketListParams,
         };
         if (reset) {
             useTestManagerStore.setState({ isLoading: true, error: null });
@@ -500,10 +527,107 @@ const TicketsPage: React.FC = () => {
                 setIsLoadingMore(false);
             }
         }
-    }, [activeProject, setTicketsTotal, debouncedSearch, sortField, sortDir, ticketScope]);
+    }, [activeProject, setTicketsTotal, ticketListParams]);
 
     const loadTicketsRef = useRef(loadTickets);
     loadTicketsRef.current = loadTickets;
+
+    /**
+     * Refresh: re-read the tickets from the server, then re-read each linked
+     * ticket's JIRA status in a single follow-up call.
+     *
+     * The JIRA pass is deliberately lazy. The server hands back the tickets it
+     * actually changed, so those are patched into the list and into the open
+     * detail immediately; the full reload that follows is a reconciliation,
+     * not something the user has to wait on to see their new statuses.
+     */
+    const handleRefresh = useCallback(async () => {
+        if (!activeProject) return;
+        setIsRefreshing(true);
+        try {
+            await loadTicketsRef.current(true);
+
+            try {
+                const result = await bulkSyncJira(activeProject);
+
+                // Patch straight from the server's own response so the table and
+                // the open detail show the new JIRA status without waiting for
+                // another fetch.
+                if (result.updated.length > 0) {
+                    const patches = new Map(
+                        result.updated.map((raw) => {
+                            const typed = raw as unknown as Parameters<typeof mapTicketResponse>[0];
+                            const mapped = mapTicketResponse(typed);
+                            return [mapped.id, mapped];
+                        })
+                    );
+
+                    useTestManagerStore.setState((state) => ({
+                        tickets: state.tickets.map((t) => patches.get(t.id) ?? t),
+                    }));
+
+                    // The open detail view is a separate copy in the store, so
+                    // patch it too — but only while it is genuinely open, so a
+                    // refresh can never pop the panel open on its own.
+                    const storeState = useTestManagerStore.getState();
+                    if (storeState.isTicketDetailViewOpen && storeState.activeTicket) {
+                        const patch = patches.get(storeState.activeTicket.id);
+                        if (patch) {
+                            useTestManagerStore.setState({
+                                activeTicket: { ...storeState.activeTicket, ...patch },
+                            });
+                        }
+                    }
+                }
+
+                // Reconciliation pass: pick up anything else that changed.
+                await loadTicketsRef.current(true);
+
+                if (result.linked === 0) {
+                    toast.success(
+                        `Reloaded ${ticketsTotal} ticket${ticketsTotal === 1 ? '' : 's'} — no JIRA links to sync`
+                    );
+                } else {
+                    // The buckets come from the server's per-ticket results, so
+                    // they always add up to the number of linked tickets.
+                    const parts = [`${result.synced} updated`, `${result.unchanged} unchanged`];
+                    const summaryText = `JIRA: ${parts.join(', ')} of ${result.linked} linked`;
+
+                    if (result.failed > 0) {
+                        // Name what failed — a bare count is unactionable.
+                        const detail = result.results
+                            .filter((r) => r.outcome === 'error')
+                            .slice(0, 3)
+                            .map((r) => `${r.ticketId} (${r.message ?? 'failed'})`)
+                            .join('; ');
+                        toast.error(`${summaryText}. ${result.failed} failed — ${detail}`, {
+                            duration: 8000,
+                        });
+                    } else {
+                        toast.success(summaryText);
+                    }
+                }
+            } catch (jiraError) {
+                // JIRA being unreachable must not look like the refresh failed.
+                toast.success('Reloaded tickets from server');
+                toast.error(
+                    (jiraError as Error)?.message ||
+                        'Tickets reloaded, but JIRA status could not be refreshed'
+                );
+            }
+        } catch (error: unknown) {
+            console.error('Failed to refresh tickets:', error);
+            toast.error((error as Error)?.message || 'Failed to refresh tickets');
+        } finally {
+            setIsRefreshing(false);
+        }
+    }, [activeProject, ticketsTotal]);
+
+    // Expose the refresh to the toolbar in the layout.
+    useEffect(() => {
+        setRefreshTicketsCallback(handleRefresh);
+        return () => setRefreshTicketsCallback(null);
+    }, [setRefreshTicketsCallback, handleRefresh]);
 
     // Fetch tickets whenever the project or the query params change
     useEffect(() => {
@@ -586,6 +710,7 @@ const TicketsPage: React.FC = () => {
         assignedToId?: string | null;
         relatedRunId?: string;
         tags?: string[];
+        attachments?: TicketAttachment[];
     }) => {
         if (!activeProject) return;
         if (!canWrite) {
@@ -602,6 +727,7 @@ const TicketsPage: React.FC = () => {
             assignedToId: data.assignedToId || undefined,
             relatedRunId: data.relatedRunId,
             tags: data.tags,
+            attachments: data.attachments,
         };
         await createTicket(activeProject, request);
         toast.success('Ticket created successfully');
@@ -618,6 +744,7 @@ const TicketsPage: React.FC = () => {
         assignedToId?: string | null;
         relatedRunId?: string;
         tags?: string[];
+        attachments?: TicketAttachment[];
     }) => {
         if (!activeProject || !activeTicket) return;
         if (!canWrite) {
@@ -635,6 +762,7 @@ const TicketsPage: React.FC = () => {
             assignedToId: data.assignedToId,
             relatedRunId: data.relatedRunId,
             tags: data.tags,
+            attachments: data.attachments,
         };
         await updateTicket(activeProject, activeTicket.id, request);
         toast.success('Ticket updated');
@@ -1192,9 +1320,15 @@ const TicketsPage: React.FC = () => {
                     ) : ticketScope === 'active' && (
                         <button
                             onClick={() => setIsCreateModalOpen(true)}
-                            disabled={!canWrite}
+                            disabled={!canWrite || isRefreshing}
                             className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title={canWrite ? undefined : 'You have read-only access to this project'}
+                            title={
+                                !canWrite
+                                    ? 'You have read-only access to this project'
+                                    : isRefreshing
+                                      ? 'Refreshing from the server...'
+                                      : undefined
+                            }
                         >
                             Create Ticket
                         </button>
@@ -1242,7 +1376,7 @@ const TicketsPage: React.FC = () => {
                     <div className="flex justify-end px-4 md:px-6 py-1.5">
                         <div className="text-xs text-gray-400 dark:text-gray-500">
                             {hasActiveFilters ? (
-                                <>Showing {filteredTickets.length} of {tickets.length} tickets</>
+                                <>Showing {tickets.length} of {ticketsTotal} tickets</>
                             ) : (
                                 <>Loaded {Math.min(ticketsOffset, tickets.length)} / {ticketsTotal || tickets.length} tickets</>
                             )}
@@ -1264,7 +1398,9 @@ const TicketsPage: React.FC = () => {
                         <thead>
                             <tr className="border-b border-gray-100 dark:border-gray-700 sticky top-0 z-10 bg-white dark:bg-gray-900">
                                 {renderSortableHeader('Ticket ID', 'displayId')}
-                                {renderSortableHeader('Title', 'title', 'px-6')}
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                    JIRA
+                                </th>                                {renderSortableHeader('Title', 'title', 'px-6')}
                                 {renderSortableHeader('Status', 'status')}
                                 {renderSortableHeader('Priority', 'priority')}
                                 {renderSortableHeader('Severity', 'severity')}
@@ -1298,6 +1434,46 @@ const TicketsPage: React.FC = () => {
                                             <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
                                                 Archived
                                             </span>
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-3 whitespace-nowrap">
+                                        {ticket.jiraIssueKey ? (
+                                            <div className="flex flex-col gap-0.5">
+                                                {ticket.jiraUrl ? (
+                                                    <a
+                                                        href={ticket.jiraUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        title={`Open ${ticket.jiraIssueKey} in JIRA`}
+                                                        className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                                                    >
+                                                        <ExternalLink className="h-3 w-3" />
+                                                        {ticket.jiraIssueKey}
+                                                    </a>
+                                                ) : (
+                                                    <span
+                                                        title={ticket.jiraIssueKey}
+                                                        className="text-xs font-medium text-blue-600 dark:text-blue-400"
+                                                    >
+                                                        {ticket.jiraIssueKey}
+                                                    </span>
+                                                )}
+                                                {ticket.jiraStatus && (
+                                                    <span
+                                                        className="text-[10px] text-gray-500 dark:text-gray-400"
+                                                        title={
+                                                            ticket.jiraLastSyncAt
+                                                                ? `Synced ${new Date(ticket.jiraLastSyncAt).toLocaleString()}`
+                                                                : 'JIRA status'
+                                                        }
+                                                    >
+                                                        {ticket.jiraStatus}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <span className="text-sm text-gray-300 dark:text-gray-600">—</span>
                                         )}
                                     </td>
                                     <td className="px-6 py-3">
@@ -1478,6 +1654,26 @@ const TicketsPage: React.FC = () => {
                                                 {ticket.title}
                                             </h4>
 
+                                            {/* JIRA issue key */}
+                                            {ticket.jiraIssueKey && (
+                                                ticket.jiraUrl ? (
+                                                    <a
+                                                        href={ticket.jiraUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline self-start"
+                                                    >
+                                                        <ExternalLink className="h-3 w-3" />
+                                                        {ticket.jiraIssueKey}
+                                                    </a>
+                                                ) : (
+                                                    <span className="mt-1 text-xs font-medium text-blue-600 dark:text-blue-400 self-start">
+                                                        {ticket.jiraIssueKey}
+                                                    </span>
+                                                )
+                                            )}
+
                                             {/* Tags */}
                                             {ticket.tags.length > 0 && (
                                                 <div className="flex items-center gap-1 mt-2">
@@ -1547,7 +1743,7 @@ const TicketsPage: React.FC = () => {
                     <div className="flex justify-end px-4 md:px-0">
                         <div className="text-xs text-gray-400 dark:text-gray-500">
                             {hasActiveFilters ? (
-                                <>Showing {filteredTickets.length} of {tickets.length} tickets</>
+                                <>Showing {tickets.length} of {ticketsTotal} tickets</>
                             ) : (
                                 <>Loaded {Math.min(ticketsOffset, tickets.length)} / {ticketsTotal || tickets.length} tickets</>
                             )}
@@ -1579,8 +1775,10 @@ const TicketsPage: React.FC = () => {
                 onApply={handleApplyFilters}
             />
 
-            {/* Ticket Detail View */}
-            {activeTicket && (
+            {/* Ticket Detail View. Gated on the open flag, not just on a
+                non-null activeTicket: a background refresh patches the store
+                directly, and that must never pop the panel open. */}
+            {isTicketDetailViewOpen && activeTicket && (
                 <TicketDetailView
                     ticket={activeTicket}
                     onClose={closeTicketDetail}

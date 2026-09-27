@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { getClientUsage, getClientUsers, createClientAdmin, resetClientAdminPassword, deactivateUser, restoreUser, updateClient, getClients, updateClientUser, getClientsError } from '../../services/clientApi';
 import { useAuthStore } from '../../store/authStore';
-import { connectJira, disconnectJira, getJiraConfig } from '../../services/jiraApi';
 import { SeatUsage, ClientUser, Client, ClientMemberRole, CreateClientAdminInput } from '../../types/client';
 import { Eye, EyeOff, ShieldCheck, User as UserIcon, Eye as EyeIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { isValidPhone, normalizePhone } from '../../utils/phone';
+import ClientJiraSettings from '../../components/testManager/jira/ClientJiraSettings';
 
 const ClientDetailPage: React.FC = () => {
   const { displayId } = useParams<{ displayId: string }>();
@@ -14,9 +14,7 @@ const ClientDetailPage: React.FC = () => {
   const [users, setUsers] = useState<ClientUser[]>([]);
   const [client, setClient] = useState<Client | null>(null);
   const [tab, setTab] = useState<'users'|'jira'|'settings'>('users');
-  const [jira, setJira] = useState<NonNullable<Client['jira']> | null>(null);
   const [invite, setInvite] = useState({ email: '', firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false, tempPassword: '', role: 'client_admin' as ClientMemberRole });
-  const [jiraForm, setJiraForm] = useState({ domain: '', email: '', apiToken: '', projectKey: '' });
   const [editMax, setEditMax] = useState<number | ''>('');
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetTarget, setResetTarget] = useState<ClientUser | null>(null);
@@ -55,7 +53,6 @@ const ClientDetailPage: React.FC = () => {
     if (!displayId) return;
     try { setUsage(await getClientUsage(displayId)); } catch { /* seat usage is supplementary; leave it blank */ }
     try { setUsers(await getClientUsers(displayId, 'all')); } catch (e: unknown){ toast.error(getClientsError(e)); }
-    try { setJira(await getJiraConfig(displayId)); } catch { /* JIRA is optional; leave it unconfigured */ }
     try {
       const all = await getClients();
       const c = all.find(x=>x.displayId===displayId) || null;
@@ -174,10 +171,6 @@ const ClientDetailPage: React.FC = () => {
       setEditingClient(false);
       load();
     } catch(e: unknown){ toast.error(getClientsError(e)); }
-  };
-  const handleJiraConnect = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try { await connectJira(displayId!, jiraForm); toast.success('JIRA connected'); load(); } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
   const openEditUser = (u: ClientUser) => {
     setEditUserTarget(u);
@@ -335,31 +328,8 @@ const ClientDetailPage: React.FC = () => {
 
       {tab==='jira' && (
         isClientAdmin ? (
-          <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-4">
-            <h3 className="font-semibold">JIRA Integration (per-client)</h3>
-            <div className="text-sm text-gray-500">Current: {jira?.enabled ? `${jira.domain} / ${jira.projectKey} connected` : 'Not connected'}</div>
-            <form onSubmit={handleJiraConnect} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">JIRA Domain *</label>
-                <input placeholder="xxx.atlassian.net" value={jiraForm.domain} onChange={e=>setJiraForm({...jiraForm,domain:e.target.value})} className="w-full border p-2 rounded" required />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Atlassian Email *</label>
-                <input placeholder="you@company.com" value={jiraForm.email} onChange={e=>setJiraForm({...jiraForm,email:e.target.value})} className="w-full border p-2 rounded" required />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">API Token *</label>
-                <input placeholder="Paste your Atlassian API token" value={jiraForm.apiToken} onChange={e=>setJiraForm({...jiraForm,apiToken:e.target.value})} className="w-full border p-2 rounded" required />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Project Key * <span className="font-normal text-gray-400">(e.g. TSM)</span></label>
-                <input placeholder="TSM" value={jiraForm.projectKey} onChange={e=>setJiraForm({...jiraForm,projectKey:e.target.value.toUpperCase()})} className="w-full border p-2 rounded font-mono uppercase" required />
-              </div>
-              <div className="flex gap-2 pt-1">
-                <button className="bg-blue-600 text-white px-4 py-2 rounded">Connect / Update</button>
-                {jira?.enabled && <button type="button" onClick={async()=>{await disconnectJira(displayId!); toast.success('Disconnected'); load();}} className="border px-4 py-2 rounded">Disconnect</button>}
-              </div>
-            </form>
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700">
+            <ClientJiraSettings displayId={displayId} canEdit onChanged={load} />
           </div>
         ) : (
           <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 text-sm text-gray-500">Only Client Admin can configure JIRA for this client.</div>

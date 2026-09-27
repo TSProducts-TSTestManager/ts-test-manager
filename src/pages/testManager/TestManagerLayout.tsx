@@ -33,12 +33,42 @@ const TestManagerLayout: React.FC = () => {
         onExportTestCases,
         // Import callback
         onImportTestCases,
+        // Refresh callback (registered by the TestCasesPage)
+        onRefreshTestCases,
+        // Refresh callbacks for the runs and tickets lists
+        onRefreshTestRuns,
+        onRefreshTickets,
     } = useTestManagerStore();
     const navigate = useNavigate();
     const location = useLocation();
     const [isDeleteModalOpen, setIsDeleteModalOpen] = React.useState(false);
     const isMobile = useMediaQuery('(max-width: 767px)');
     const [isSuiteSidebarOpen, setIsSuiteSidebarOpen] = React.useState(() => !isMobile);
+    const [isRefreshing, setIsRefreshing] = React.useState(false);
+
+    /**
+     * Toolbar refresh. Each list page registers its own handler, so the layout
+     * only has to pick the one matching the visible view. This is what keeps
+     * "Refresh" meaning "re-read from the server" for cases, runs, and tickets
+     * (the ticket handler also re-syncs JIRA statuses).
+     */
+    const activeRefresh = viewMode === 'cases'
+        ? onRefreshTestCases
+        : viewMode === 'runs'
+            ? onRefreshTestRuns
+            : viewMode === 'tickets'
+                ? onRefreshTickets
+                : null;
+
+    const handleRefresh = React.useCallback(async () => {
+        if (!activeRefresh) return;
+        setIsRefreshing(true);
+        try {
+            await activeRefresh();
+        } finally {
+            setIsRefreshing(false);
+        }
+    }, [activeRefresh]);
 
     // Close the mobile suite sidebar when leaving the cases view
     React.useEffect(() => {
@@ -183,6 +213,10 @@ const TestManagerLayout: React.FC = () => {
                     onDownload={onExportTestCases || undefined}
                     // Import prop
                     onUpload={onImportTestCases || undefined}
+                    // Refresh prop — only meaningful on the list views, where the
+                    // active page registers the handler that re-reads the server.
+                    onRefresh={activeRefresh ? handleRefresh : undefined}
+                    isRefreshing={isRefreshing}
                     hideNewButton={(viewMode === 'runs' && isRunDetailViewOpen) || (viewMode === 'tickets' && isTicketDetailViewOpen)}
                 />
                 <div className="flex-1 flex overflow-hidden">

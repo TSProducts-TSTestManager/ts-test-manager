@@ -9,11 +9,15 @@ import { getProjectDashboardStats, ProjectDashboardStats } from '../../services/
 import { TicketStatus, TestRunStatus } from '../../types/testManager';
 
 const TICKET_STATUS_COLORS: Record<TicketStatus, string> = {
+    [TicketStatus.ToDo]: '#64748B',
     [TicketStatus.Open]: '#3B82F6',
-    [TicketStatus.InProgress]: '#F59E0B',
-    [TicketStatus.Resolved]: '#10B981',
-    [TicketStatus.Closed]: '#9CA3AF',
     [TicketStatus.Reopened]: '#A855F7',
+    [TicketStatus.InProgress]: '#F59E0B',
+    [TicketStatus.QATesting]: '#06B6D4',
+    [TicketStatus.OutOfScope]: '#F97316',
+    [TicketStatus.Resolved]: '#10B981',
+    [TicketStatus.Done]: '#059669',
+    [TicketStatus.Closed]: '#9CA3AF',
 };
 
 const RUN_STATUS_COLORS: Record<TestRunStatus, string> = {

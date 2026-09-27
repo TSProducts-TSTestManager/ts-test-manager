@@ -40,6 +40,16 @@ export interface TicketListParams {
   sortDir?: "asc" | "desc";
   /** "true" = archived only, "all" = active + archived, omitted = active only */
   archived?: "true" | "all";
+  /**
+   * Server-side quick filters. Applied in the browser these could only match
+   * rows already loaded, so a filter silently missed matches past page one.
+   */
+  status?: string[];
+  priority?: string[];
+  severity?: string[];
+  failureType?: string;
+  team?: string;
+  tag?: string;
 }
 
 // ============================================================================
@@ -91,9 +101,26 @@ export const getTicketsPaginated = async (
   params: TicketListParams
 ): Promise<PaginatedTicketsResult> => {
   try {
+    // Flatten the list filters into the CSV form the API reads, and drop empties
+    // so the URL only carries what is actually being filtered.
+    const query: Record<string, string | number> = {
+      limit: params.limit,
+      offset: params.offset,
+    };
+    if (params.search?.trim()) query.search = params.search.trim();
+    if (params.sortField) query.sortField = params.sortField;
+    if (params.sortDir) query.sortDir = params.sortDir;
+    if (params.archived) query.archived = params.archived;
+    if (params.status?.length) query.status = params.status.join(',');
+    if (params.priority?.length) query.priority = params.priority.join(',');
+    if (params.severity?.length) query.severity = params.severity.join(',');
+    if (params.failureType) query.failureType = params.failureType;
+    if (params.team) query.team = params.team;
+    if (params.tag) query.tag = params.tag;
+
     const response = await axios.get<ApiResponse<TicketListResponse[]>>(
       `${API_URL}/projects/${projectId}/tickets`,
-      { params }
+      { params: query }
     );
 
     const fallbackMeta: PaginationMeta = {
@@ -107,6 +134,25 @@ export const getTicketsPaginated = async (
       items: response.data.data || [],
       meta: response.data.meta || fallbackMeta,
     };
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * Distinct tags and teams for a project's filter dropdowns.
+ *
+ * One small aggregate instead of scanning the loaded page, so an option that
+ * only appears on ticket #400 is still offered.
+ */
+export const getTicketFilterOptions = async (
+  projectId: string
+): Promise<{ tags: string[]; teams: string[] }> => {
+  try {
+    const response = await axios.get<
+      ApiResponse<{ tags: string[]; teams: string[] }>
+    >(`${API_URL}/projects/${projectId}/tickets/filter-options`);
+    return response.data.data ?? { tags: [], teams: [] };
   } catch (error) {
     throw new Error(getErrorMessage(error));
   }
@@ -330,6 +376,7 @@ export const ticketApi = {
   restoreTicket,
   getTicketsByRun,
   getTicketsByRunPaginated,
+  getTicketFilterOptions,
   markTicketReproduced,
   returnTicketForInfo,
 };

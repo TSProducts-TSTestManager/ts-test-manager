@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { useCollaborativeEditing } from '../../hooks/useCollaborativeEditing';
-import { TestCase, Priority, Status, HistoryEntry, CustomFieldDefinition } from '../../types/testManager';
+import { TestCase, Priority, Status, TestType, HistoryEntry, CustomFieldDefinition } from '../../types/testManager';
 import { X, Plus, ChevronDown, ChevronRight, History, Check, Loader2, Cloud } from 'lucide-react';
 import RichTextEditor from './RichTextEditor';
 import IdDisplay from './IdDisplay';
@@ -26,16 +26,16 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
     // Track selected field preview for each history entry
     const [selectedPreview, setSelectedPreview] = useState<{ entryId: string; field: string } | null>(null);
 
-    // Track if this is initial load vs user edit
-    const isInitialLoad = useRef(true);
-    const hasUnsavedChanges = useRef(false);
-    const autoSaveIntervalRef = useRef<NodeJS.Timeout | null>(null);
-    const savedTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    // The incoming case is the persisted baseline for dirty tracking
     const lastSavedCaseRef = useRef<string | null>(null);
-    const inFlightSaveRef = useRef<string | null>(null);
+    const savedTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     // Store access for projects/suites selection
-    const { projects, testSuites, fetchTestSuites, fetchProjectSettings, projectSettings } = useTestManagerStore();
+    const { projects, testSuites, fetchProjectSettings, projectSettings } = useTestManagerStore();
+
+    // The project is fixed, so the modal only needs its display name. Resolved
+    // from the store rather than an editable field.
+    const activeProjectName = projects.find((p) => p.id === localCase?.projectId)?.name;
 
     // Project settings
     const [customFields, setCustomFields] = useState<CustomFieldDefinition[]>([]);
@@ -90,24 +90,21 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
 
     useEffect(() => {
         setLocalCase(testCase);
-        isInitialLoad.current = true;
-        hasUnsavedChanges.current = false;
         setSaveStatus('idle');
+        setError(null);
+        // The incoming case is the persisted baseline; edits are compared
+        // against this string to decide whether Save is enabled.
         lastSavedCaseRef.current = testCase ? JSON.stringify(testCase) : null;
     }, [testCase]);
 
-    // Perform save
+    // Persist the edited case. Nothing reaches the database until this runs, so
+    // closing the modal without saving discards every edit.
     const performSave = useCallback(async (caseToSave: TestCase) => {
-        // Check if there are actual changes
         const currentJson = JSON.stringify(caseToSave);
         if (currentJson === lastSavedCaseRef.current) {
             return; // No changes to save
         }
-        if (inFlightSaveRef.current === currentJson) {
-            return; // Prevent duplicate concurrent saves for same payload
-        }
 
-        inFlightSaveRef.current = currentJson;
         setSaveStatus('saving');
         setError(null);
         try {
@@ -119,7 +116,6 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
             } else {
                 lastSavedCaseRef.current = currentJson;
             }
-            hasUnsavedChanges.current = false;
             setSaveStatus('saved');
             // Reset to idle after showing "Saved" for 2 seconds
             if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
@@ -129,52 +125,35 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
         } catch (err: unknown) {
             setSaveStatus('error');
             setError((err as Error)?.message || 'Failed to save changes');
-        } finally {
-            inFlightSaveRef.current = null;
         }
     }, [onSave]);
 
-    // Save on blur (when field loses focus)
-    const handleFieldBlur = useCallback(() => {
-        if (localCase && hasUnsavedChanges.current) {
-            performSave(localCase);
-        }
-    }, [localCase, performSave]);
+    const handleSave = useCallback(async () => {
+        if (!localCase || saveStatus === 'saving') return;
+        await performSave(localCase);
+    }, [localCase, performSave, saveStatus]);
 
-    // Track changes (mark as dirty but don't save immediately)
+    // Track whether the current buffer differs from what is persisted, which is
+    // what enables the Save button and drives the "unsaved" warning.
+    const hasUnsavedChanges = localCase
+        ? JSON.stringify(localCase) !== lastSavedCaseRef.current
+        : false;
+
+    // Warn before discarding edits.
     useEffect(() => {
-        // Skip initial load
-        if (isInitialLoad.current) {
-            isInitialLoad.current = false;
-            return;
-        }
-
-        if (!localCase) return;
-
-        // Mark as having unsaved changes
-        hasUnsavedChanges.current = true;
-    }, [localCase]);
-
-    // Periodic auto-save every 15 seconds (for safety)
-    useEffect(() => {
-        autoSaveIntervalRef.current = setInterval(() => {
-            if (localCase && hasUnsavedChanges.current) {
-                performSave(localCase);
-            }
-        }, 15000); // 15 seconds
-
-        return () => {
-            if (autoSaveIntervalRef.current) {
-                clearInterval(autoSaveIntervalRef.current);
-            }
+        if (!hasUnsavedChanges) return;
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            e.returnValue = '';
         };
-    }, [localCase, performSave]);
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [hasUnsavedChanges]);
 
-    // Cleanup timeouts on unmount and save any pending changes
+    // Cleanup the "Saved" indicator timer on unmount
     useEffect(() => {
         return () => {
             if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
-            if (autoSaveIntervalRef.current) clearInterval(autoSaveIntervalRef.current);
         };
     }, []);
 
@@ -253,7 +232,6 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
             case Status.InReview: return 'text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800';
             case Status.Ready: return 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800';
             case Status.Updated: return 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800';
-            case Status.Archived: return 'text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
             default: return 'text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
         }
     };
@@ -386,30 +364,23 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                 type="text"
                                 value={localCase.title}
                                 onChange={handleTitleChange}
-                                onBlur={handleFieldBlur}
                                 className="w-full text-2xl font-semibold text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-300 dark:placeholder:text-gray-600 bg-white dark:bg-gray-800"
                                 placeholder="Test Case Title"
                             />
                         </div>
                         {/* Project & Suite selectors - Always visible */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                            {/* Project is fixed once the case exists: moving a case
+                                between projects would orphan its display ID and run
+                                history, so this is read-only on both create and edit. */}
                             <div>
                                 <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Project</label>
-                                <select
-                                    value={localCase.projectId || ''}
-                                    onChange={(e) => {
-                                        const projectId = e.target.value;
-                                        setLocalCase(prev => prev ? ({ ...prev, projectId, suite: '' }) : null);
-                                        if (projectId) fetchTestSuites?.(projectId);
-                                    }}
-                                    onBlur={handleFieldBlur}
-                                    className="w-full rounded-lg py-2 px-3 text-sm font-medium border bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
+                                <div
+                                    title="The project cannot be changed after the test case is created"
+                                    className="w-full rounded-lg py-2 px-3 text-sm font-medium border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 cursor-not-allowed select-none"
                                 >
-                                    <option value="">Select project...</option>
-                                    {projects.map(p => (
-                                        <option key={p.id} value={p.id}>{p.name}</option>
-                                    ))}
-                                </select>
+                                    {activeProjectName || (localCase.projectId ? 'Unknown project' : 'No project selected')}
+                                </div>
                             </div>
 
                             <div>
@@ -417,7 +388,6 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                 <select
                                     value={localCase.suite || ''}
                                     onChange={(e) => setLocalCase(prev => prev ? ({ ...prev, suite: e.target.value }) : null)}
-                                    onBlur={handleFieldBlur}
                                     className="w-full rounded-lg py-2 px-3 text-sm font-medium border bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
                                 >
                                     <option value="">Select suite...</option>
@@ -440,6 +410,28 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                 </div>
                             )}
 
+                            {/* Test Type */}
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Test Type</label>
+                                <div className="relative">
+                                    <select
+                                        value={localCase.testType ?? ''}
+                                        onChange={(e) => {
+                                            const value = e.target.value as TestType | '';
+                                            setLocalCase(prev => prev ? ({ ...prev, testType: value || undefined }) : null);
+                                            emitFieldChange('testType', value || null);
+                                        }}
+                                        className="w-full appearance-none rounded-lg py-2 pl-3 pr-8 text-sm font-medium outline-none transition-all cursor-pointer border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 dark:text-gray-100 hover:opacity-80 focus:ring-2 focus:ring-offset-1 focus:ring-blue-100"
+                                    >
+                                        <option value="">Not set</option>
+                                        {Object.values(TestType).map(t => (
+                                            <option key={t} value={t}>{t}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400 dark:text-gray-500 pointer-events-none opacity-50" />
+                                </div>
+                            </div>
+
                             {/* Priority (Editable) */}
                             {!hiddenFields.priority && (
                                 <div>
@@ -452,7 +444,6 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                                 setLocalCase(prev => prev ? ({ ...prev, priority: value }) : null);
                                                 emitFieldChange('priority', value);
                                             }}
-                                            onBlur={handleFieldBlur}
                                             className={`w-full appearance-none rounded-lg py-2 pl-3 pr-8 text-sm font-medium outline-none transition-all cursor-pointer border hover:opacity-80 focus:ring-2 focus:ring-offset-1 focus:ring-blue-100 ${getPriorityColor(localCase.priority)}`}
                                         >
                                             {Object.values(Priority).map(p => (
@@ -463,7 +454,9 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                     </div>
                                 </div>
                             )}
+                        </div>
 
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
                             {/* Status (Editable) */}
                             {!hiddenFields.status && (
                                 <div>
@@ -476,7 +469,6 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                                 setLocalCase(prev => prev ? ({ ...prev, status: value }) : null);
                                                 emitFieldChange('status', value);
                                             }}
-                                            onBlur={handleFieldBlur}
                                             className={`w-full appearance-none rounded-lg py-2 pl-3 pr-8 text-sm font-medium outline-none transition-all cursor-pointer border hover:opacity-80 focus:ring-2 focus:ring-offset-1 focus:ring-blue-100 ${getStatusColor(localCase.status)}`}
                                         >
                                             {Object.values(Status).map(s => (
@@ -514,7 +506,6 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                                             }) : null);
                                                             emitFieldChange(`customFields.${field.id}`, newValue);
                                                         }}
-                                                        onBlur={handleFieldBlur}
                                                         className="w-full text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-transparent rounded-lg focus:border-blue-300 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-700 focus:ring-0 p-3 transition-colors"
                                                         placeholder={`Enter ${field.label.toLowerCase()}`}
                                                     />
@@ -530,7 +521,6 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                                             }) : null);
                                                             emitFieldChange(`customFields.${field.id}`, newValue);
                                                         }}
-                                                        onBlur={handleFieldBlur}
                                                         className="w-full text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-transparent rounded-lg focus:border-blue-300 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-700 focus:ring-0 p-3 transition-colors resize-none"
                                                         rows={4}
                                                         placeholder={`Enter ${field.label.toLowerCase()}`}
@@ -547,7 +537,6 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                                             }) : null);
                                                             emitFieldChange(`customFields.${field.id}`, newValue);
                                                         }}
-                                                        onBlur={handleFieldBlur}
                                                         className="w-full rounded-lg py-2 px-3 text-sm font-medium border bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
                                                     >
                                                         <option value="">Select {field.label.toLowerCase()}...</option>
@@ -566,7 +555,6 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                                             }) : null);
                                                             emitFieldChange(`customFields.${field.id}`, html);
                                                         }}
-                                                        onBlur={handleFieldBlur}
                                                         placeholder={`Enter ${field.label.toLowerCase()}...`}
                                                     />
                                                 )}
@@ -597,8 +585,7 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                                 onBlur={() => {
                                                     setTimeout(() => {
                                                         setIsAreaDropdownOpen(false);
-                                                        handleFieldBlur();
-                                                    }, 150);
+                                                                                                            }, 150);
                                                 }}
                                                 placeholder="Select or type..."
                                                 className="w-full text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700/80 rounded-lg py-2 pl-3 pr-8 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-300 dark:placeholder:text-gray-600 bg-white dark:bg-gray-800 outline-none transition-all"
@@ -655,7 +642,6 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                 <textarea
                                     value={localCase.testDescription || ''}
                                     onChange={handleTestDescriptionChange}
-                                    onBlur={handleFieldBlur}
                                     className="w-full text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-transparent dark:border-gray-700/80 border rounded-lg focus:border-blue-300 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-700 focus:ring-0 p-3 transition-colors resize-none"
                                     rows={3}
                                     placeholder="Short description of what this test verifies"
@@ -680,7 +666,6 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                             setLocalCase(prev => prev ? ({ ...prev, stepsContent: html }) : null);
                                             emitFieldChange('stepsContent', html);
                                         }}
-                                        onBlur={handleFieldBlur}
                                         placeholder="Describe the test steps here. You can use lists, bold text, etc."
                                     />
                                 </div>
@@ -694,7 +679,6 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                 <textarea
                                     value={localCase.expectedResult || ''}
                                     onChange={handleExpectedResultChange}
-                                    onBlur={handleFieldBlur}
                                     className="w-full text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-transparent dark:border-gray-700/80 border rounded-lg focus:border-blue-300 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-gray-700 focus:ring-0 p-3 transition-colors resize-none"
                                     rows={3}
                                     placeholder="What is the high-level expected outcome of this test case?"
@@ -712,7 +696,6 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                         setLocalCase(prev => prev ? ({ ...prev, comments: html }) : null);
                                         emitFieldChange('comments', html);
                                     }}
-                                    onBlur={handleFieldBlur}
                                     placeholder="Add comments, notes, or additional information about this test case..."
                                 />
                             </div>
@@ -721,23 +704,59 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                     </div>
 
                     {/* Modal Footer */}
-                    <div className="flex items-center justify-between px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
-                        <p className="text-xs text-gray-400 dark:text-gray-500">
-                            Changes are saved automatically
-                        </p>
-                        <button
-                            onClick={() => {
-                                // If onBack provided, call it with current local case to return to view mode
-                                if (localCase && typeof onBack === 'function') {
-                                    onBack(localCase);
-                                } else {
-                                    onClose();
-                                }
-                            }}
-                            className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                        >
-                            Back
-                        </button>
+                    <div className="flex items-center justify-between gap-3 px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                            {saveStatus === 'saving' && (
+                                <span className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    Saving...
+                                </span>
+                            )}
+                            {saveStatus === 'saved' && (
+                                <span className="inline-flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                                    <Check className="h-3.5 w-3.5" />
+                                    Saved
+                                </span>
+                            )}
+                            {saveStatus === 'idle' && hasUnsavedChanges && (
+                                <span className="text-xs text-amber-600 dark:text-amber-400">
+                                    Unsaved changes
+                                </span>
+                            )}
+                            {error && (
+                                <span className="text-xs text-red-600 dark:text-red-400 truncate" title={error}>
+                                    {error}
+                                </span>
+                            )}
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                            <button
+                                onClick={() => {
+                                    // If onBack provided, call it with current local case to return to view mode
+                                    if (localCase && typeof onBack === 'function') {
+                                        onBack(localCase);
+                                    } else {
+                                        onClose();
+                                    }
+                                }}
+                                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSave}
+                                disabled={!hasUnsavedChanges || saveStatus === 'saving'}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                {saveStatus === 'saving' ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Cloud className="h-4 w-4" />
+                                )}
+                                Save
+                            </button>
+                        </div>
                     </div>
                 </div>
                 {/* End of Main Content Wrapper */}

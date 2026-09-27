@@ -7,11 +7,15 @@ import SortableKanbanCard from './KanbanCard';
 
 const getStatusDotColor = (status: TicketStatus): string => {
     switch (status) {
+        case TicketStatus.ToDo: return 'bg-slate-500';
         case TicketStatus.Open: return 'bg-blue-500';
-        case TicketStatus.InProgress: return 'bg-yellow-500';
-        case TicketStatus.Resolved: return 'bg-green-500';
-        case TicketStatus.Closed: return 'bg-gray-400';
         case TicketStatus.Reopened: return 'bg-purple-500';
+        case TicketStatus.InProgress: return 'bg-yellow-500';
+        case TicketStatus.QATesting: return 'bg-cyan-500';
+        case TicketStatus.OutOfScope: return 'bg-orange-500';
+        case TicketStatus.Resolved: return 'bg-green-500';
+        case TicketStatus.Done: return 'bg-emerald-600';
+        case TicketStatus.Closed: return 'bg-gray-400';
         default: return 'bg-gray-400';
     }
 };

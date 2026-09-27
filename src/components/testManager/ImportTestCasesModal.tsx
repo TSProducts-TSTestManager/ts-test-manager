@@ -1,17 +1,46 @@
 import React, { useState } from 'react';
-import { X, Upload, FileUp, AlertCircle, CheckCircle2, AlertTriangle, Download, Info } from 'lucide-react';
+import { X, Upload, FileUp, AlertCircle, CheckCircle2, AlertTriangle, Download, Info, Server, RefreshCw } from 'lucide-react';
 import Papa from 'papaparse';
-import { CustomFieldDefinition, Priority, Status } from '../../types/testManager';
-import { CreateTestCaseWithSuiteRequest, BulkImportWithSuiteResult } from '../../types/api/testManager.api';
+import * as XLSX from 'xlsx';
+import { CustomFieldDefinition, Priority, Status, TestType } from '../../types/testManager';
+import { BulkImportWithSuiteResult } from '../../types/api/testManager.api';
+import { TEST_CASE_UPLOAD_COLUMNS, findUploadColumn } from '../../utils/testCaseUploadFormat';
+import DownloadTemplateButton from './DownloadTemplateButton';
 
 interface ImportTestCasesModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onImport: (testCases: CreateTestCaseWithSuiteRequest[], skipDuplicates: boolean, createMissingSuites: boolean) => Promise<BulkImportWithSuiteResult>;
+    /** Creates one case per call so the upload can report progress row by row. */
+    onCreateCase: (payload: UploadCasePayload) => Promise<{ skipped: boolean }>;
+    /** Called once after the last row, so the page can reload suites + cases. */
+    onUploadComplete?: () => Promise<void> | void;
+    /**
+     * Ask the server how many test cases the current view holds right now.
+     * Used by the Refresh button to confirm what actually landed.
+     */
+    onCheckServerStatus?: () => Promise<{ total: number }>;
     customFieldDefinitions: CustomFieldDefinition[];
     projectMembers: Array<{ id: string; name: string; active?: boolean }>;
     availableSuites: Array<{ id: string; name: string }>;
     defaultSuiteId?: string; // Current suite selected in UI as fallback
+}
+
+/** One spreadsheet row, already normalised into API field names. */
+export interface UploadCasePayload {
+    suiteId?: string;
+    suiteName?: string;
+    createSuiteIfMissing?: boolean;
+    title: string;
+    area?: string;
+    testDescription?: string;
+    testStep?: string;
+    expectedResult?: string;
+    priority?: string;
+    status?: string;
+    testType?: string;
+    comments?: string;
+    customFields?: Record<string, string>;
+    skipIfDuplicate?: boolean;
 }
 
 interface ColumnMapping {
@@ -33,7 +62,9 @@ interface ValidationError {
 const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
     isOpen,
     onClose,
-    onImport,
+    onCreateCase,
+    onUploadComplete,
+    onCheckServerStatus,
     customFieldDefinitions,
     projectMembers,
     availableSuites,
@@ -47,9 +78,44 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
     const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
     const [importing, setImporting] = useState(false);
     const [importResult, setImportResult] = useState<BulkImportWithSuiteResult | null>(null);
-    const [chunkProgress, setChunkProgress] = useState<{ current: number; total: number } | null>(null);
+    /**
+     * Live one-by-one upload tally. `uploaded` counts rows the server has
+     * finished with, so the number on screen always matches what is in the DB.
+     */
+    const [uploadProgress, setUploadProgress] = useState<{
+        uploaded: number;
+        total: number;
+        created: number;
+        skipped: number;
+        failed: number;
+    } | null>(null);
+    /** Title of the row currently being sent, for the "in flight" hint. */
+    const [currentRowLabel, setCurrentRowLabel] = useState<string | null>(null);
+    /** Latest server-confirmed counts, shown next to the local upload tally. */
+    const [serverStatus, setServerStatus] = useState<{
+        total: number;
+        checkedAt: Date;
+    } | null>(null);
+    const [isCheckingServer, setIsCheckingServer] = useState(false);
 
-    const CHUNK_SIZE = 50;
+    /**
+     * Pull the authoritative count from the server and reconcile it with what
+     * this upload claims it created. The local numbers come from responses we
+     * already handled; the server total is the tie-breaker when something was
+     * changed by someone else in the meantime.
+     */
+    const refreshServerStatus = async () => {
+        if (!onCheckServerStatus) return;
+        setIsCheckingServer(true);
+        try {
+            const { total } = await onCheckServerStatus();
+            setServerStatus({ total, checkedAt: new Date() });
+        } catch (error) {
+            console.error('Failed to check server status:', error);
+        } finally {
+            setIsCheckingServer(false);
+        }
+    };
 
     // Step 1: File upload, Step 2: Column mapping, Step 3: Validation preview, Step 4: Results
     const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
@@ -59,13 +125,15 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
         { value: '', label: '-- Do not import --' },
         { value: 'title', label: 'Title (Required)' },
         { value: 'suiteName', label: 'Test Suite' },
+        { value: 'area', label: 'Area' },
+        { value: 'testDescription', label: 'Test Description' },
+        { value: 'testStep', label: 'Test Step' },
+        { value: 'expectedResult', label: 'Expected Result' },
         { value: 'priority', label: 'Priority' },
         { value: 'status', label: 'Status' },
-        { value: 'area', label: 'Area' },
+        { value: 'testType', label: 'Test Type' },
         { value: 'assignedTesterName', label: 'Assigned Tester (Name)' },
-        { value: 'testDescription', label: 'Test Description' },
         { value: 'stepsContent', label: 'Steps Content' },
-        { value: 'expectedResult', label: 'Expected Result' },
         { value: 'comments', label: 'Comments' },
     ];
 
@@ -78,6 +146,55 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
     };
 
     const parseCSV = (file: File) => {
+        const isSpreadsheet = /\.xlsx?$/i.test(file.name);
+
+        // Papa handles delimited text; XLSX has to be flattened to CSV first.
+        const finish = (text: string) => {
+            const parsed = Papa.parse<string[]>(text.trim(), { skipEmptyLines: true });
+            const matrix = parsed.data as string[][];
+            if (matrix.length === 0) {
+                setCsvData([]);
+                setColumnMappings([]);
+                setStep(2);
+                return;
+            }
+            const headers = (matrix[0] || []).map((h) => String(h ?? '').trim());
+            const dataRows = matrix.slice(1);
+            const data: ParsedRow[] = dataRows.map((cells) =>
+                headers.reduce<ParsedRow>((acc, header, index) => {
+                    if (header) acc[header] = String(cells[index] ?? '');
+                    return acc;
+                }, {})
+            );
+
+            setCsvData(data);
+            setColumnMappings(autoDetectMappings(headers));
+            setStep(2);
+        };
+
+        if (isSpreadsheet) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const workbook = XLSX.read(new Uint8Array(reader.result as ArrayBuffer), {
+                        type: 'array',
+                    });
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    if (!sheet) {
+                        setCsvData([]);
+                        setStep(2);
+                        return;
+                    }
+                    finish(XLSX.utils.sheet_to_csv(sheet));
+                } catch (error) {
+                    alert(`Error reading the workbook: ${(error as Error).message}`);
+                }
+            };
+            reader.onerror = () => alert('Error reading the file');
+            reader.readAsArrayBuffer(file);
+            return;
+        }
+
         Papa.parse(file, {
             header: true,
             skipEmptyLines: true,
@@ -99,7 +216,8 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
         });
     };
 
-    // Header name patterns for auto-detection
+    // Header name patterns for auto-detection. The canonical format is the
+    // source of truth; the extra lists cover columns outside the template.
     const SUITE_HEADERS = ['suite', 'test suite', 'testsuite', 'suite name', 'suitename'];
     const TITLE_HEADERS = ['title', 'test case', 'name'];
     const AREA_HEADERS = ['area', 'category'];
@@ -108,9 +226,9 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
     const STEPS_HEADERS = ['steps', 'steps content', 'stepscontent'];
     const EXPECTED_HEADERS = ['expected result', 'expectedresult', 'expected'];
     const COMMENTS_HEADERS = ['comments', 'notes'];
+    const TEST_TYPE_HEADERS = ['test type', 'testtype', 'type'];
 
-    const normalizeImportedStatus = (value: string): Status | '' => {
-        const trimmedValue = value.trim();
+    const normalizeImportedStatus = (value: string): Status | '' => {        const trimmedValue = value.trim();
         if (!trimmedValue) return '';
 
         const normalizedValue = trimmedValue.toLowerCase();
@@ -121,11 +239,15 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
         if (normalizedValue === 'ready for testing' || normalizedValue === 'ready') return Status.Ready;
         if (normalizedValue === 'in progress') return Status.InReview;
         if (normalizedValue === 'blocked' || normalizedValue === 'retest' || normalizedValue === 'pass - fixed' || normalizedValue === 'passfixed') return Status.Ready;
-        if (normalizedValue === 'skipped' || normalizedValue === 'out of scope' || normalizedValue === 'outofscope') return Status.Archived;
+        // "Skipped", "out of scope", and "archived" used to land on the old
+        // Archived status. Archiving is now a separate action that an import
+        // cannot perform, so these fall back to Draft: the row arrives as
+        // visible work the user can review and archive deliberately.
+        if (normalizedValue === 'skipped' || normalizedValue === 'out of scope' || normalizedValue === 'outofscope') return Status.Draft;
         if (normalizedValue === 'draft') return Status.Draft;
         if (normalizedValue === 'in review' || normalizedValue === 'inreview') return Status.InReview;
         if (normalizedValue === 'updated') return Status.Updated;
-        if (normalizedValue === 'archived') return Status.Archived;
+        if (normalizedValue === 'archived') return Status.Draft;
 
         // If it's already a valid new status, return it
         if (Object.values(Status).includes(trimmedValue as Status)) {
@@ -136,8 +258,23 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
         return Status.Ready;
     };
 
+    const normalizeImportedTestType = (value: string): TestType | '' => {
+        const normalized = value.trim().toLowerCase();
+        if (!normalized) return '';
+        return (
+            Object.values(TestType).find((t) => t.toLowerCase() === normalized) ?? ''
+        );
+    };
+
     const autoDetectMappings = (headers: string[]): ColumnMapping[] => {
         return headers.map((header) => {
+            // The canonical upload format wins, so the template round-trips
+            // without the user touching a single dropdown.
+            const canonical = findUploadColumn(header);
+            if (canonical) {
+                return { csvColumn: header, testCaseField: canonical.key };
+            }
+
             const lowerHeader = header.toLowerCase().trim();
 
             // Try to match default fields
@@ -157,9 +294,11 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
             } else if (DESCRIPTION_HEADERS.includes(lowerHeader)) {
                 testCaseField = 'testDescription';
             } else if (STEPS_HEADERS.includes(lowerHeader)) {
-                testCaseField = 'stepsContent';
+                testCaseField = 'testStep';
             } else if (EXPECTED_HEADERS.includes(lowerHeader)) {
                 testCaseField = 'expectedResult';
+            } else if (TEST_TYPE_HEADERS.includes(lowerHeader)) {
+                testCaseField = 'testType';
             } else if (COMMENTS_HEADERS.includes(lowerHeader)) {
                 testCaseField = 'comments';
             } else {
@@ -309,6 +448,19 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
                 }
             }
 
+            // Validate test type if mapped
+            const testTypeMapping = columnMappings.find((m) => m.testCaseField === 'testType');
+            if (testTypeMapping) {
+                const rawTestType = row[testTypeMapping.csvColumn]?.trim() || '';
+                if (rawTestType && !normalizeImportedTestType(rawTestType)) {
+                    errors.push({
+                        row: rowNum,
+                        field: 'Test Type',
+                        message: `Invalid test type: "${rawTestType}". Must be one of: ${Object.values(TestType).join(', ')}`,
+                    });
+                }
+            }
+
             // Validate custom field dropdowns
             columnMappings.forEach((mapping) => {
                 if (mapping.customFieldId) {
@@ -353,9 +505,9 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
             .join('');
     };
 
-    const transformData = (): CreateTestCaseWithSuiteRequest[] => {
+    const transformData = (): UploadCasePayload[] => {
         return csvData.map((row) => {
-            const testCase: CreateTestCaseWithSuiteRequest & { assignedTesterName?: string; [key: string]: unknown } = {
+            const testCase: UploadCasePayload & { assignedTesterName?: string; assignedTesterId?: string; [key: string]: unknown } = {
                 title: '',
             };
 
@@ -406,81 +558,119 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
                 testCase.customFields = customFields;
             }
 
-            return testCase as CreateTestCaseWithSuiteRequest;
+            return testCase as UploadCasePayload;
         });
     };
 
+    /**
+     * Upload every row, one request per row, in file order.
+     *
+     * Sequential rather than parallel on purpose: the counter the user watches
+     * has to equal what is committed, and a shared suite being created on the
+     * first row must exist before the second row joins it. A failing row is
+     * recorded and the upload continues, so one bad line cannot abandon the rest.
+     */
     const handleImport = async () => {
+        const payloads = transformData();
         setImporting(true);
-        setChunkProgress(null);
+        setImportResult(null);
+        setUploadProgress({ uploaded: 0, total: payloads.length, created: 0, skipped: 0, failed: 0 });
+        setCurrentRowLabel(null);
 
-        try {
-            const testCases = transformData();
-            const chunks: typeof testCases[] = [];
-            for (let i = 0; i < testCases.length; i += CHUNK_SIZE) {
-                chunks.push(testCases.slice(i, i + CHUNK_SIZE));
+        const combined: BulkImportWithSuiteResult = {
+            created: 0,
+            skipped: 0,
+            failed: 0,
+            errors: [],
+            duplicates: [],
+            suitesCreated: [],
+            suiteStats: {},
+        };
+        const seenSuiteNames = new Set<string>();
+        const seenInFile = new Set<string>();
+
+        let uploaded = 0;
+        let created = 0;
+        let skipped = 0;
+        let failed = 0;
+
+        for (let i = 0; i < payloads.length; i++) {
+            const payload = payloads[i];
+            const rowNumber = i + 1;
+
+            // A repeated suite+title inside the same file is a duplicate even
+            // before the server sees it, so skip it without a request.
+            const suiteKey = (payload.suiteName || payload.suiteId || '').trim().toLowerCase();
+            const dedupeKey = `${suiteKey}::${payload.title.trim().toLowerCase()}`;
+            if (seenInFile.has(dedupeKey)) {
+                skipped++;
+                combined.skipped++;
+                combined.duplicates!.push(payload.title);
+                seenSuiteNames.add(payload.suiteName || '');
+                uploaded++;
+                setUploadProgress({ uploaded, total: payloads.length, created, skipped, failed });
+                continue;
+            }
+            seenInFile.add(dedupeKey);
+
+            setCurrentRowLabel(`Row ${rowNumber}: ${payload.title}`);
+
+            try {
+                const result = await onCreateCase({
+                    ...payload,
+                    createSuiteIfMissing: createMissingSuites,
+                    skipIfDuplicate: skipDuplicates,
+                });
+
+                if (payload.suiteName) {
+                    seenSuiteNames.add(payload.suiteName);
+                }
+
+                if (result.skipped) {
+                    skipped++;
+                    combined.skipped++;
+                    combined.duplicates!.push(payload.title);
+                } else {
+                    created++;
+                    combined.created++;
+                }
+            } catch (error: unknown) {
+                failed++;
+                combined.failed++;
+                combined.errors.push({
+                    index: rowNumber,
+                    title: payload.title,
+                    message: (error as Error)?.message || 'Failed to create test case',
+                });
             }
 
-            setChunkProgress({ current: 0, total: chunks.length });
-
-            const combined: BulkImportWithSuiteResult = {
-                created: 0,
-                skipped: 0,
-                failed: 0,
-                errors: [],
-                duplicates: [],
-                suitesCreated: [],
-                suiteStats: {},
-            };
-
-            for (let i = 0; i < chunks.length; i++) {
-                const result = await onImport(chunks[i], skipDuplicates, createMissingSuites);
-                setChunkProgress({ current: i + 1, total: chunks.length });
-
-                combined.created += result.created;
-                combined.skipped += result.skipped;
-                combined.failed += result.failed;
-
-                // Offset error indices so they reflect original row numbers
-                const offset = i * CHUNK_SIZE;
-                for (const err of result.errors) {
-                    combined.errors.push({ ...err, index: err.index + offset });
-                }
-
-                if (result.duplicates) {
-                    combined.duplicates!.push(...result.duplicates);
-                }
-                if (result.suitesCreated) {
-                    const existing = new Set(combined.suitesCreated ?? []);
-                    for (const s of result.suitesCreated) {
-                        if (!existing.has(s)) {
-                            combined.suitesCreated!.push(s);
-                            existing.add(s);
-                        }
-                    }
-                }
-                if (result.suiteStats) {
-                    for (const [suiteId, stats] of Object.entries(result.suiteStats)) {
-                        if (!combined.suiteStats![suiteId]) {
-                            combined.suiteStats![suiteId] = { ...stats };
-                        } else {
-                            combined.suiteStats![suiteId].created += stats.created;
-                            combined.suiteStats![suiteId].skipped += stats.skipped;
-                            combined.suiteStats![suiteId].failed += stats.failed;
-                        }
-                    }
-                }
-            }
-
-            setImportResult(combined);
-            setStep(4);
-        } catch (error: unknown) {
-            alert(`Import failed: ${(error as Error).message || 'Unknown error'}`);
-        } finally {
-            setImporting(false);
-            setChunkProgress(null);
+            uploaded++;
+            setUploadProgress({ uploaded, total: payloads.length, created, skipped, failed });
         }
+
+        setCurrentRowLabel(null);
+
+        // Let the page reconcile its lists (new suites, new cases) exactly once.
+        try {
+            await onUploadComplete?.();
+        } catch (error) {
+            console.error('Failed to refresh after upload:', error);
+        }
+
+        // Only report suites the upload actually had to create, which the
+        // single-case endpoint does not tell us; surface the distinct names it
+        // resolved instead.
+        combined.suitesCreated = createMissingSuites
+            ? Array.from(seenSuiteNames).filter((name) =>
+                  !availableSuites.some((s) => s.name.toLowerCase() === name.toLowerCase())
+              )
+            : [];
+
+        setImportResult(combined);
+        setStep(4);
+        setImporting(false);
     };
+
 
     const handleReset = () => {
         setFile(null);
@@ -488,7 +678,9 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
         setColumnMappings([]);
         setValidationErrors([]);
         setImportResult(null);
-        setChunkProgress(null);
+        setUploadProgress(null);
+        setCurrentRowLabel(null);
+        setServerStatus(null);
         setCreateMissingSuites(true);
         setStep(1);
     };
@@ -522,8 +714,8 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
     const validCount = csvData.length - validationErrors.length;
     const duplicateMappings = step === 2 ? getDuplicateMappings() : [];
     const hasDuplicateMappings = duplicateMappings.length > 0;
-    const importPct = importing && chunkProgress
-        ? Math.round((chunkProgress.current / chunkProgress.total) * 100)
+    const importPct = importing && uploadProgress && uploadProgress.total > 0
+        ? Math.round((uploadProgress.uploaded / uploadProgress.total) * 100)
         : 0;
 
     return (
@@ -574,7 +766,7 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
                                         <p className="mb-2 text-sm text-gray-700 dark:text-gray-300">
                                             <span className="font-semibold">Click to upload</span> or drag and drop
                                         </p>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">CSV files only</p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">CSV or XLSX files only</p>
                                         {file && (
                                             <p className="mt-4 text-sm text-blue-600 dark:text-blue-400 font-medium">{file.name}</p>
                                         )}
@@ -582,21 +774,40 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
                                     <input
                                         id="csv-upload"
                                         type="file"
-                                        accept=".csv"
+                                        accept=".csv,.xlsx,.xls"
                                         onChange={handleFileChange}
                                         className="hidden"
                                     />
                                 </label>
 
                                 <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                                    <p className="text-sm text-blue-900 dark:text-blue-300 font-medium mb-2">CSV Format Requirements:</p>
-                                    <ul className="text-xs text-blue-800 dark:text-blue-300 space-y-1 list-disc list-inside">
-                                        <li>First row must contain column headers</li>
-                                        <li>Title column is required</li>
-                                        <li>Priority values: Low, Medium, High, Critical</li>
-                                        <li>Status values: Draft, Passed, Failed, Retest, Pass - Fixed, Skipped (also accepts Pass/Fail)</li>
-                                        <li>Custom fields must match existing field names</li>
+                                    <div className="flex items-start justify-between gap-3 mb-2">
+                                        <p className="text-sm text-blue-900 dark:text-blue-300 font-medium">
+                                            Expected columns
+                                        </p>
+                                        <DownloadTemplateButton className="flex-shrink-0" />
+                                    </div>
+                                    <ul className="text-xs text-blue-800 dark:text-blue-300 space-y-0.5">
+                                        {TEST_CASE_UPLOAD_COLUMNS.map((column) => (
+                                            <li key={column.key} className="flex items-start gap-1.5">
+                                                <span className="font-medium">{column.header}</span>
+                                                {column.key === 'suiteName' ? (
+                                                    <span className="opacity-70">— created on first use, then reused</span>
+                                                ) : column.required ? (
+                                                    <span className="text-red-600 dark:text-red-400 font-medium">required</span>
+                                                ) : (
+                                                    <span className="opacity-60">optional</span>
+                                                )}
+                                                {column.hint && <span className="opacity-70">— {column.hint}</span>}
+                                            </li>
+                                        ))}
                                     </ul>
+                                    <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-800 space-y-0.5 text-xs text-blue-800 dark:text-blue-300">
+                                        <p><span className="font-medium">Priority:</span> {Object.values(Priority).join(', ')}</p>
+                                        <p><span className="font-medium">Status:</span> {Object.values(Status).join(', ')}</p>
+                                        <p><span className="font-medium">Test Type:</span> {Object.values(TestType).join(', ')}</p>
+                                        <p className="opacity-70">Rows are uploaded one at a time, so a failure on one row does not stop the rest.</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -834,6 +1045,50 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
                     {/* Step 4: Results */}
                     {step === 4 && importResult && (
                         <div>
+                            {/* Server status bar: what the local tally says vs what
+                                the server actually holds right now. */}
+                            <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <Server className="h-4 w-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
+                                        {serverStatus ? (
+                                            <span className="text-gray-700 dark:text-gray-300">
+                                                Server reports{' '}
+                                                <span className="font-semibold">{serverStatus.total}</span>{' '}
+                                                test case{serverStatus.total === 1 ? '' : 's'} in this view
+                                                <span className="text-xs text-gray-400 dark:text-gray-500 ml-1.5">
+                                                    as of {serverStatus.checkedAt.toLocaleTimeString()}
+                                                </span>
+                                            </span>
+                                        ) : (
+                                            <span className="text-gray-500 dark:text-gray-400">
+                                                Not synced with the server yet
+                                            </span>
+                                        )}
+                                    </div>
+                                    {onCheckServerStatus && (
+                                        <button
+                                            onClick={refreshServerStatus}
+                                            disabled={isCheckingServer}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed self-shrink-0"
+                                        >
+                                            <RefreshCw
+                                                className={`h-3.5 w-3.5 ${isCheckingServer ? 'animate-spin' : ''}`}
+                                            />
+                                            {isCheckingServer ? 'Checking...' : 'Refresh status'}
+                                        </button>
+                                    )}
+                                </div>
+
+                                {serverStatus && (
+                                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                        {serverStatus.total === importResult.created
+                                            ? 'Matches the number this upload created.'
+                                            : `This upload created ${importResult.created}; the view holds ${serverStatus.total} in total.`}
+                                    </p>
+                                )}
+                            </div>
+
                             {/* Summary Stats */}
                             <div className="grid grid-cols-3 gap-4 mb-6">
                                 <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
@@ -973,22 +1228,34 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
                             </span>
                         )}
                         {step === 3 && (
-                            <span>
-                                {importing && chunkProgress ? (
-                                    <span className="flex items-center gap-2">
-                                        <span className="text-blue-600 dark:text-blue-400 font-medium">
-                                            Batch {chunkProgress.current}/{chunkProgress.total}
-                                        </span>
-                                        <span className="inline-block w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                                            <span
-                                                className="block h-2 bg-blue-500 rounded-full transition-all duration-300"
-                                                style={{ width: `${importPct}%` }}
-                                            />
+                            <span className="flex flex-col items-end gap-1">
+                                {importing && uploadProgress ? (
+                                    <>
+                                        <span className="flex items-center gap-2">
+                                            <span className="text-blue-600 dark:text-blue-400 font-medium">
+                                                Uploaded {uploadProgress.uploaded} of {uploadProgress.total}
+                                            </span>
+                                            <span className="inline-block w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                                <span
+                                                    className="block h-2 bg-blue-500 rounded-full transition-all duration-300"
+                                                    style={{ width: `${importPct}%` }}
+                                                />
+                                            </span>
+                                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                                                {importPct}%
+                                            </span>
                                         </span>
                                         <span className="text-xs text-gray-500 dark:text-gray-400">
-                                            {importPct}%
+                                            {uploadProgress.created} created
+                                            {uploadProgress.skipped > 0 && ` · ${uploadProgress.skipped} skipped`}
+                                            {uploadProgress.failed > 0 && ` · ${uploadProgress.failed} failed`}
                                         </span>
-                                    </span>
+                                        {currentRowLabel && (
+                                            <span className="text-xs text-gray-400 dark:text-gray-500 truncate max-w-xs" title={currentRowLabel}>
+                                                {currentRowLabel}
+                                            </span>
+                                        )}
+                                    </>
                                 ) : (
                                     <>{validCount} valid, {validationErrors.length} errors</>
                                 )}
@@ -1041,14 +1308,14 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
                                     {importing ? (
                                         <>
                                             <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                                            {chunkProgress
-                                                ? `Importing batch ${chunkProgress.current} / ${chunkProgress.total}…`
-                                                : 'Importing...'}
+                                            {uploadProgress
+                                                ? `Uploading ${uploadProgress.uploaded} / ${uploadProgress.total}…`
+                                                : 'Uploading...'}
                                         </>
                                     ) : (
                                         <>
                                             <Upload className="h-4 w-4" />
-                                            Import {validCount > 0 && `(${validCount} test cases)`}
+                                            Upload {validCount > 0 && `${validCount} test case${validCount === 1 ? '' : 's'}`}
                                         </>
                                     )}
                                 </button>

@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { X, User, Calendar, Tag, Share2, Edit2, ChevronDown, ExternalLink, CheckCircle2, RotateCcw, AlertTriangle, Box, Users, GitCommitHorizontal, Archive, ArchiveRestore } from 'lucide-react';
-import { Ticket, TicketStatus, TicketPriority, TicketSeverity, FailureType, ReturnReason } from '../../../types/testManager';
+import { Ticket, TicketStatus, TicketPriority, TicketSeverity, FailureType, ReturnReason, TicketAttachment } from '../../../types/testManager';
 import { getTagColor } from '../../../utils/tagColors';
 import {
     getTicketStatusSelectColor,
@@ -18,6 +18,7 @@ import { useTestManagerStore } from '../../../store/testManagerStore';
 import { useAuthStore } from '../../../store/authStore';
 import { useProjectSettings } from '../../../hooks/useTestManagerSelectors';
 import VideoEvidenceSection from '../../../components/testManager/drive/VideoEvidenceSection';
+import TicketAttachmentPicker from '../../../components/testManager/TicketAttachmentPicker';
 import { linkJira, createJiraFromTicket, syncJira, unlinkJira } from '../../../services/jiraApi';
 import toast from 'react-hot-toast';
 
@@ -51,6 +52,8 @@ interface TicketDetailViewProps {
         relatedRunId?: string;
         relatedRunItemId?: string;
         tags?: string[];
+        /** Files forwarded to the linked JIRA bug (never stored in TSM) */
+        attachments?: TicketAttachment[];
     }) => Promise<void>;
     onArchive: () => Promise<void>;
     onRestore?: () => Promise<void>;
@@ -81,12 +84,36 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
     const [showDivergence, setShowDivergence] = useState(false);
     const [jiraKeyInput, setJiraKeyInput] = useState('');
     const [jiraBusy, setJiraBusy] = useState(false);
+    const [attachments, setAttachments] = useState<TicketAttachment[]>(ticket.attachments || []);
     const navigate = useNavigate();
 
     const applyRemoteTicketUpdate = useTestManagerStore((state) => state.applyRemoteTicketUpdate);
     const markTicketReproduced = useTestManagerStore((state) => state.markTicketReproduced);
     const returnTicketForInfo = useTestManagerStore((state) => state.returnTicketForInfo);
-    const currentUserId = useAuthStore((state) => state.user?._id) ?? '';
+    const projects = useTestManagerStore((state) => state.projects);
+
+    // Attachment edits are pushed straight through: files live on the JIRA bug,
+    // so a failed save must roll the local list back.
+    useEffect(() => {
+        setAttachments(ticket.attachments || []);
+    }, [ticket.id, ticket.updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const handleAttachmentsChange = async (next: TicketAttachment[]) => {
+        const previous = attachments;
+        setAttachments(next);
+        try {
+            await onUpdate({ attachments: next });
+        } catch (error: unknown) {
+            setAttachments(previous);
+            toast.error((error as Error)?.message || 'Failed to update attachments');
+        }
+    };
+
+    // The JIRA controls only make sense once the project is mapped to a JIRA
+    // project (or the ticket already carries a link).
+    const projectJira = projects.find((p) => p.id === ticket.projectId)?.jira;
+    const jiraMapped = !!projectJira?.enabled && !!projectJira.projectKey;
+    const showJiraPanel = jiraMapped || !!ticket.jiraIssueKey;    const currentUserId = useAuthStore((state) => state.user?._id) ?? '';
     const projectSettings = useProjectSettings(ticket.projectId);
     const videoEvidenceEnabled = projectSettings?.videoEvidence?.enabled ?? false;
     const videoEvidencePublicLinks = projectSettings?.videoEvidence?.publicLinks ?? false;
@@ -213,6 +240,7 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
         assignedToId?: string | null;
         relatedRunId?: string;
         tags?: string[];
+        attachments?: TicketAttachment[];
     }) => {
         emitFieldChange('title', data.title);
         emitFieldChange('description', data.description ?? '');
@@ -227,6 +255,7 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
             assignedToId: data.assignedToId,
             relatedRunId: data.relatedRunId,
             tags: data.tags,
+            attachments: data.attachments,
         });
         setIsEditModalOpen(false);
     };
@@ -434,13 +463,29 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
                                 </div>
                             )}
 
+                            {/* Attachments → live on the JIRA bug, not in TSTestManager */}
+                            <div className="mb-5">
+                                {!jiraMapped && !ticket.jiraIssueKey && (
+                                    <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                                        <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                                        <span>This project is not mapped to JIRA yet — files can only be saved once JIRA is connected (My Client → Project Configuration).</span>
+                                    </div>
+                                )}
+                                <TicketAttachmentPicker
+                                    attachments={attachments}
+                                    onChange={handleAttachmentsChange}
+                                />
+                            </div>
+
                             {/* JIRA */}
+                            {showJiraPanel && (
                             <div className="mb-5 p-3 rounded-lg border bg-gray-50 dark:bg-gray-800/50 dark:border-gray-700">
                                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">JIRA</h3>
                                 {ticket.jiraIssueKey ? (
                                     <div className="flex flex-wrap items-center gap-2">
                                         <a href={ticket.jiraUrl ?? undefined} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded text-xs font-mono border border-blue-200 dark:border-blue-800">{ticket.jiraIssueKey}</a>
-                                        {ticket.jiraStatus && <span className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">{ticket.jiraStatus}</span>}
+                                        {ticket.jiraStatus && <span className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded" title={ticket.jiraLastSyncAt ? `Last synced ${new Date(ticket.jiraLastSyncAt).toLocaleString()}` : 'JIRA status'}>{ticket.jiraStatus}</span>}
+{ticket.jiraLastSyncAt && <span className="text-[10px] text-gray-400 dark:text-gray-500 self-center">Synced {new Date(ticket.jiraLastSyncAt).toLocaleTimeString()}</span>}
                                         <button disabled={jiraBusy} onClick={async()=>{setJiraBusy(true); try{const u=await syncJira(ticket.id); applyRemoteTicketUpdate(u); toast.success('JIRA synced');}catch(e: unknown){toast.error((e as Error)?.message || 'JIRA sync failed');}finally{setJiraBusy(false);}}} className="text-xs border px-2 py-1 rounded hover:bg-white">Sync</button>
                                         <button disabled={jiraBusy} onClick={async()=>{setJiraBusy(true); try{const u=await unlinkJira(ticket.id); applyRemoteTicketUpdate(u); toast.success('Unlinked');}catch(e: unknown){toast.error((e as Error)?.message || 'JIRA unlink failed');}finally{setJiraBusy(false);}}} className="text-xs border px-2 py-1 rounded hover:bg-white">Unlink</button>
                                     </div>
@@ -452,6 +497,7 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
                                     </div>
                                 )}
                             </div>
+                            )}
 
                             {/* Details grid */}
                             <div className="mb-5">

@@ -18,9 +18,9 @@ import {
     verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { TestCase, Priority, Status, CustomFieldDefinition, HiddenDefaultColumns } from '../../types/testManager';
+import { TestCase, Priority, Status, TestType, CustomFieldDefinition, HiddenDefaultColumns, TestCaseTableColumnKey, TEST_CASE_TABLE_COLUMN_LABELS, resolveHiddenTableColumns, resolveTableColumnOrder } from '../../types/testManager';
 import StatusBadge from './StatusBadge';
-import { Edit, Copy, GripVertical, ArrowUpDown, ArrowUp, ArrowDown, RotateCcw, ChevronRight, Loader2 } from 'lucide-react';
+import { Edit, Copy, GripVertical, ArrowUpDown, ArrowUp, ArrowDown, RotateCcw, ChevronRight, Loader2, Archive, ArchiveRestore } from 'lucide-react';
 import IdDisplay from './IdDisplay';
 
 
@@ -34,14 +34,35 @@ export interface SortInfo {
     resetToCustomOrder: () => void;
 }
 
+/** Filter the configured order down to the columns actually being shown. */
+const visibleOrderedColumns = (
+    columnOrder: TestCaseTableColumnKey[],
+    hiddenColumns: HiddenDefaultColumns,
+): TestCaseTableColumnKey[] =>
+    resolveTableColumnOrder(columnOrder).filter((key) => !hiddenColumns[key]);
+
+/** Small pill for the Test Type column. Kept neutral so the priority dot stays the only colour cue in its row. */
+const TestTypeBadge: React.FC<{ value?: TestType }> = ({ value }) => {
+    if (!value) {
+        return <span className="text-sm text-gray-300 dark:text-gray-600">—</span>;
+    }
+    return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+            {value}
+        </span>
+    );
+};
+
 interface TestCaseTableProps {
     data: TestCase[];
     onRowClick: (item: TestCase) => void;
     onStatusChange?: (caseId: string, status: Status) => void;
     onViewClick?: (item: TestCase) => void;
     onCloneClick?: (item: TestCase) => void;
+    onArchiveClick?: (item: TestCase) => void;
+    onRestoreClick?: (item: TestCase) => void;
     isEditMode?: boolean;
-    onUpdate?: (id: string, field: keyof TestCase, value: string | number | boolean | Status | Priority) => void;
+    onUpdate?: (id: string, field: keyof TestCase, value: string | number | boolean | Status | Priority | TestType) => void;
     // Selection props
     isSelectionMode?: boolean;
     selectedIds?: string[];
@@ -54,6 +75,8 @@ interface TestCaseTableProps {
     customFieldDefinitions?: CustomFieldDefinition[];
     visibleCustomFieldIds?: string[];
     hiddenColumns?: HiddenDefaultColumns;
+    /** Display order for the built-in columns. */
+    columnOrder?: TestCaseTableColumnKey[];
     // Show sorting controls in header (desktop only)
     showSortControlsInHeader?: boolean;
     // Callback to expose sorting state to parent
@@ -77,12 +100,15 @@ interface SortableRowProps {
     onStatusChange?: (caseId: string, status: Status) => void;
     onViewClick?: (item: TestCase) => void;
     onCloneClick?: (item: TestCase) => void;
-    onUpdate?: (id: string, field: keyof TestCase, value: string | number | boolean | Status | Priority) => void;
+    onArchiveClick?: (item: TestCase) => void;
+    onRestoreClick?: (item: TestCase) => void;
+    onUpdate?: (id: string, field: keyof TestCase, value: string | number | boolean | Status | Priority | TestType) => void;
     getStatusColor: (status: Status) => string;
     // Custom fields and visibility
     customFieldDefinitions?: CustomFieldDefinition[];
     visibleCustomFieldIds?: string[];
-    hiddenColumns?: HiddenDefaultColumns;
+    /** Already resolved to only the visible columns; keeps memo stable. */
+    orderedColumns?: TestCaseTableColumnKey[];
     activeArea?: string | null;
     activeSuiteId?: string | null;
 }
@@ -98,11 +124,13 @@ const SortableRow: React.FC<SortableRowProps> = React.memo(({
     onStatusChange,
     onViewClick,
     onCloneClick,
+    onArchiveClick,
+    onRestoreClick,
     onUpdate,
     getStatusColor,
     customFieldDefinitions = [],
     visibleCustomFieldIds = [],
-    hiddenColumns = {},
+    orderedColumns = [],
     activeArea,
     activeSuiteId,
 }) => {
@@ -175,134 +203,172 @@ const SortableRow: React.FC<SortableRowProps> = React.memo(({
                     </div>
                 </td>
             )}
-            {/* ID Column */}
-            {!hiddenColumns.id && (
-                <td className={`py-2 ${isSelectionMode ? 'pl-2' : enableReorder ? 'pl-2' : 'pl-6'} pr-4 text-sm font-medium text-gray-500 dark:text-gray-400 font-mono tracking-tight group-hover:text-gray-900 dark:group-hover:text-gray-200`}>
-                    <IdDisplay id={item.displayId || item.id} />
-                </td>
-            )}
+            {orderedColumns.map((column) => {
+                switch (column) {
+                    case 'id':
+                        return (
+                            <td key={column} className={`py-2 ${isSelectionMode ? 'pl-2' : enableReorder ? 'pl-2' : 'pl-6'} pr-4 text-sm font-medium text-gray-500 dark:text-gray-400 font-mono tracking-tight group-hover:text-gray-900 dark:group-hover:text-gray-200`}>
+                                <IdDisplay id={item.displayId || item.id} />
+                            </td>
+                        );
 
-            {/* Title Cell: Editable or Text */}
-            {!hiddenColumns.title && (
-                <td className="py-2 px-4">
-                    {isEditMode ? (
-                        <div onClick={(e) => e.stopPropagation()}>
-                            <input
-                                type="text"
-                                value={item.title}
-                                onChange={(e) => onUpdate?.(item.id, 'title', e.target.value)}
-                                className="w-full bg-white dark:bg-gray-700 border border-blue-300 dark:border-gray-600 rounded px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/50 outline-none"
-                            />
-                            {getContextInfo() && (
-                                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                                    {getContextInfo()}
+                    case 'title':
+                        return (
+                            <td key={column} className="py-2 px-4">
+                                {isEditMode ? (
+                                    <div onClick={(e) => e.stopPropagation()}>
+                                        <input
+                                            type="text"
+                                            value={item.title}
+                                            onChange={(e) => onUpdate?.(item.id, 'title', e.target.value)}
+                                            className="w-full bg-white dark:bg-gray-700 border border-blue-300 dark:border-blue-600 rounded px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/50 outline-none"
+                                        />
+                                        {getContextInfo() && (
+                                            <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                                                {getContextInfo()}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="text-[15px] font-medium text-gray-900 dark:text-gray-100">{item.title}</div>
+                                        {getContextInfo() && (
+                                            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                                                {getContextInfo()}
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </td>
+                        );
+
+                    case 'area':
+                        return (
+                            <td key={column} className="py-2 px-4">
+                                <div className="text-sm text-gray-600 dark:text-gray-400 truncate max-w-[160px]" title={item.area || undefined}>
+                                    {item.area || <span className="text-gray-300 dark:text-gray-600">—</span>}
                                 </div>
-                            )}
-                        </div>
-                    ) : (
-                        <>
-                            <div className="text-[15px] font-medium text-gray-900 dark:text-gray-100">{item.title}</div>
-                            {getContextInfo() && (
+                            </td>
+                        );
+
+                    case 'testType':
+                        return (
+                            <td key={column} className="py-2 px-4">
+                                {isEditMode ? (
+                                    <div onClick={(e) => e.stopPropagation()}>
+                                        <select
+                                            value={item.testType ?? ''}
+                                            onChange={(e) => onUpdate?.(item.id, 'testType', e.target.value)}
+                                            className="w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 text-xs text-gray-700 dark:text-gray-300 outline-none focus:border-blue-300 dark:focus:border-blue-500"
+                                        >
+                                            <option value="">Not set</option>
+                                            {Object.values(TestType).map(t => (
+                                                <option key={t} value={t}>{t}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                ) : (
+                                    <TestTypeBadge value={item.testType} />
+                                )}
+                            </td>
+                        );
+
+                    case 'priority':
+                        return (
+                            <td key={column} className="py-2 px-4">
+                                {isEditMode ? (
+                                    <div onClick={(e) => e.stopPropagation()}>
+                                        <select
+                                            value={item.priority}
+                                            onChange={(e) => onUpdate?.(item.id, 'priority', e.target.value)}
+                                            className="w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 text-xs text-gray-700 dark:text-gray-300 outline-none focus:border-blue-300 dark:focus:border-blue-500"
+                                        >
+                                            {Object.values(Priority).map(p => (
+                                                <option key={p} value={p}>{p}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                ) : (
+                                    <StatusBadge type="priority" value={item.priority} />
+                                )}
+                            </td>
+                        );
+
+                    case 'status':
+                        return (
+                            <td key={column} className="py-2 px-4">
+                                <div onClick={e => e.stopPropagation()}>
+                                    <select
+                                        value={item.status}
+                                        onChange={(e) => onStatusChange?.(item.id, e.target.value as Status)}
+                                        className={`text-xs font-semibold px-2.5 py-1 rounded-full border appearance-none cursor-pointer outline-none transition-colors text-center min-w-[90px] ${getStatusColor(item.status)}`}
+                                    >
+                                        {Object.values(Status).map(s => (
+                                            <option key={s} value={s}>{s}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </td>
+                        );
+
+                    case 'lastModified':
+                        return (
+                            <td key={column} className="py-2 px-4">
+                                <div className="text-sm text-gray-600 dark:text-gray-400">
+                                    {new Date(item.lastModified).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric'
+                                    })}
+                                </div>
                                 <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                                    {getContextInfo()}
+                                    {new Date(item.lastModified).toLocaleTimeString('en-US', {
+                                        hour: 'numeric',
+                                        minute: '2-digit',
+                                        hour12: true
+                                    })}
                                 </div>
-                            )}
-                        </>
-                    )}
-                </td>
-            )}
+                            </td>
+                        );
 
-            {/* Priority: Editable or Badge */}
-            {!hiddenColumns.priority && (
-                <td className="py-2 px-4">
-                    {isEditMode ? (
-                        <div onClick={(e) => e.stopPropagation()}>
-                            <select
-                                value={item.priority}
-                                onChange={(e) => onUpdate?.(item.id, 'priority', e.target.value)}
-                                className="w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 text-xs text-gray-700 dark:text-gray-300 outline-none focus:border-blue-300 dark:focus:border-blue-500"
-                            >
-                                {Object.values(Priority).map(p => (
-                                    <option key={p} value={p}>{p}</option>
-                                ))}
-                            </select>
-                        </div>
-                    ) : (
-                        <StatusBadge type="priority" value={item.priority} />
-                    )}
-                </td>
-            )}
+                    case 'createdAt':
+                        return (
+                            <td key={column} className="py-2 px-4">
+                                <div className="text-sm text-gray-600 dark:text-gray-400">
+                                    {new Date(item.createdAt).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric'
+                                    })}
+                                </div>
+                                <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                                    {new Date(item.createdAt).toLocaleTimeString('en-US', {
+                                        hour: 'numeric',
+                                        minute: '2-digit',
+                                        hour12: true
+                                    })}
+                                </div>
+                            </td>
+                        );
 
-            {/* Unified Status Dropdown */}
-            {!hiddenColumns.status && (
-                <td className="py-2 px-4">
-                    <div onClick={e => e.stopPropagation()}>
-                        <select
-                            value={item.status}
-                            onChange={(e) => onStatusChange?.(item.id, e.target.value as Status)}
-                            className={`text-xs font-semibold px-2.5 py-1 rounded-full border appearance-none cursor-pointer outline-none transition-colors text-center min-w-[90px] ${getStatusColor(item.status)}`}
-                        >
-                            {Object.values(Status).map(s => (
-                                <option key={s} value={s}>{s}</option>
-                            ))}
-                        </select>
-                    </div>
-                </td>
-            )}
+                    case 'assignedTester':
+                        return (
+                            <td key={column} className="py-2 px-4 text-right pr-6">
+                                <div className="flex items-center justify-end gap-2">
+                                    <span className="text-sm text-gray-600 dark:text-gray-400 truncate max-w-[100px]">{item.assignedTester.name}</span>
+                                    <img
+                                        src={item.assignedTester.avatar}
+                                        alt={item.assignedTester.name}
+                                        className="h-6 w-6 rounded-full border border-gray-200 dark:border-gray-600"
+                                    />
+                                </div>
+                            </td>
+                        );
 
-            {/* Last Modified */}
-            {!hiddenColumns.lastModified && (
-                <td className="py-2 px-4">
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {new Date(item.lastModified).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric'
-                        })}
-                    </div>
-                    <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                        {new Date(item.lastModified).toLocaleTimeString('en-US', {
-                            hour: 'numeric',
-                            minute: '2-digit',
-                            hour12: true
-                        })}
-                    </div>
-                </td>
-            )}
-
-            {/* Created Date */}
-            {!hiddenColumns.createdAt && (
-                <td className="py-2 px-4">
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {new Date(item.createdAt).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric'
-                        })}
-                    </div>
-                    <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                        {new Date(item.createdAt).toLocaleTimeString('en-US', {
-                            hour: 'numeric',
-                            minute: '2-digit',
-                            hour12: true
-                        })}
-                    </div>
-                </td>
-            )}
-
-            {/* Assignee */}
-            {!hiddenColumns.assignedTester && (
-                <td className="py-2 px-4 text-right pr-6">
-                    <div className="flex items-center justify-end gap-2">
-                        <span className="text-sm text-gray-600 dark:text-gray-400 truncate max-w-[100px]">{item.assignedTester.name}</span>
-                        <img
-                            src={item.assignedTester.avatar}
-                            alt={item.assignedTester.name}
-                            className="h-6 w-6 rounded-full border border-gray-200 dark:border-gray-600"
-                        />
-                    </div>
-                </td>
-            )}
+                    default:
+                        return null;
+                }
+            })}
 
             {/* Custom Field Columns */}
             {visibleCustomFieldIds.map((fieldId) => {
@@ -350,6 +416,31 @@ const SortableRow: React.FC<SortableRowProps> = React.memo(({
                         <Edit className="h-3.5 w-3.5" />
                         Edit
                     </button>
+                    {item.archived ? (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onRestoreClick?.(item);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
+                            title="Restore Test Case"
+                        >
+                            <ArchiveRestore className="h-3.5 w-3.5" />
+                            Restore
+                        </button>
+                    ) : (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onArchiveClick?.(item);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                            title="Archive Test Case"
+                        >
+                            <Archive className="h-3.5 w-3.5" />
+                            Archive
+                        </button>
+                    )}
                 </div>
             </td>
         </tr>
@@ -364,6 +455,8 @@ const TestCaseTable: React.FC<TestCaseTableProps> = ({
     onStatusChange,
     onViewClick,
     onCloneClick,
+    onArchiveClick,
+    onRestoreClick,
     isEditMode = false,
     onUpdate,
     isSelectionMode = false,
@@ -374,7 +467,8 @@ const TestCaseTable: React.FC<TestCaseTableProps> = ({
     onReorder,
     customFieldDefinitions = [],
     visibleCustomFieldIds = [],
-    hiddenColumns = {},
+    hiddenColumns = resolveHiddenTableColumns(),
+    columnOrder,
     showSortControlsInHeader = false,
     onSortInfoChange,
     activeArea,
@@ -385,6 +479,14 @@ const TestCaseTable: React.FC<TestCaseTableProps> = ({
     const [sortMode, setSortMode] = useState<'custom' | 'standard'>('custom');
     const [sortField, setSortField] = useState<SortField>('title');
     const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+
+    // The header and every row render from this same list, so a column can
+    // never appear in one and not the other. Memoised so the memoised row
+    // component is not re-rendered on unrelated parent updates.
+    const orderedColumns = React.useMemo(
+        () => visibleOrderedColumns(columnOrder ?? [], hiddenColumns),
+        [columnOrder, hiddenColumns]
+    );
 
     const resetToCustomOrder = () => {
         setSortMode('custom');
@@ -419,7 +521,6 @@ const TestCaseTable: React.FC<TestCaseTableProps> = ({
             case Status.InReview: return 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-700';
             case Status.Ready: return 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 border-green-200 dark:border-green-700';
             case Status.Updated: return 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700';
-            case Status.Archived: return 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-400 border-gray-200 dark:border-gray-600';
             default: return 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-400 border-transparent dark:border-gray-600';
         }
     }, []);
@@ -695,95 +796,52 @@ const TestCaseTable: React.FC<TestCaseTableProps> = ({
                                                         input.indeterminate = someSelected && !allSelected;
                                                     }
                                                 }}
+                                                aria-label="Select all loaded test cases"
+                                                title="Select all loaded test cases"
                                                 onChange={(e) => onSelectAll?.(e.target.checked)}
                                                 className="w-4 h-4 text-system-blue border-gray-300 dark:border-gray-600 rounded focus:ring-system-blue bg-white dark:bg-gray-800"
                                             />
                                         </div>
                                     </th>
                                 )}
-                                {/* ID Header */}
-                                {!hiddenColumns?.id && (
-                                    <th className={`py-2 ${isSelectionMode ? 'pl-2' : (enableReorder && sortMode === 'custom') ? 'pl-2' : 'pl-6'} pr-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-32`}>ID</th>
-                                )}
+                                {orderedColumns.map((column) => {
+                                    // Sortable columns get a click target; the rest are plain labels.
+                                    const sortableFields: Partial<Record<TestCaseTableColumnKey, SortField>> = {
+                                        title: 'title',
+                                        priority: 'priority',
+                                        status: 'status',
+                                        lastModified: 'lastModified',
+                                        createdAt: 'createdAt',
+                                        assignedTester: 'assignedTester',
+                                    };
+                                    const sortable = sortableFields[column];
+                                    const isRightAligned = column === 'assignedTester';
+                                    const headerClass = `py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider ${
+                                        sortable ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none' : ''
+                                    } ${isRightAligned ? 'w-32 text-right pr-6' : 'w-40'} ${column === 'title' ? 'w-1/3' : ''} ${column === 'id' ? 'w-32' : ''}`;
+                                    const leadingPad =
+                                        column === 'id'
+                                            ? (isSelectionMode
+                                                ? 'pl-2'
+                                                : enableReorder && sortMode === 'custom'
+                                                    ? 'pl-2'
+                                                    : 'pl-6')
+                                            : '';
+                                    const finalClass = `${headerClass} ${leadingPad} ${column === 'id' ? 'pr-4' : ''}`.trim();
 
-                                {/* Title Header */}
-                                {!hiddenColumns?.title && (
-                                    <th
-                                        className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-1/3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none"
-                                        onClick={() => handleColumnSort('title')}
-                                    >
-                                        <div className="flex items-center gap-1.5">
-                                            Title
-                                            <SortIcon field="title" />
-                                        </div>
-                                    </th>
-                                )}
-
-                                {/* Priority Header */}
-                                {!hiddenColumns?.priority && (
-                                    <th
-                                        className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none"
-                                        onClick={() => handleColumnSort('priority')}
-                                    >
-                                        <div className="flex items-center gap-1.5">
-                                            Priority
-                                            <SortIcon field="priority" />
-                                        </div>
-                                    </th>
-                                )}
-
-                                {/* Status Header */}
-                                {!hiddenColumns?.status && (
-                                    <th
-                                        className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-40 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none"
-                                        onClick={() => handleColumnSort('status')}
-                                    >
-                                        <div className="flex items-center gap-1.5">
-                                            Status
-                                            <SortIcon field="status" />
-                                        </div>
-                                    </th>
-                                )}
-
-                                {/* Last Modified Header */}
-                                {!hiddenColumns?.lastModified && (
-                                    <th
-                                        className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-40 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none"
-                                        onClick={() => handleColumnSort('lastModified')}
-                                    >
-                                        <div className="flex items-center gap-1.5">
-                                            Last Modified
-                                            <SortIcon field="lastModified" />
-                                        </div>
-                                    </th>
-                                )}
-
-                                {/* Created Date Header */}
-                                {!hiddenColumns?.createdAt && (
-                                    <th
-                                        className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-40 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none"
-                                        onClick={() => handleColumnSort('createdAt')}
-                                    >
-                                        <div className="flex items-center gap-1.5">
-                                            Created Date
-                                            <SortIcon field="createdAt" />
-                                        </div>
-                                    </th>
-                                )}
-
-                                {/* Assignee Header */}
-                                {!hiddenColumns?.assignedTester && (
-                                    <th
-                                        className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-32 text-right pr-6 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none"
-                                        onClick={() => handleColumnSort('assignedTester')}
-                                    >
-                                        <div className="flex items-center justify-end gap-1.5">
-                                            Assignee
-                                            <SortIcon field="assignedTester" />
-                                        </div>
-                                    </th>
-                                )}
-
+                                    return (
+                                        <th
+                                            key={column}
+                                            className={finalClass}
+                                            onClick={sortable ? () => handleColumnSort(sortable) : undefined}
+                                        >
+                                            <div className={`flex items-center gap-1.5 ${isRightAligned ? 'justify-end' : ''}`}>
+                                                {TEST_CASE_TABLE_COLUMN_LABELS[column]}
+                                                {sortable && <SortIcon field={sortable} />}
+                                            </div>
+                                        </th>
+                                    );
+                                })}
                                 {/* Custom Field Headers */}
                                 {visibleCustomFieldIds?.map((fieldId) => {
                                     const fieldDef = customFieldDefinitions?.find(f => f.id === fieldId);
@@ -830,11 +888,13 @@ const TestCaseTable: React.FC<TestCaseTableProps> = ({
                                             onStatusChange={onStatusChange}
                                             onViewClick={onViewClick}
                                             onCloneClick={onCloneClick}
+                                            onArchiveClick={onArchiveClick}
+                                            onRestoreClick={onRestoreClick}
                                             onUpdate={onUpdate}
                                             getStatusColor={getStatusColor}
                                             customFieldDefinitions={customFieldDefinitions}
                                             visibleCustomFieldIds={visibleCustomFieldIds}
-                                            hiddenColumns={hiddenColumns}
+                                            orderedColumns={orderedColumns}
                                             activeArea={activeArea}
                                             activeSuiteId={activeSuiteId}
                                         />
@@ -871,45 +931,42 @@ const TestCaseTable: React.FC<TestCaseTableProps> = ({
                                                         input.indeterminate = someSelected && !allSelected;
                                                     }
                                                 }}
+                                                aria-label="Select all loaded test cases"
+                                                title="Select all loaded test cases"
                                                 onChange={(e) => onSelectAll?.(e.target.checked)}
                                                 className="w-4 h-4 text-system-blue border-gray-300 dark:border-gray-600 rounded focus:ring-system-blue bg-white dark:bg-gray-800"
                                             />
                                         </div>
                                     </th>
                                 )}
-                                {!hiddenColumns?.id && (
-                                    <th className={`py-2 ${isSelectionMode ? 'pl-2' : 'pl-6'} pr-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-32`}>ID</th>
-                                )}
-                                {!hiddenColumns?.title && (
-                                    <th className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-1/3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none" onClick={() => handleColumnSort('title')}>
-                                        <div className="flex items-center gap-1.5">Title <SortIcon field="title" /></div>
-                                    </th>
-                                )}
-                                {!hiddenColumns?.priority && (
-                                    <th className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none" onClick={() => handleColumnSort('priority')}>
-                                        <div className="flex items-center gap-1.5">Priority <SortIcon field="priority" /></div>
-                                    </th>
-                                )}
-                                {!hiddenColumns?.status && (
-                                    <th className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-40 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none" onClick={() => handleColumnSort('status')}>
-                                        <div className="flex items-center gap-1.5">Status <SortIcon field="status" /></div>
-                                    </th>
-                                )}
-                                {!hiddenColumns?.lastModified && (
-                                    <th className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-40 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none" onClick={() => handleColumnSort('lastModified')}>
-                                        <div className="flex items-center gap-1.5">Last Modified <SortIcon field="lastModified" /></div>
-                                    </th>
-                                )}
-                                {!hiddenColumns?.createdAt && (
-                                    <th className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-40 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none" onClick={() => handleColumnSort('createdAt')}>
-                                        <div className="flex items-center gap-1.5">Created Date <SortIcon field="createdAt" /></div>
-                                    </th>
-                                )}
-                                {!hiddenColumns?.assignedTester && (
-                                    <th className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-32 text-right pr-6 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none" onClick={() => handleColumnSort('assignedTester')}>
-                                        <div className="flex items-center justify-end gap-1.5">Assignee <SortIcon field="assignedTester" /></div>
-                                    </th>
-                                )}
+                                {orderedColumns.map((column) => {
+                                    const sortableFields: Partial<Record<TestCaseTableColumnKey, SortField>> = {
+                                        title: 'title',
+                                        priority: 'priority',
+                                        status: 'status',
+                                        lastModified: 'lastModified',
+                                        createdAt: 'createdAt',
+                                        assignedTester: 'assignedTester',
+                                    };
+                                    const sortable = sortableFields[column];
+                                    const isRightAligned = column === 'assignedTester';
+                                    const leadingPad =
+                                        column === 'id' ? (isSelectionMode ? 'pl-2' : 'pl-6') : '';
+                                    return (
+                                        <th
+                                            key={column}
+                                            className={`py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider ${
+                                                sortable ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none' : ''
+                                            } ${isRightAligned ? 'w-32 text-right pr-6' : 'w-40'} ${column === 'title' ? 'w-1/3' : ''} ${column === 'id' ? `w-32 pr-4 ${leadingPad}` : ''}`}
+                                            onClick={sortable ? () => handleColumnSort(sortable) : undefined}
+                                        >
+                                            <div className={`flex items-center gap-1.5 ${isRightAligned ? 'justify-end' : ''}`}>
+                                                {TEST_CASE_TABLE_COLUMN_LABELS[column]}
+                                                {sortable && <SortIcon field={sortable} />}
+                                            </div>
+                                        </th>
+                                    );
+                                })}
                                 {visibleCustomFieldIds?.map((fieldId) => {
                                     const fieldDef = customFieldDefinitions?.find(f => f.id === fieldId);
                                     if (!fieldDef) return null;
@@ -942,11 +999,13 @@ const TestCaseTable: React.FC<TestCaseTableProps> = ({
                                         onStatusChange={onStatusChange}
                                         onViewClick={onViewClick}
                                         onCloneClick={onCloneClick}
+                                        onArchiveClick={onArchiveClick}
+                                        onRestoreClick={onRestoreClick}
                                         onUpdate={onUpdate}
                                         getStatusColor={getStatusColor}
                                         customFieldDefinitions={customFieldDefinitions}
                                         visibleCustomFieldIds={visibleCustomFieldIds}
-                                        hiddenColumns={hiddenColumns}
+                                        orderedColumns={orderedColumns}
                                         activeArea={activeArea}
                                         activeSuiteId={activeSuiteId}
                                     />

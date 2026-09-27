@@ -4,7 +4,7 @@
  */
 
 import * as XLSX from 'xlsx';
-import { TestCase, CustomFieldDefinition, HiddenDefaultColumns } from '../types/testManager';
+import { TestCase, CustomFieldDefinition, HiddenDefaultColumns, resolveHiddenTableColumns } from '../types/testManager';
 import { stripHtmlPreserveLineBreaks } from './sanitize';
 
 /**
@@ -121,6 +121,7 @@ function buildRows(
                 case 'title': return testCase.title || '';
                 case 'priority': return testCase.priority || '';
                 case 'status': return testCase.status || '';
+                case 'testType': return testCase.testType || '';
                 case 'assignedTester': return testCase.assignedTester?.name || '';
                 case 'area': return testCase.area || '';
                 case 'suite': return testCase.suite || '';
@@ -188,15 +189,16 @@ export function exportTestCasesToXLSX(
 export function getDefaultExportColumns(
     customFieldDefinitions: CustomFieldDefinition[],
     visibleCustomFieldIds: string[],
-    hiddenColumns: HiddenDefaultColumns = {}
+    hiddenColumns: HiddenDefaultColumns = resolveHiddenTableColumns()
 ): ExportColumn[] {
     const defaultColumns: ExportColumn[] = [
         { id: 'id', label: 'ID', enabled: !hiddenColumns.id },
         { id: 'title', label: 'Title', enabled: !hiddenColumns.title },
         { id: 'priority', label: 'Priority', enabled: !hiddenColumns.priority },
         { id: 'status', label: 'Status', enabled: !hiddenColumns.status },
+        { id: 'testType', label: 'Test Type', enabled: !hiddenColumns.testType },
         { id: 'assignedTester', label: 'Assigned Tester', enabled: !hiddenColumns.assignedTester },
-        { id: 'area', label: 'Area', enabled: true }, // Not in hiddenColumns, default to true
+        { id: 'area', label: 'Area', enabled: !hiddenColumns.area },
         { id: 'suite', label: 'Suite', enabled: true }, // Not in hiddenColumns, default to true
         { id: 'suiteTags', label: 'Suite Tags', enabled: true }, // Not in hiddenColumns, default to true
         { id: 'testDescription', label: 'Description', enabled: true }, // Not in hiddenColumns, default to true

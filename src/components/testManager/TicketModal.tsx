@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, Bug, ChevronDown, Loader2, Check, Cloud } from 'lucide-react';
 import RichTextEditor from './RichTextEditor';
 import TagInput from './TagInput';
-import { Ticket, TicketStatus, TicketPriority, TicketSeverity, FailureType } from '../../types/testManager';
+import TicketAttachmentPicker from './TicketAttachmentPicker';
+import { Ticket, TicketStatus, TicketPriority, TicketSeverity, FailureType, TicketAttachment } from '../../types/testManager';
 import {
     getTicketStatusSelectColor,
     getTicketPrioritySelectColor,
@@ -27,6 +28,8 @@ interface TicketModalProps {
         assignedToId?: string | null;
         relatedRunId?: string;
         tags?: string[];
+        /** Files forwarded to the linked JIRA bug (never stored in TSM) */
+        attachments?: TicketAttachment[];
     }) => Promise<void>;
     projectMembers: { id: string; name: string; email?: string; active?: boolean }[];
     testRuns: { id: string; title: string }[];
@@ -55,6 +58,7 @@ const TicketModal: React.FC<TicketModalProps> = ({
     const [assignedToId, setAssignedToId] = useState('');
     const [relatedRunId, setRelatedRunId] = useState('');
     const [tags, setTags] = useState<string[]>([]);
+    const [attachments, setAttachments] = useState<TicketAttachment[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
     const [error, setError] = useState<string | null>(null);
@@ -74,6 +78,7 @@ const TicketModal: React.FC<TicketModalProps> = ({
             setAssignedToId(initialTicket?.assignedTo?.id || '');
             setRelatedRunId(initialTicket?.relatedRunId || '');
             setTags(initialTicket?.tags || []);
+            setAttachments(initialTicket?.attachments || []);
             setSaveStatus('idle');
             setError(null);
         }
@@ -100,6 +105,9 @@ const TicketModal: React.FC<TicketModalProps> = ({
                 assignedToId: isEditMode ? (assignedToId || null) : (assignedToId || undefined),
                 relatedRunId: isEditMode ? relatedRunId : (relatedRunId || undefined),
                 tags: tags.length > 0 ? tags : undefined,
+                // Create only sends files when there are some; edit always sends
+                // the list so clearing attachments is possible.
+                attachments: isEditMode ? attachments : (attachments.length > 0 ? attachments : undefined),
             });
             setSaveStatus('saved');
             onClose();
@@ -352,6 +360,13 @@ const TicketModal: React.FC<TicketModalProps> = ({
                             placeholder="Describe the issue in detail. You can use formatting, lists, images, etc."
                         />
                     </div>
+
+                    {/* Attachments → handed to the linked JIRA bug on save */}
+                    <TicketAttachmentPicker
+                        attachments={attachments}
+                        onChange={setAttachments}
+                        disabled={isSubmitting}
+                    />
 
                     {/* Tags */}
                     <div className="mb-2">

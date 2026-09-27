@@ -19,9 +19,13 @@ export const getFailureTypeColor = (failureType: FailureType | undefined): strin
 // --- Status Colors (badge backgrounds) ---
 export const getTicketStatusColor = (status: TicketStatus): string => {
     switch (status) {
+        case TicketStatus.ToDo: return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
         case TicketStatus.Open: return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
         case TicketStatus.InProgress: return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+        case TicketStatus.QATesting: return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400';
+        case TicketStatus.OutOfScope: return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
         case TicketStatus.Resolved: return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+        case TicketStatus.Done: return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
         case TicketStatus.Closed: return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
         case TicketStatus.Reopened: return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
         default: return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
@@ -76,9 +80,13 @@ export const getTicketSeverityTextColor = (severity: TicketSeverity): string => 
 // --- Styled select variants (matching TestCaseModal's getStatusColor/getPriorityColor pattern) ---
 export const getTicketStatusSelectColor = (status: TicketStatus): string => {
     switch (status) {
+        case TicketStatus.ToDo: return 'text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700';
         case TicketStatus.Open: return 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800';
         case TicketStatus.InProgress: return 'text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800';
+        case TicketStatus.QATesting: return 'text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/30 border-cyan-200 dark:border-cyan-800';
+        case TicketStatus.OutOfScope: return 'text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 border-orange-200 dark:border-orange-800';
         case TicketStatus.Resolved: return 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800';
+        case TicketStatus.Done: return 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-800';
         case TicketStatus.Closed: return 'text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
         case TicketStatus.Reopened: return 'text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 border-purple-200 dark:border-purple-800';
         default: return 'text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';

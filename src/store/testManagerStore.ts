@@ -1,6 +1,6 @@
 import { createWithEqualityFn } from 'zustand/traditional';
 import { persist } from 'zustand/middleware';
-import { ViewMode, TestCase, Project, TestSuite, Priority, Status, Tester, ProjectMemberRole, HistoryEntry, ProjectSettings, Ticket, TicketStatus as TicketStatusEnum, TicketPriority as TicketPriorityEnum, TicketSeverity as TicketSeverityEnum, TicketAttachment, ReturnReason as ReturnReasonEnum, FailureType as FailureTypeEnum } from '../types/testManager';
+import { ViewMode, TestCase, Project, TestSuite, Priority, Status, TestType, Tester, ProjectMemberRole, HistoryEntry, ProjectSettings, Ticket, TicketStatus as TicketStatusEnum, TicketPriority as TicketPriorityEnum, TicketSeverity as TicketSeverityEnum, TicketAttachment, ReturnReason as ReturnReasonEnum, FailureType as FailureTypeEnum, ArchiveScope } from '../types/testManager';
 import * as testManagerApi from '../services/testManagerApi';
 import * as ticketApi from '../services/ticketApi';
 import { useAuthStore } from './authStore';
@@ -82,6 +82,8 @@ const assertCanWriteCases = (ids: string[]): void => {
 export interface TestCaseFilters {
     status: Status[];
     priority: Priority[];
+    /** Empty = no test-type filter. Cases with no testType are matched by 'unset'. */
+    testType: (TestType | 'unset')[];
     dateRange: {
         start: string | null;
         end: string | null;
@@ -95,6 +97,7 @@ export interface TestCaseFilters {
 const initialFilters: TestCaseFilters = {
     status: [],
     priority: [],
+    testType: [],
     dateRange: { start: null, end: null },
     createdAtRange: { start: null, end: null },
 };
@@ -121,6 +124,7 @@ export const mapTestCaseResponse = (tc: TestCaseResponse): TestCase => ({
     title: tc.title,
     priority: tc.priority as Priority,
     status: tc.status as Status,
+    testType: tc.testType as TestType | undefined,
     createdAt: tc.createdAt,
     lastModified: tc.lastModified,
     assignedTester: tc.assignedTester as Tester,
@@ -142,6 +146,8 @@ export const mapTestCaseResponse = (tc: TestCaseResponse): TestCase => ({
     })) as HistoryEntry[],
     projectId: tc.projectId,
     order: tc.order,
+    archived: tc.archived === true,
+    archivedAt: tc.archivedAt ?? null,
 });
 
 const mapTestSuiteResponse = (s: TestSuiteResponse): TestSuite => ({
@@ -151,6 +157,8 @@ const mapTestSuiteResponse = (s: TestSuiteResponse): TestSuite => ({
     tags: s.tags || [],
     projectId: s.projectId,
     caseCount: s.caseCount,
+    archived: s.archived === true,
+    archivedAt: s.archivedAt ?? null,
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
 });
@@ -185,6 +193,7 @@ export const mapTicketResponse = (t: TicketListResponse): Ticket => ({
     jiraIssueKey: t.jiraIssueKey ?? null,
     jiraUrl: t.jiraUrl ?? null,
     jiraStatus: t.jiraStatus ?? null,
+    jiraLastSyncAt: t.jiraLastSyncAt ?? null,
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
 });
@@ -247,11 +256,35 @@ interface TestManagerStore {
     onImportTestCases: (() => void) | null;
     setImportTestCasesCallback: (callback: (() => void) | null) => void;
 
+    /**
+     * Registered by the Test Cases page so the shared toolbar (which lives in
+     * the layout) can ask the current view to re-read from the server.
+     */
+    onRefreshTestCases: (() => Promise<void>) | null;
+    setRefreshTestCasesCallback: (callback: (() => Promise<void>) | null) => void;
+
+    /** Registered by the Test Runs page for the toolbar's Refresh. */
+    onRefreshTestRuns: (() => Promise<void>) | null;
+    setRefreshTestRunsCallback: (callback: (() => Promise<void>) | null) => void;
+
+    /** Registered by the Tickets page; also re-syncs JIRA statuses. */
+    onRefreshTickets: (() => Promise<void>) | null;
+    setRefreshTicketsCallback: (callback: (() => Promise<void>) | null) => void;
+
     // Project pagination state
     projectsHasMore: boolean;
     projectsOffset: number;
     projectsTotal: number;
     isProjectsLoadingMore: boolean;
+    /**
+     * Server-side search term for the project list.
+     *
+     * Kept apart from the global `searchQuery` because other pages use that for
+     * their own filtering, and a project fetch triggered from one of them must
+     * not silently inherit their search text.
+     */
+    projectsSearch: string;
+    setProjectsSearch: (search: string) => void;
 
     // Project actions
     fetchProjects: () => Promise<void>;
@@ -271,18 +304,23 @@ interface TestManagerStore {
     getProjectSettings: (projectId: string) => ProjectSettings;
 
     // Test Suite actions
-    fetchTestSuites: (projectId: string) => Promise<void>;
+    fetchTestSuites: (projectId: string, scope?: ArchiveScope) => Promise<void>;
     createTestSuite: (projectId: string, data: CreateTestSuiteRequest) => Promise<TestSuite>;
     updateTestSuite: (id: string, data: UpdateTestSuiteRequest) => Promise<TestSuite>;
     deleteTestSuite: (id: string) => Promise<void>;
+    archiveTestSuite: (id: string) => Promise<void>;
+    restoreTestSuite: (id: string) => Promise<void>;
 
     // Test Case actions
-    fetchTestCases: (suiteId: string) => Promise<void>;
-    fetchTestCasesByProject: (projectId: string) => Promise<void>;
+    fetchTestCases: (suiteId: string, scope?: ArchiveScope) => Promise<void>;
+    fetchTestCasesByProject: (projectId: string, scope?: ArchiveScope) => Promise<void>;
     createTestCase: (suiteId: string, data: CreateTestCaseRequest) => Promise<TestCase>;
     updateTestCase: (id: string, data: UpdateTestCaseRequest) => Promise<TestCase>;
     cloneTestCase: (id: string) => Promise<TestCase>;
     deleteTestCase: (id: string) => Promise<void>;
+    archiveTestCase: (id: string) => Promise<void>;
+    restoreTestCase: (id: string) => Promise<void>;
+    bulkArchiveTestCases: (ids: string[], archived: boolean) => Promise<void>;
     bulkUpdateStatus: (ids: string[], status: Status) => Promise<void>;
 
     // Selection State
@@ -348,10 +386,12 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             activeTestCaseId: null as string | null,
             testCases: [] as TestCase[],
             projects: [] as Project[],
-            projectsHasMore: false,
-            projectsOffset: 0,
-            projectsTotal: 0,
-            isProjectsLoadingMore: false,
+    projectsHasMore: false,
+    projectsOffset: 0,
+    projectsTotal: 0,
+    isProjectsLoadingMore: false,
+    projectsSearch: '',
+    setProjectsSearch: (search: string) => set({ projectsSearch: search }),
             testSuites: [] as TestSuite[],
             isLoading: false,
             error: null as string | null,
@@ -399,8 +439,17 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             setExportTestCasesCallback: (callback) => set({ onExportTestCases: callback }),
 
             // Import callback
-            onImportTestCases: null,
-            setImportTestCasesCallback: (callback) => set({ onImportTestCases: callback }),
+    onImportTestCases: null,
+    setImportTestCasesCallback: (callback) => set({ onImportTestCases: callback }),
+
+    onRefreshTestCases: null,
+    setRefreshTestCasesCallback: (callback) => set({ onRefreshTestCases: callback }),
+
+    onRefreshTestRuns: null,
+    setRefreshTestRunsCallback: (callback) => set({ onRefreshTestRuns: callback }),
+
+    onRefreshTickets: null,
+    setRefreshTicketsCallback: (callback) => set({ onRefreshTickets: callback }),
 
             // Selection Actions
             isSelectionMode: false,
@@ -437,12 +486,14 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             // PROJECT ACTIONS
             // =========================================================================
             fetchProjects: async () => {
+                const search = get().projectsSearch.trim();
                 try {
-                    const result = await deduplicateRequest('projects', async () => {
+                    const result = await deduplicateRequest(`projects:${search}`, async () => {
                         set({ isLoading: true, error: null });
                         const response = await testManagerApi.getProjectsPaginated({
                             limit: PROJECTS_PAGE_SIZE,
                             offset: 0,
+                            search: search || undefined,
                         });
                         return {
                             items: response.items.map(mapProjectResponse),
@@ -462,14 +513,16 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             },
 
             fetchMoreProjects: async () => {
-                const { projectsHasMore, isProjectsLoadingMore, projectsOffset } = get();
+                const { projectsHasMore, isProjectsLoadingMore, projectsOffset, projectsSearch } = get();
                 if (!projectsHasMore || isProjectsLoadingMore) return;
 
+                const search = projectsSearch.trim();
                 set({ isProjectsLoadingMore: true });
                 try {
                     const response = await testManagerApi.getProjectsPaginated({
                         limit: PROJECTS_PAGE_SIZE,
                         offset: projectsOffset,
+                        search: search || undefined,
                     });
                     const mapped = response.items.map(mapProjectResponse);
 
@@ -703,13 +756,18 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             // =========================================================================
             // TEST SUITE ACTIONS
             // =========================================================================
-            fetchTestSuites: async (projectId: string) => {
+            fetchTestSuites: async (projectId: string, scope?: ArchiveScope) => {
                 try {
-                    const testSuites = await deduplicateRequest(`testSuites:${projectId}`, async () => {
-                        set({ isLoading: true, error: null });
-                        const response = await testManagerApi.getTestSuites(projectId);
-                        return response.map(mapTestSuiteResponse);
-                    });
+                    // The scope is part of the dedup key: switching to the
+                    // archived view must not reuse the in-flight active fetch.
+                    const testSuites = await deduplicateRequest(
+                        `testSuites:${projectId}:${scope ?? 'active'}`,
+                        async () => {
+                            set({ isLoading: true, error: null });
+                            const response = await testManagerApi.getTestSuites(projectId, { archived: scope });
+                            return response.map(mapTestSuiteResponse);
+                        }
+                    );
                     set({ testSuites, isLoading: false });
                 } catch (error: unknown) {
                     set({ error: (error as Error).message, isLoading: false });
@@ -729,6 +787,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
                     projectId,
                     createdAt: nowIso,
                     updatedAt: nowIso,
+                    archived: false,
                 };
 
                 set({ testSuites: [optimisticSuite, ...previousSuites] });
@@ -813,29 +872,89 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
                 }
             },
 
+            archiveTestSuite: async (id: string) => {
+                assertCanWriteSuite(id);
+                set({ isLoading: true, error: null });
+                const previousSuites = get().testSuites;
+                const previousTestCases = get().testCases;
+
+                // Archiving a suite archives its cases too, so both lists drop
+                // them optimistically. A failure rolls both back.
+                set((state) => ({
+                    testSuites: state.testSuites.filter((s) => s.id !== id),
+                    testCases: state.testCases.filter((tc) => tc.suiteId !== id),
+                    activeSuiteId: state.activeSuiteId === id ? null : state.activeSuiteId,
+                    activeSuite: state.activeSuiteId === id ? null : state.activeSuite,
+                    isLoading: false,
+                }));
+
+                try {
+                    await testManagerApi.archiveTestSuite(id);
+                } catch (error: unknown) {
+                    set({
+                        testSuites: previousSuites,
+                        testCases: previousTestCases,
+                        error: (error as Error).message,
+                    });
+                    throw error;
+                }
+            },
+
+            restoreTestSuite: async (id: string) => {
+                assertCanWriteSuite(id);
+                set({ isLoading: true, error: null });
+                const previousSuites = get().testSuites;
+
+                try {
+                    const response = await testManagerApi.restoreTestSuite(id);
+                    const suite = mapTestSuiteResponse(response);
+                    // A restored suite belongs in the active list; the archived
+                    // view is refreshed separately by its own page effect.
+                    set((state) => ({
+                        testSuites: state.testSuites.some((s) => s.id === id)
+                            ? state.testSuites.map((s) => (s.id === id ? suite : s))
+                            : [suite, ...state.testSuites],
+                        isLoading: false,
+                    }));
+                } catch (error: unknown) {
+                    set({
+                        testSuites: previousSuites,
+                        error: (error as Error).message,
+                        isLoading: false,
+                    });
+                    throw error;
+                }
+            },
+
             // =========================================================================
             // TEST CASE ACTIONS
             // =========================================================================
-            fetchTestCases: async (suiteId: string) => {
+            fetchTestCases: async (suiteId: string, scope?: ArchiveScope) => {
                 try {
-                    const testCases = await deduplicateRequest(`testCases:${suiteId}`, async () => {
-                        set({ isLoading: true, error: null });
-                        const response = await testManagerApi.getTestCases(suiteId);
-                        return response.map(mapTestCaseResponse);
-                    });
+                    const testCases = await deduplicateRequest(
+                        `testCases:${suiteId}:${scope ?? 'active'}`,
+                        async () => {
+                            set({ isLoading: true, error: null });
+                            const response = await testManagerApi.getTestCases(suiteId, { archived: scope });
+                            return response.map(mapTestCaseResponse);
+                        }
+                    );
                     set({ testCases, isLoading: false });
                 } catch (error: unknown) {
                     set({ error: (error as Error).message, isLoading: false });
                 }
             },
 
-            fetchTestCasesByProject: async (projectId: string) => {
+            fetchTestCasesByProject: async (projectId: string, scope?: ArchiveScope) => {
                 try {
-                    const testCases = await deduplicateRequest(`testCasesByProject:${projectId}`, async () => {
-                        set({ isLoading: true, error: null });
-                        const response = await testManagerApi.getTestCasesByProject(projectId);
-                        return response.map(mapTestCaseResponse);
-                    });
+                    const testCases = await deduplicateRequest(
+                        `testCasesByProject:${projectId}:${scope ?? 'active'}`,
+                        async () => {
+                            set({ isLoading: true, error: null });
+                            const response = await testManagerApi.getTestCasesByProject(projectId, { archived: scope });
+                            return response.map(mapTestCaseResponse);
+                        }
+                    );
                     set({ testCases, isLoading: false });
                 } catch (error: unknown) {
                     set({ error: (error as Error).message, isLoading: false });
@@ -974,6 +1093,74 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
 
                 try {
                     await testManagerApi.deleteTestCase(id);
+                    set({ isLoading: false });
+                } catch (error: unknown) {
+                    set({
+                        testCases: previousTestCases,
+                        error: (error as Error).message,
+                        isLoading: false,
+                    });
+                    throw error;
+                }
+            },
+
+            archiveTestCase: async (id: string) => {
+                assertCanWriteCase(id);
+                set({ isLoading: true, error: null });
+                const previousTestCases = get().testCases;
+                set({ testCases: previousTestCases.filter((tc) => tc.id !== id) });
+
+                try {
+                    await testManagerApi.archiveTestCase(id);
+                    set({ isLoading: false });
+                } catch (error: unknown) {
+                    set({
+                        testCases: previousTestCases,
+                        error: (error as Error).message,
+                        isLoading: false,
+                    });
+                    throw error;
+                }
+            },
+
+            restoreTestCase: async (id: string) => {
+                assertCanWriteCase(id);
+                set({ isLoading: true, error: null });
+                const previousTestCases = get().testCases;
+
+                try {
+                    const response = await testManagerApi.restoreTestCase(id);
+                    const testCase = mapTestCaseResponse(response);
+                    set((state) => ({
+                        testCases: state.testCases.some((tc) => tc.id === id)
+                            ? state.testCases.map((tc) => (tc.id === id ? testCase : tc))
+                            : [testCase, ...state.testCases],
+                        isLoading: false,
+                    }));
+                } catch (error: unknown) {
+                    set({
+                        testCases: previousTestCases,
+                        error: (error as Error).message,
+                        isLoading: false,
+                    });
+                    throw error;
+                }
+            },
+
+            bulkArchiveTestCases: async (ids: string[], archived: boolean) => {
+                assertCanWriteCases(ids);
+                set({ isLoading: true, error: null });
+                const previousTestCases = get().testCases;
+                // Optimistic: the selection leaves (or enters) the visible list
+                // in one shot rather than awaiting a per-row refresh.
+                set({
+                    testCases: previousTestCases.filter((tc) =>
+                        archived ? !ids.includes(tc.id) : true
+                    ),
+                });
+
+                try {
+                    await testManagerApi.bulkArchiveTestCases(ids, archived);
                     set({ isLoading: false });
                 } catch (error: unknown) {
                     set({

@@ -6,7 +6,7 @@
 
 import axios, { AxiosError } from "axios";
 import { API_URL } from "../utils/api";
-import { ProjectSettings } from "../types/testManager";
+import { ProjectSettings, ArchiveScope } from "../types/testManager";
 import {
   ApiResponse,
   PaginationMeta,
@@ -36,6 +36,20 @@ axios.defaults.withCredentials = true;
 const getErrorMessage = (error: unknown): string => {
   const axiosError = error as AxiosError<ApiErrorResponse>;
   return axiosError.response?.data?.message || "An unexpected error occurred";
+};
+
+/**
+ * Translate a UI archive scope into the `archived` query param the list
+ * endpoints expect. `active` omits the param entirely, which is the backend's
+ * default (active only).
+ */
+const toArchiveParams = (
+  scope?: ArchiveScope
+): { archived?: string } | undefined => {
+  if (scope === 'archived') {
+    return { archived: 'true' };
+  }
+  return undefined;
 };
 
 // ============================================================================
@@ -85,14 +99,26 @@ export interface PaginatedProjectsResult {
  * Get paginated projects for the current user (newest first)
  */
 export const getProjectsPaginated = async (
-  params: { limit: number; offset: number }
+  params: {
+    limit: number;
+    offset: number;
+    search?: string;
+    sortField?: 'name' | 'createdAt';
+    sortDir?: 'asc' | 'desc';
+  }
 ): Promise<PaginatedProjectsResult> => {
   try {
+    const query: Record<string, string | number> = {
+      limit: params.limit,
+      offset: params.offset,
+    };
+    if (params.search?.trim()) query.search = params.search.trim();
+    if (params.sortField) query.sortField = params.sortField;
+    if (params.sortDir) query.sortDir = params.sortDir;
+
     const response = await axios.get<ApiResponse<ProjectResponse[]>>(
       `${API_URL}/projects`,
-      {
-        params,
-      }
+      { params: query }
     );
 
     const fallbackMeta: PaginationMeta = {
@@ -324,14 +350,18 @@ export const createTestSuite = async (
 };
 
 /**
- * Get all test suites for a project
+ * Get all test suites for a project.
+ *
+ * Archived suites are hidden unless `archived` asks for them.
  */
 export const getTestSuites = async (
-  projectId: string
+  projectId: string,
+  options: { archived?: ArchiveScope } = {}
 ): Promise<TestSuiteResponse[]> => {
   try {
     const response = await axios.get<ApiResponse<TestSuiteResponse[]>>(
-      `${API_URL}/projects/${projectId}/suites`
+      `${API_URL}/projects/${projectId}/suites`,
+      { params: toArchiveParams(options.archived) }
     );
     return response.data.data || [];
   } catch (error) {
@@ -388,6 +418,44 @@ export const deleteTestSuite = async (id: string): Promise<void> => {
   }
 };
 
+/**
+ * Archive a test suite. Every test case inside it is archived as well.
+ */
+export const archiveTestSuite = async (
+  id: string
+): Promise<TestSuiteResponse> => {
+  try {
+    const response = await axios.post<ApiResponse<TestSuiteResponse>>(
+      `${API_URL}/suites/${id}/archive`
+    );
+    if (!response.data.data) {
+      throw new Error("No data returned from server");
+    }
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * Restore an archived test suite along with its test cases.
+ */
+export const restoreTestSuite = async (
+  id: string
+): Promise<TestSuiteResponse> => {
+  try {
+    const response = await axios.post<ApiResponse<TestSuiteResponse>>(
+      `${API_URL}/suites/${id}/restore`
+    );
+    if (!response.data.data) {
+      throw new Error("No data returned from server");
+    }
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
 // ============================================================================
 // TEST CASE API
 // ============================================================================
@@ -417,11 +485,13 @@ export const createTestCase = async (
  * Get all test cases in a suite
  */
 export const getTestCases = async (
-  suiteId: string
+  suiteId: string,
+  options: { archived?: ArchiveScope } = {}
 ): Promise<TestCaseResponse[]> => {
   try {
     const response = await axios.get<ApiResponse<TestCaseResponse[]>>(
-      `${API_URL}/suites/${suiteId}/cases`
+      `${API_URL}/suites/${suiteId}/cases`,
+      { params: toArchiveParams(options.archived) }
     );
     return response.data.data || [];
   } catch (error) {
@@ -432,16 +502,62 @@ export const getTestCases = async (
 /**
  * Get paginated test cases in a suite
  */
+/**
+ * Server-side filters for the paginated case list.
+ *
+ * Sent to the server so the list stays paged while search/filter/sort still
+ * cover every row. Anything left to the browser would only match the page it
+ * has already loaded.
+ */
+export interface CaseListQuery {
+  limit: number;
+  offset: number;
+  archived?: ArchiveScope;
+  search?: string;
+  status?: string[];
+  priority?: string[];
+  /** Empty string means "test type not set", matching the UI's Not set option. */
+  testType?: string[];
+  area?: string;
+  lastModifiedStart?: string | null;
+  lastModifiedEnd?: string | null;
+  createdStart?: string | null;
+  createdEnd?: string | null;
+  sortField?: string;
+  sortDir?: 'asc' | 'desc';
+}
+
+/** Drop empty values and join the list-valued filters the API expects as CSV. */
+const toCaseQueryParams = (query: CaseListQuery): Record<string, string | number> => {
+  const params: Record<string, string | number> = {
+    limit: query.limit,
+    offset: query.offset,
+  };
+  const scope = toArchiveParams(query.archived);
+  if (scope?.archived) params.archived = scope.archived;
+
+  if (query.search?.trim()) params.search = query.search.trim();
+  if (query.status?.length) params.status = query.status.join(',');
+  if (query.priority?.length) params.priority = query.priority.join(',');
+  if (query.testType?.length) params.testType = query.testType.join(',');
+  if (query.area?.trim()) params.area = query.area.trim();
+  if (query.lastModifiedStart) params.lastModifiedStart = query.lastModifiedStart;
+  if (query.lastModifiedEnd) params.lastModifiedEnd = query.lastModifiedEnd;
+  if (query.createdStart) params.createdStart = query.createdStart;
+  if (query.createdEnd) params.createdEnd = query.createdEnd;
+  if (query.sortField) params.sortField = query.sortField;
+  if (query.sortDir) params.sortDir = query.sortDir;
+  return params;
+};
+
 export const getTestCasesBySuitePaginated = async (
   suiteId: string,
-  params: { limit: number; offset: number }
+  params: CaseListQuery
 ): Promise<PaginatedTestCasesResult> => {
   try {
     const response = await axios.get<ApiResponse<TestCaseResponse[]>>(
       `${API_URL}/suites/${suiteId}/cases`,
-      {
-        params,
-      }
+      { params: toCaseQueryParams(params) }
     );
 
     const fallbackMeta: PaginationMeta = {
@@ -464,11 +580,13 @@ export const getTestCasesBySuitePaginated = async (
  * Get all test cases in a project
  */
 export const getTestCasesByProject = async (
-  projectId: string
+  projectId: string,
+  options: { archived?: ArchiveScope } = {}
 ): Promise<TestCaseResponse[]> => {
   try {
     const response = await axios.get<ApiResponse<TestCaseResponse[]>>(
-      `${API_URL}/projects/${projectId}/cases`
+      `${API_URL}/projects/${projectId}/cases`,
+      { params: toArchiveParams(options.archived) }
     );
     return response.data.data || [];
   } catch (error) {
@@ -486,14 +604,12 @@ export interface PaginatedTestCasesResult {
  */
 export const getTestCasesByProjectPaginated = async (
   projectId: string,
-  params: { limit: number; offset: number }
+  params: CaseListQuery
 ): Promise<PaginatedTestCasesResult> => {
   try {
     const response = await axios.get<ApiResponse<TestCaseResponse[]>>(
       `${API_URL}/projects/${projectId}/cases`,
-      {
-        params,
-      }
+      { params: toCaseQueryParams(params) }
     );
 
     const fallbackMeta: PaginationMeta = {
@@ -506,6 +622,60 @@ export const getTestCasesByProjectPaginated = async (
     return {
       items: response.data.data || [],
       meta: response.data.meta || fallbackMeta,
+    };
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * Payload for creating one test case in a project by suite name or id.
+ * Mirrors the columns of the downloadable upload template.
+ */
+export interface CreateTestCaseInProjectPayload {
+  suiteId?: string;
+  suiteName?: string;
+  createSuiteIfMissing?: boolean;
+  title: string;
+  area?: string;
+  testDescription?: string;
+  /** Plain text, one step per line. */
+  testStep?: string;
+  stepsContent?: string;
+  expectedResult?: string;
+  priority?: string;
+  status?: string;
+  testType?: string;
+  comments?: string;
+  customFields?: Record<string, string>;
+  skipIfDuplicate?: boolean;
+}
+
+export interface CreateTestCaseInProjectOutcome {
+  created: boolean;
+  /** True when `skipIfDuplicate` was set and a matching title already existed. */
+  skipped: boolean;
+  testCase?: TestCaseResponse;
+}
+
+/**
+ * Create a single test case in a project.
+ *
+ * One case per request, which is what the row-at-a-time upload uses to report
+ * progress as it goes. The same endpoint serves external integrations.
+ */
+export const createTestCaseInProject = async (
+  projectId: string,
+  payload: CreateTestCaseInProjectPayload
+): Promise<CreateTestCaseInProjectOutcome> => {
+  try {
+    const response = await axios.post<
+      ApiResponse<TestCaseResponse> & { skipped?: boolean }
+    >(`${API_URL}/projects/${projectId}/cases`, payload);
+    return {
+      created: !response.data.skipped,
+      skipped: response.data.skipped === true,
+      testCase: response.data.data,
     };
   } catch (error) {
     throw new Error(getErrorMessage(error));
@@ -601,6 +771,62 @@ export const cloneTestCase = async (id: string): Promise<TestCaseResponse> => {
 export const deleteTestCase = async (id: string): Promise<void> => {
   try {
     await axios.delete(`${API_URL}/cases/${id}`);
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * Archive a test case (soft delete). It leaves the case list, the run case
+ * picker, and analytics, but stays attached to runs it already belongs to.
+ */
+export const archiveTestCase = async (
+  id: string
+): Promise<TestCaseResponse> => {
+  try {
+    const response = await axios.post<ApiResponse<TestCaseResponse>>(
+      `${API_URL}/cases/${id}/archive`
+    );
+    if (!response.data.data) {
+      throw new Error("No data returned from server");
+    }
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * Restore a previously archived test case
+ */
+export const restoreTestCase = async (
+  id: string
+): Promise<TestCaseResponse> => {
+  try {
+    const response = await axios.post<ApiResponse<TestCaseResponse>>(
+      `${API_URL}/cases/${id}/restore`
+    );
+    if (!response.data.data) {
+      throw new Error("No data returned from server");
+    }
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * Bulk archive or restore test cases
+ */
+export const bulkArchiveTestCases = async (
+  ids: string[],
+  archived: boolean
+): Promise<{ changedCount: number }> => {
+  try {
+    const response = await axios.patch<
+      ApiResponse<{ changedCount: number }>
+    >(`${API_URL}/cases/bulk-archive`, { ids, archived });
+    return response.data.data || { changedCount: 0 };
   } catch (error) {
     throw new Error(getErrorMessage(error));
   }
@@ -721,6 +947,8 @@ export const testManagerApi = {
   getTestSuite,
   updateTestSuite,
   deleteTestSuite,
+  archiveTestSuite,
+  restoreTestSuite,
   // Test Cases
   createTestCase,
   getTestCases,
@@ -730,6 +958,9 @@ export const testManagerApi = {
   getTestCase,
   updateTestCase,
   deleteTestCase,
+  archiveTestCase,
+  restoreTestCase,
+  bulkArchiveTestCases,
   bulkUpdateStatus,
   bulkDeleteTestCases,
   reorderTestCases,

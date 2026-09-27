@@ -11,7 +11,7 @@ import { useTestManagerStore } from '../../store/testManagerStore';
 import { Project } from '../../types/testManager';
 
 const ProjectsPage: React.FC = () => {
-    const { projects, fetchProjects, fetchMoreProjects, setActiveProject, searchQuery, setSearchQuery, clearSearchQuery, deleteProject, projectsHasMore, isProjectsLoadingMore, projectsOffset, projectsTotal } = useTestManagerStore();
+    const { projects, fetchProjects, fetchMoreProjects, setActiveProject, searchQuery, setSearchQuery, clearSearchQuery, deleteProject, projectsHasMore, isProjectsLoadingMore, projectsOffset, projectsTotal, setProjectsSearch } = useTestManagerStore();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -29,20 +29,45 @@ const ProjectsPage: React.FC = () => {
     });
     const sentinelRef = useRef<HTMLDivElement>(null);
 
+    // Debounce the shared header search so a keystroke does not fire a request
+    // each time.
+    const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
+    useEffect(() => {
+        const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+        return () => clearTimeout(handle);
+    }, [searchQuery]);
+
     const handleViewModeToggle = () => {
         const newMode = viewMode === 'card' ? 'table' : 'card';
         setViewMode(newMode);
         localStorage.setItem('projectViewMode', newMode);
     };
 
-    // Fetch projects when this page mounts so the list is populated after reload
+    // Start from a clean list each time the page is entered, and leave the
+    // store's search empty on exit so a fetch triggered elsewhere is not
+    // silently narrowed by this page's text.
     useEffect(() => {
-        if (projects.length === 0) {
-            fetchProjects();
+        clearSearchQuery();
+        setProjectsSearch('');
+        fetchProjects();
+        return () => {
+            clearSearchQuery();
+            setProjectsSearch('');
+        };
+    }, [clearSearchQuery, fetchProjects, setProjectsSearch]);
+
+    // Push the debounced search into the store and reload, so a match on
+    // project #400 is found instead of only whatever is already in memory.
+    // The first run is skipped because the mount effect above already fetched.
+    const isFirstSearchRun = useRef(true);
+    useEffect(() => {
+        if (isFirstSearchRun.current) {
+            isFirstSearchRun.current = false;
+            return;
         }
-        clearSearchQuery(); // Clear search when entering the page
-        return () => clearSearchQuery(); // Clear search when leaving
-    }, [projects.length, fetchProjects, clearSearchQuery]);
+        setProjectsSearch(debouncedSearch);
+        fetchProjects();
+    }, [debouncedSearch, fetchProjects, setProjectsSearch]);
 
     // Open the create modal if navigation state requested it (from toolbar)
     useEffect(() => {
@@ -98,13 +123,10 @@ const ProjectsPage: React.FC = () => {
         }
     };
 
-    // Filter projects based on search query (also match displayId + JIRA key)
-    const filteredProjects = projects.filter(project =>
-        project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        project.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (project.displayId || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (project.jira?.projectKey || '').toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    // The server matches on name, description, displayId and JIRA key, so the
+    // loaded rows are the results. Filtering again here would only ever narrow
+    // what a single page returned.
+    const filteredProjects = projects;
 
     // Infinite scroll: load more projects when sentinel is visible
     const handleLoadMore = useCallback(() => {
@@ -177,7 +199,9 @@ const ProjectsPage: React.FC = () => {
                 onSearchChange={setSearchQuery}
             />
 
-            {viewMode === 'card' && projectsHasMore && (
+            {/* Load-more sentinel is not tied to a view mode: the table view
+                paginates exactly like the card grid does. */}
+            {projectsHasMore && (
                 <div ref={sentinelRef} className="flex justify-center py-4">
                     {isProjectsLoadingMore && (
                         <div className="inline-flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
@@ -187,7 +211,7 @@ const ProjectsPage: React.FC = () => {
                     )}
                 </div>
             )}
-            {viewMode === 'card' && projectsTotal > 0 && (
+            {projectsTotal > 0 && (
                 <div className="text-center text-xs text-gray-400 dark:text-gray-500 pb-4">
                     Loaded {Math.min(projectsOffset, filteredProjects.length)} / {projectsTotal} projects
                 </div>

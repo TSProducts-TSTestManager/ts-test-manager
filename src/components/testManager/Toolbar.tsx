@@ -1,8 +1,9 @@
 import React from 'react';
-import { Plus, Filter, Download, Upload, Layers, Trash2, X, Check, Eye } from 'lucide-react';
+import { Plus, Filter, Download, Upload, Layers, Trash2, X, Check, Eye, RefreshCw } from 'lucide-react';
 import { ViewMode } from '../../types/testManager';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { useProjectWriteAccess } from '../../utils/projectPermissions';
+import DownloadTemplateButton from './DownloadTemplateButton';
 
 interface ToolbarProps {
     viewMode: ViewMode;
@@ -25,6 +26,9 @@ interface ToolbarProps {
     onDownload?: () => void;
     // Import prop
     onUpload?: () => void;
+    // Refresh prop: re-read the current list from the server
+    onRefresh?: () => void;
+    isRefreshing?: boolean;
 }
 
 const Toolbar: React.FC<ToolbarProps> = (props) => {
@@ -41,7 +45,9 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
         selectedCount = 0,
         onDelete,
         onDownload,
-        onUpload
+        onUpload,
+        onRefresh,
+        isRefreshing = false
     } = props;
 
     // Viewers / non-members of the active project get a badge and no create,
@@ -161,13 +167,30 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
                     </button>
                 )}
                 {viewMode === 'cases' && onUpload && (
+                    <>
+                        <DownloadTemplateButton />
+                        <button
+                            onClick={onUpload}
+                            disabled={isReadOnly}
+                            className="p-1 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            title={isReadOnly ? 'You have read-only access to this project' : 'Upload test cases from CSV or XLSX'}
+                        >
+                            <Upload className="h-4 w-4" strokeWidth={1.5} />
+                        </button>
+                    </>
+                )}
+                {onRefresh && (
                     <button
-                        onClick={onUpload}
-                        disabled={isReadOnly}
+                        onClick={onRefresh}
+                        disabled={isRefreshing}
                         className="p-1 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                        title={isReadOnly ? 'You have read-only access to this project' : 'Import test cases from CSV'}
+                        title="Reload from the server"
+                        aria-label="Reload from the server"
                     >
-                        <Upload className="h-4 w-4" strokeWidth={1.5} />
+                        <RefreshCw
+                            className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`}
+                            strokeWidth={1.5}
+                        />
                     </button>
                 )}
                 {viewMode === 'cases' && onDownload && (
