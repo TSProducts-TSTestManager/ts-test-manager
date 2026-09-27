@@ -8,6 +8,7 @@ import { DriveConnection, VideoEvidence } from "../../../types/testManager";
 import DriveConnectPanel from "./DriveConnectPanel";
 import VideoEvidenceUploader from "./VideoEvidenceUploader";
 import VideoEvidencePlayer from "./VideoEvidencePlayer";
+import { DRIVE_FEATURE_ENABLED } from "../../../utils/flags";
 
 interface VideoEvidenceSectionProps {
   projectId: string;
@@ -59,12 +60,12 @@ const VideoEvidenceSection: React.FC<VideoEvidenceSectionProps> = ({
   }, [projectId, scope]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!DRIVE_FEATURE_ENABLED || !enabled) return;
     setLoading(true);
     void reload();
   }, [enabled, reload]);
 
-  if (!enabled) return null;
+  if (!DRIVE_FEATURE_ENABLED || !enabled) return null;
 
   const handleUploaded = (evidence: VideoEvidence) => {
     setEvidences((prev) => [...prev, evidence]);
@@ -74,12 +75,20 @@ const VideoEvidenceSection: React.FC<VideoEvidenceSectionProps> = ({
     setEvidences((prev) => prev.filter((e) => e.id !== evidenceId));
   };
 
+  // Google rejected the stored refresh token: the account is still marked
+  // connected, but no upload or playback will work until the user re-authorizes.
+  const needsReconnect = Boolean(connection?.connected && connection?.status === "expired");
+
   return (
     <div className="mt-2 space-y-2">
       <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</p>
 
       {loading && <p className="text-xs text-gray-400">Loading…</p>}
       {error && <p className="text-xs text-red-600">{error}</p>}
+
+      {!loading && !error && connection && evidences.length === 0 && !readOnly && needsReconnect && (
+        <DriveConnectPanel compact expired />
+      )}
 
       {!loading && !error && connection && evidences.length === 0 && !readOnly && !connection.connected && (
         <DriveConnectPanel compact />
@@ -100,7 +109,14 @@ const VideoEvidenceSection: React.FC<VideoEvidenceSectionProps> = ({
         </div>
       )}
 
-      {!loading && !error && !readOnly && connection?.connected && (
+      {!loading && !error && !readOnly && connection?.connected && needsReconnect && (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          Google Drive connection expired — reconnect to upload new evidence. Existing videos
+          stay listed above but may not play.
+        </p>
+      )}
+
+      {!loading && !error && !readOnly && connection?.connected && !needsReconnect && (
         <VideoEvidenceUploader
           projectId={projectId}
           scope={scope}

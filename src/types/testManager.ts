@@ -124,10 +124,54 @@ export interface ProjectSettings {
     videoEvidence?: VideoEvidenceSettings;
 }
 
+/**
+ * Health of the user's stored Drive connection.
+ * - `ok`      refresh token still valid
+ * - `expired` Google rejected the refresh token — needs reconnection
+ * - `unknown` health could not be determined (Google/network outage)
+ */
+export type DriveConnectionStatus = "ok" | "expired" | "unknown";
+
 export interface DriveConnection {
     connected: boolean;
     googleEmail?: string;
     connectedAt?: string;
+    /** Absent when the backend did not probe connection health. */
+    status?: DriveConnectionStatus;
+}
+
+/**
+ * Shared Drive folder linked to a whole client (bug screenshots, test-case
+ * reference docs). Owned by whichever admin connected it.
+ */
+export interface ClientDriveConnection {
+    connected: boolean;
+    enabled: boolean;
+    folderId?: string;
+    folderName?: string;
+    folderPath?: string;
+    connectedByEmail?: string;
+    connectedAt?: string;
+    status?: DriveConnectionStatus;
+    /** Whether the current caller may connect or disconnect this client. */
+    canManage: boolean;
+}
+
+export interface ClientDriveFolder {
+    folderId: string;
+    folderName: string;
+    folderPath: string;
+    webViewLink?: string;
+}
+
+export interface ClientDriveFile {
+    id: string;
+    name: string;
+    mimeType: string;
+    size?: number;
+    createdTime?: string;
+    modifiedTime?: string;
+    webViewLink?: string;
 }
 
 export interface VideoEvidence {
