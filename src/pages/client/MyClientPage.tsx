@@ -5,17 +5,18 @@ import { getProjects } from '../../services/testManagerApi';
 import { useAuthStore } from '../../store/authStore';
 import type { Client, ClientUser, SeatUsage, ClientMemberRole, JiraIntegration } from '../../types/client';
 import type { ProjectResponse } from '../../types/api/testManager.api';
-import { Eye, EyeOff, ShieldCheck, User as UserIcon, Eye as EyeIcon, ChevronLeft, ChevronRight, LayoutDashboard, Users, Layers, UserCircle } from 'lucide-react';
+import { Eye, EyeOff, ShieldCheck, User as UserIcon, Eye as EyeIcon, ChevronLeft, ChevronRight, LayoutDashboard, Users, Layers, UserCircle, HardDrive } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { isValidPhone, normalizePhone } from '../../utils/phone';
+import ClientDriveSettings from '../../components/testManager/drive/ClientDriveSettings';
 
 const MyClientPage: React.FC = () => {
   const { user } = useAuthStore();
   const [client, setClient] = useState<Client | null>(null);
   const [usage, setUsage] = useState<SeatUsage | null>(null);
   const [users, setUsers] = useState<ClientUser[]>([]);
-  const [tab, setTab] = useState<'overview' | 'users' | 'myJira' | 'projectJira'>('overview');
+  const [tab, setTab] = useState<'overview' | 'users' | 'myJira' | 'projectJira' | 'drive'>('overview');
   const [myJira, setMyJira] = useState<JiraIntegration | null>(null);
   const [myJiraForm, setMyJiraForm] = useState({ email: '', apiToken: '' });
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
@@ -188,6 +189,7 @@ const MyClientPage: React.FC = () => {
     { id: 'users', label: 'Users', icon: Users, count: active },
     { id: 'myJira', label: 'My JIRA', icon: UserCircle, count: myJira?.enabled ? 1 : 0 },
     { id: 'projectJira', label: 'Project JIRA', icon: Layers, count: projects.length },
+    { id: 'drive', label: 'Drive', icon: HardDrive, count: null },
   ];
 
   return (
@@ -380,6 +382,12 @@ const MyClientPage: React.FC = () => {
             })}
             {projects.length===0 && <p className="text-sm text-gray-400">No projects yet — create a project first</p>}
           </div>
+        </div>
+      )}
+
+      {tab==='drive' && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border p-4">
+          <ClientDriveSettings displayId={client.displayId} />
         </div>
       )}
 

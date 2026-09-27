@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { useAuthStore } from '../../store/authStore';
 import { Project, CustomFieldDefinition, CustomFieldOption, ProjectSettings } from '../../types/testManager';
+import ProjectDriveFiles from './drive/ProjectDriveFiles';
 
 interface Props {
     isOpen: boolean;
@@ -11,7 +12,7 @@ interface Props {
     project: Project | null;
 }
 
-type TabType = 'general' | 'testCases' | 'customFields' | 'integrations';
+type TabType = 'general' | 'testCases' | 'customFields' | 'integrations' | 'files';
 
 const ProjectSettingsModal: React.FC<Props> = ({ isOpen, onClose, project }) => {
     const { fetchProjectSettings, updateProjectSettings } = useTestManagerStore();
@@ -89,6 +90,7 @@ const ProjectSettingsModal: React.FC<Props> = ({ isOpen, onClose, project }) => 
         { id: 'testCases', label: 'Test Cases' },
         { id: 'customFields', label: 'Custom Fields' },
         { id: 'integrations', label: 'Integrations' },
+        { id: 'files', label: 'Files' },
     ];
 
     return (
@@ -153,6 +155,9 @@ const ProjectSettingsModal: React.FC<Props> = ({ isOpen, onClose, project }) => 
                                     isOwner={user?._id === project.ownerId}
                                     project={project}
                                 />
+                            )}
+                            {activeTab === 'files' && (
+                                <ProjectDriveFiles projectId={project.id} />
                             )}
                         </>
                     )}

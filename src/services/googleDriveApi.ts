@@ -7,6 +7,9 @@
 import axios, { AxiosError } from "axios";
 import { API_URL } from "../utils/api";
 import {
+  ClientDriveConnection,
+  ClientDriveFile,
+  ClientDriveFolder,
   DriveConnection,
   DriveUploadSession,
   VideoEvidence,
@@ -220,4 +223,184 @@ export const getEvidenceStreamUrl = (
   evidenceId: string
 ): string => {
   return `${API_URL}/projects/${projectId}/video-evidence/${evidenceId}/stream`;
+};
+
+// ============================================================================
+// CLIENT SHARED FOLDER (bug screenshots / reference docs)
+// ============================================================================
+
+/**
+ * GET /drive/client/:displayId/connection
+ * Shared folder status. `canManage` comes from the backend so the UI never has
+ * to guess whether this caller may connect or disconnect.
+ */
+export const getClientDriveConnection = async (
+  displayId: string
+): Promise<ClientDriveConnection> => {
+  try {
+    const response = await axios.get<{
+      success: boolean;
+      data: ClientDriveConnection;
+    }>(`${API_URL}/drive/client/${displayId}/connection`, {
+      withCredentials: true,
+    });
+    return response.data.data || { connected: false, enabled: false, canManage: false };
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * POST /drive/client/:displayId/connect
+ * Returns the Google consent URL. The browser navigates to it; the backend
+ * binds the resulting token to this client via the state cookie.
+ */
+export const connectClientDrive = async (displayId: string): Promise<string> => {
+  try {
+    const response = await axios.post<{ success: boolean; url: string }>(
+      `${API_URL}/drive/client/${displayId}/connect`,
+      {},
+      { withCredentials: true }
+    );
+    return response.data.url;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/** DELETE /drive/client/:displayId/connection */
+export const disconnectClientDrive = async (displayId: string): Promise<void> => {
+  try {
+    await axios.delete(`${API_URL}/drive/client/${displayId}/connection`, {
+      withCredentials: true,
+    });
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * POST /drive/project/:projectId/folder
+ * Ensures `TSTestManager/<Client>/<Project>` exists and returns its path.
+ */
+export const ensureProjectDriveFolder = async (
+  projectId: string
+): Promise<ClientDriveFolder> => {
+  try {
+    const response = await axios.post<{
+      success: boolean;
+      data: ClientDriveFolder;
+    }>(`${API_URL}/drive/project/${projectId}/folder`, {}, {
+      withCredentials: true,
+    });
+    if (!response.data.data) throw new Error("No data returned from server");
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+export interface UploadProgress {
+  loaded: number;
+  total: number;
+  percent: number;
+}
+
+/**
+ * POST /drive/project/:projectId/upload?fileName=&mimeType=
+ *
+ * The bytes go to the backend as a raw body, which relays them to Drive with
+ * the *client folder owner's* token. `Content-Type` is forced to
+ * `application/octet-stream` so the global `express.json()` middleware can
+ * never consume the payload (it would empty out JSON-typed files); the real
+ * media type travels as a query parameter instead.
+ */
+export const uploadToClientDrive = async (
+  projectId: string,
+  file: File,
+  onProgress?: (progress: UploadProgress) => void
+): Promise<ClientDriveFile> => {
+  try {
+    const response = await axios.post<{ success: boolean; data: ClientDriveFile }>(
+      `${API_URL}/drive/project/${projectId}/upload`,
+      file,
+      {
+        params: {
+          fileName: file.name,
+          mimeType: file.type || "application/octet-stream",
+        },
+        headers: { "Content-Type": "application/octet-stream" },
+        withCredentials: true,
+        onUploadProgress: (event) => {
+          if (!onProgress) return;
+          const total = event.total ?? file.size;
+          onProgress({
+            loaded: event.loaded,
+            total,
+            percent: total > 0 ? Math.round((event.loaded / total) * 100) : 0,
+          });
+        },
+      }
+    );
+    if (!response.data.data) throw new Error("No data returned from server");
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/** GET /drive/project/:projectId/files */
+export const listClientDriveFiles = async (
+  projectId: string,
+  pageToken?: string
+): Promise<{ files: ClientDriveFile[]; nextPageToken?: string }> => {
+  try {
+    const response = await axios.get<{
+      success: boolean;
+      data: { files: ClientDriveFile[]; nextPageToken?: string };
+    }>(`${API_URL}/drive/project/${projectId}/files`, {
+      params: pageToken ? { pageToken } : {},
+      withCredentials: true,
+    });
+    return response.data.data || { files: [] };
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * Downloads a file via `fetch` + object URL rather than a plain `<a href>`.
+ * A bare link to a cross-origin API would not carry the auth cookie, so it
+ * would 401; fetching with `credentials: 'include'` does.
+ */
+export const downloadClientDriveFile = async (
+  projectId: string,
+  fileId: string,
+  fileName: string
+): Promise<void> => {
+  const response = await fetch(
+    `${API_URL}/drive/project/${projectId}/files/${fileId}`,
+    { credentials: "include" }
+  );
+
+  if (!response.ok) {
+    let message = "Download failed";
+    try {
+      const body = (await response.json()) as { message?: string };
+      message = body.message || message;
+    } catch {
+      // non-JSON error body; keep the default
+    }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 };

@@ -140,6 +140,40 @@ export interface DriveConnection {
     status?: DriveConnectionStatus;
 }
 
+/**
+ * Shared Drive folder linked to a whole client (bug screenshots, test-case
+ * reference docs). Owned by whichever admin connected it.
+ */
+export interface ClientDriveConnection {
+    connected: boolean;
+    enabled: boolean;
+    folderId?: string;
+    folderName?: string;
+    folderPath?: string;
+    connectedByEmail?: string;
+    connectedAt?: string;
+    status?: DriveConnectionStatus;
+    /** Whether the current caller may connect or disconnect this client. */
+    canManage: boolean;
+}
+
+export interface ClientDriveFolder {
+    folderId: string;
+    folderName: string;
+    folderPath: string;
+    webViewLink?: string;
+}
+
+export interface ClientDriveFile {
+    id: string;
+    name: string;
+    mimeType: string;
+    size?: number;
+    createdTime?: string;
+    modifiedTime?: string;
+    webViewLink?: string;
+}
+
 export interface VideoEvidence {
     id: string;
     projectId: string;
