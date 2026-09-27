@@ -34,7 +34,7 @@ export const useAuthStore = create<AuthStoreState>((set) => ({
 	login: async (email: string, password: string, clientCode?: string): Promise<void> => {
 		set({ isLoading: true, error: null });
 		try {
-			const body: any = { email, password };
+			const body: { email: string; password: string; clientCode?: string } = { email, password };
 			if (clientCode) body.clientCode = clientCode.toUpperCase().trim();
 			const response = await axios.post<{ user: User }>(`${API_URL}/auth/login`, body);
 			set({

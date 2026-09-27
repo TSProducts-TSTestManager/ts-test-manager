@@ -41,7 +41,7 @@ interface SubMenuItem {
 const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
   const { logout, user } = useAuthStore();
   const { activeProject, projects, setActiveSuite, setActiveSuiteId, setActiveArea, clearFilters } = useTestManagerStore();
-  const isSuperAdmin = (user as any)?.role === 'super_admin';
+  const isSuperAdmin = user?.role === 'super_admin';
   const navigate = useNavigate();
   const [activeSubMenu, setActiveSubMenu] = useState<string | null>(null);
 
@@ -52,8 +52,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
   }, [activeProject, user]);
   const currentClient = (() => {
     if (!clients.length) return null;
-    if (currentProject && (currentProject as any).clientId) {
-      const cid = (currentProject as any).clientId as string;
+    if (currentProject && currentProject.clientId) {
+      const cid = currentProject.clientId;
       return clients.find(c => c._id === cid || c.displayId === cid) || null;
     }
     // fallback: if user is client_admin and has single client, show it

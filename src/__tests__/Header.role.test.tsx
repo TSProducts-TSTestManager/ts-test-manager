@@ -26,6 +26,10 @@ const buildUser = (overrides: Partial<User> = {}): User => ({
 
 const renderHeader = () => render(<Header toggleSidebar={vi.fn()} />);
 
+// With no session the name and the role label both fall back to "User", so a
+// page-wide text query is ambiguous. Assert on the role label itself.
+const roleLabel = () => screen.getByTestId('header-role-label');
+
 describe('Header role label', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -37,8 +41,8 @@ describe('Header role label', () => {
 
     renderHeader();
 
-    expect(screen.getByText('Member')).toBeInTheDocument();
-    expect(screen.queryByText('Admin')).not.toBeInTheDocument();
+    expect(roleLabel()).toHaveTextContent('Member');
+    expect(roleLabel()).not.toHaveTextContent('Admin');
   });
 
   it('labels a viewer session as Viewer', () => {
@@ -46,8 +50,8 @@ describe('Header role label', () => {
 
     renderHeader();
 
-    expect(screen.getByText('Viewer')).toBeInTheDocument();
-    expect(screen.queryByText('Admin')).not.toBeInTheDocument();
+    expect(roleLabel()).toHaveTextContent('Viewer');
+    expect(roleLabel()).not.toHaveTextContent('Admin');
   });
 
   it('labels a client admin as Client Admin', () => {
@@ -55,7 +59,7 @@ describe('Header role label', () => {
 
     renderHeader();
 
-    expect(screen.getByText('Client Admin')).toBeInTheDocument();
+    expect(roleLabel()).toHaveTextContent('Client Admin');
   });
 
   it('labels a super admin as Super Admin', () => {
@@ -63,13 +67,13 @@ describe('Header role label', () => {
 
     renderHeader();
 
-    expect(screen.getByText('Super Admin')).toBeInTheDocument();
+    expect(roleLabel()).toHaveTextContent('Super Admin');
   });
 
   it('falls back to User when no session is loaded', () => {
     renderHeader();
 
-    expect(screen.getByText('User')).toBeInTheDocument();
-    expect(screen.queryByText('Admin')).not.toBeInTheDocument();
+    expect(roleLabel()).toHaveTextContent('User');
+    expect(roleLabel()).not.toHaveTextContent('Admin');
   });
 });

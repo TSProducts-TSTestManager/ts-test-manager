@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { getClients, getClientUsage, getClientUsers, createClientAdmin, resetClientAdminPassword, deactivateUser, restoreUser, updateClient, updateClientUser } from '../../services/clientApi';
+import React, { useCallback, useEffect, useState } from 'react';
+import { getClients, getClientUsage, getClientUsers, createClientAdmin, resetClientAdminPassword, deactivateUser, restoreUser, updateClient, updateClientUser, getClientsError } from '../../services/clientApi';
 import { connectMyJira, getMyJira, disconnectMyJira, connectProjectJira, getProjectJira, disconnectProjectJira } from '../../services/jiraApi';
 import { getProjects } from '../../services/testManagerApi';
 import { useAuthStore } from '../../store/authStore';
-import type { Client, ClientUser, SeatUsage } from '../../types/client';
+import type { Client, ClientUser, SeatUsage, ClientMemberRole, JiraIntegration } from '../../types/client';
+import type { ProjectResponse } from '../../types/api/testManager.api';
 import { Eye, EyeOff, ShieldCheck, User as UserIcon, Eye as EyeIcon, ChevronLeft, ChevronRight, LayoutDashboard, Users, Layers, UserCircle } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { isValidPhone, normalizePhone } from '../../utils/phone';
 
@@ -14,12 +16,12 @@ const MyClientPage: React.FC = () => {
   const [usage, setUsage] = useState<SeatUsage | null>(null);
   const [users, setUsers] = useState<ClientUser[]>([]);
   const [tab, setTab] = useState<'overview' | 'users' | 'myJira' | 'projectJira'>('overview');
-  const [myJira, setMyJira] = useState<any>(null);
+  const [myJira, setMyJira] = useState<JiraIntegration | null>(null);
   const [myJiraForm, setMyJiraForm] = useState({ email: '', apiToken: '' });
-  const [projects, setProjects] = useState<any[]>([]);
-  const [projectJiras, setProjectJiras] = useState<Record<string, any>>({});
+  const [projects, setProjects] = useState<ProjectResponse[]>([]);
+  const [projectJiras, setProjectJiras] = useState<Record<string, JiraIntegration | null>>({});
   const [projectJiraForms, setProjectJiraForms] = useState<Record<string, { domain: string; projectKey: string }>>({});
-  const [invite, setInvite] = useState({ email: '', firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false, tempPassword: '', role: 'client_admin' as 'client_admin'|'member'|'viewer' });
+  const [invite, setInvite] = useState({ email: '', firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false, tempPassword: '', role: 'client_admin' as ClientMemberRole });
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetTarget, setResetTarget] = useState<ClientUser | null>(null);
@@ -48,7 +50,7 @@ const MyClientPage: React.FC = () => {
   const isValidPin = (v: string) => /^[1-9][0-9]{5}$/.test(v.trim());
   const isValidEmail = (v: string) => /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(v);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const all = await getClients();
       // client_admin has exactly one, find by user.clientId or first
@@ -66,27 +68,27 @@ const MyClientPage: React.FC = () => {
         mobile: normalizePhone(c.mobile || ''),
         whatsapp: normalizePhone(c.whatsapp || ''),
         whatsappSameAsMobile: !!c.whatsappSameAsMobile,
-        addressLine1: (c as any).address?.addressLine1 || '',
-        addressLine2: (c as any).address?.addressLine2 || '',
-        city: (c as any).address?.city || '',
-        state: (c as any).address?.state || '',
-        country: (c as any).address?.country || 'India',
-        pinCode: (c as any).address?.pinCode || '',
+        addressLine1: c.address?.addressLine1 || '',
+        addressLine2: c.address?.addressLine2 || '',
+        city: c.address?.city || '',
+        state: c.address?.state || '',
+        country: c.address?.country || 'India',
+        pinCode: c.address?.pinCode || '',
       });
-      try { setUsage(await getClientUsage(c.displayId)); } catch (e:any) { console.warn('Seat usage unavailable:', e?.message); }
-      try { setUsers(await getClientUsers(c.displayId, 'all')); } catch (e:any) { toast.error(e.message); }
-      try { setMyJira(await getMyJira()); } catch {}
+      try { setUsage(await getClientUsage(c.displayId)); } catch (e: unknown) { console.warn('Seat usage unavailable:', (e as Error)?.message); }
+      try { setUsers(await getClientUsers(c.displayId, 'all')); } catch (e: unknown) { toast.error(getClientsError(e)); }
+      try { setMyJira(await getMyJira()); } catch { /* personal JIRA is optional; leave it unconfigured */ }
       try {
         const projs = await getProjects();
-        setProjects(projs as any);
-        for (const p of (projs as any)) {
-          try { const pj = await getProjectJira((p as any).id || (p as any)._id); setProjectJiras(m => ({ ...m, [(p as any).id || (p as any)._id]: pj })); } catch {}
+        setProjects(projs);
+        for (const p of projs) {
+          try { const pj = await getProjectJira(p.id); setProjectJiras(m => ({ ...m, [p.id]: pj })); } catch { /* this project simply has no JIRA mapping */ }
         }
-      } catch {}
-    } catch (e:any) { toast.error(e.message); }
-  };
+      } catch { /* the project list is supplementary; the rest of the page still loads */ }
+    } catch (e: unknown) { toast.error(getClientsError(e)); }
+  }, [user, setEditForm]);
 
-  useEffect(() => { load(); }, [user]);
+  useEffect(() => { load(); }, [load]);
   useEffect(() => { setUserPage(1); }, [users.length]);
 
   const active = users.filter(u=>u.status==='active').length;
@@ -107,12 +109,12 @@ const MyClientPage: React.FC = () => {
         name: `${invite.firstName} ${invite.lastName}`.trim(), mobile: normalizePhone(invite.mobile) || undefined,
         whatsapp: invite.whatsappSameAsMobile ? normalizePhone(invite.mobile) || undefined : (normalizePhone(invite.whatsapp) || undefined), whatsappSameAsMobile: invite.whatsappSameAsMobile,
         tempPassword: invite.tempPassword || undefined, role: invite.role
-      } as any);
+      });
       toast.success('User invited');
       setInvite({ email:'', firstName:'', lastName:'', mobile:'', whatsapp:'', whatsappSameAsMobile:false, tempPassword:'', role:'client_admin' });
       setShowInviteModal(false);
       load();
-    } catch(e:any){ toast.error(e.message); }
+    } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
 
   const handleSaveClient = async () => {
@@ -130,15 +132,15 @@ const MyClientPage: React.FC = () => {
         contactFirstName: editForm.firstName.trim(), contactLastName: editForm.lastName.trim(),
         mobile: normalizePhone(editForm.mobile) || undefined, whatsapp: editForm.whatsappSameAsMobile ? normalizePhone(editForm.mobile) || undefined : (normalizePhone(editForm.whatsapp) || undefined), whatsappSameAsMobile: editForm.whatsappSameAsMobile,
         address: { addressLine1: editForm.addressLine1.trim(), addressLine2: editForm.addressLine2?.trim(), city: editForm.city.trim(), state: editForm.state.trim(), country: editForm.country.trim() || 'India', pinCode: editForm.pinCode.trim() }
-      } as any);
+      });
       toast.success('Client updated');
       setEditingClient(false);
       load();
-    } catch(e:any){ toast.error(e.message); }
+    } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
 
-  const handleDeactivate = async (uid: string) => { if(!client) return; if(!canManage){ toast.error('Only client admins can manage users'); return; } try { await deactivateUser(client.displayId, uid); toast.success('Deactivated'); load(); } catch(e:any){ toast.error(e.message);} };
-  const handleRestore = async (uid: string) => { if(!client) return; if(!canManage){ toast.error('Only client admins can manage users'); return; } try { await restoreUser(client.displayId, uid); toast.success('Restored'); load(); } catch(e:any){ toast.error(e.message);} };
+  const handleDeactivate = async (uid: string) => { if(!client) return; if(!canManage){ toast.error('Only client admins can manage users'); return; } try { await deactivateUser(client.displayId, uid); toast.success('Deactivated'); load(); } catch(e: unknown){ toast.error(getClientsError(e));} };
+  const handleRestore = async (uid: string) => { if(!client) return; if(!canManage){ toast.error('Only client admins can manage users'); return; } try { await restoreUser(client.displayId, uid); toast.success('Restored'); load(); } catch(e: unknown){ toast.error(getClientsError(e));} };
   const openReset = (u: ClientUser) => {
     if(!canManage){ toast.error('Only client admins can manage users'); return; }
     setResetTarget(u); setResetPwd(''); setShowResetEye(false); setShowResetModal(true);
@@ -146,7 +148,7 @@ const MyClientPage: React.FC = () => {
   const handleResetConfirm = async () => {
     if (!client || !resetTarget || !resetPwd) { toast.error('Password required'); return; }
     if(!canManage){ toast.error('Only client admins can manage users'); return; }
-    try { await resetClientAdminPassword(client.displayId, resetTarget._id, resetPwd); toast.success('Password reset'); setShowResetModal(false); } catch(e:any){ toast.error(e.message); }
+    try { await resetClientAdminPassword(client.displayId, resetTarget._id, resetPwd); toast.success('Password reset'); setShowResetModal(false); } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
   const openEditUser = (u: ClientUser) => {
     if(!canManage){ toast.error('Only client admins can manage users'); return; }
@@ -165,21 +167,28 @@ const MyClientPage: React.FC = () => {
       await updateClientUser(client.displayId, editUserTarget._id, {
         firstName: editUserForm.firstName.trim(), lastName: editUserForm.lastName.trim(),
         mobile: normalizePhone(editUserForm.mobile) || undefined, whatsapp: editUserForm.whatsappSameAsMobile ? normalizePhone(editUserForm.mobile) || undefined : (normalizePhone(editUserForm.whatsapp) || undefined), whatsappSameAsMobile: editUserForm.whatsappSameAsMobile
-      } as any);
+      });
       toast.success('User updated'); setShowEditUserModal(false); load();
-    } catch(e:any){ toast.error(e.message); }
+    } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
   const handleMyJiraConnect = async (e: React.FormEvent) => {
     e.preventDefault();
-    try { await connectMyJira({ email: (myJiraForm as any).email, apiToken: (myJiraForm as any).apiToken }); toast.success('My JIRA connected'); load(); } catch(e:any){ toast.error(e.message); }
+    try { await connectMyJira({ email: myJiraForm.email, apiToken: myJiraForm.apiToken }); toast.success('My JIRA connected'); load(); } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
   const handleProjectJiraConnect = async (projectId: string) => {
     const f = projectJiraForms[projectId];
     if (!f?.domain?.trim() || !f?.projectKey?.trim()) { toast.error('Domain and Project Key required (every project)'); return; }
-    try { await connectProjectJira(projectId, { domain: f.domain.trim(), projectKey: f.projectKey.trim() }); toast.success('Project JIRA mapped'); load(); } catch(e:any){ toast.error(e.message); }
+    try { await connectProjectJira(projectId, { domain: f.domain.trim(), projectKey: f.projectKey.trim() }); toast.success('Project JIRA mapped'); load(); } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
 
   if (!client) return <div className="bg-white dark:bg-gray-900 min-h-full p-6">Loading your client...</div>;
+
+  const tabItems: { id: typeof tab; label: string; icon: LucideIcon; count: number | null }[] = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard, count: null },
+    { id: 'users', label: 'Users', icon: Users, count: active },
+    { id: 'myJira', label: 'My JIRA', icon: UserCircle, count: myJira?.enabled ? 1 : 0 },
+    { id: 'projectJira', label: 'Project JIRA', icon: Layers, count: projects.length },
+  ];
 
   return (
     <div className="bg-white dark:bg-gray-900 min-h-full p-4 sm:p-6 space-y-6">
@@ -200,7 +209,7 @@ const MyClientPage: React.FC = () => {
             <h2 className="text-lg font-bold truncate">{client.name}</h2>
             {client.description && <p className="text-sm text-gray-500 italic">{client.description}</p>}
             <div className="text-xs text-gray-500 space-y-1">
-              <div>Address: {(client as any).address ? `${(client as any).address.addressLine1}, ${(client as any).address.city}, ${(client as any).address.state} - ${(client as any).address.pinCode}` : '—'}</div>
+              <div>Address: {client.address ? `${client.address.addressLine1}, ${client.address.city}, ${client.address.state} - ${client.address.pinCode}` : '—'}</div>
               <div>Mobile: {client.mobile || '—'} • Whatsapp: {client.whatsapp || '—'} {client.whatsappSameAsMobile && '(same)'}</div>
             </div>
           </div>
@@ -209,18 +218,13 @@ const MyClientPage: React.FC = () => {
       </div>
 
       <div className="bg-gray-50 dark:bg-gray-800/30 rounded-xl p-1.5 flex gap-1.5 overflow-x-auto">
-        {[
-          { id: 'overview', label: 'Overview', icon: LayoutDashboard, count: null },
-          { id: 'users', label: 'Users', icon: Users, count: active },
-          { id: 'myJira', label: 'My JIRA', icon: UserCircle, count: myJira?.enabled ? 1 : 0 },
-          { id: 'projectJira', label: 'Project JIRA', icon: Layers, count: projects.length },
-        ].map(t => {
-          const Icon = t.icon as any;
+        {tabItems.map(t => {
+          const Icon = t.icon;
           const isActive = tab === t.id;
           return (
             <button
               key={t.id}
-              onClick={()=>setTab(t.id as any)}
+              onClick={()=>setTab(t.id)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-900'}`}
             >
               <Icon size={14} />
@@ -237,7 +241,7 @@ const MyClientPage: React.FC = () => {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
             <div className="bg-gray-50 dark:bg-gray-700/30 p-3 rounded-xl"><div className="text-gray-400 uppercase">Seats</div><div className="font-bold text-lg">{usage ? `${usage.active}/${usage.max===-1?'∞':usage.max}` : '—'}</div></div>
             <div className="bg-gray-50 dark:bg-gray-700/30 p-3 rounded-xl"><div className="text-gray-400 uppercase">Plan</div><div className="font-bold capitalize">{client.plan}</div></div>
-            <div className="bg-gray-50 dark:bg-gray-700/30 p-3 rounded-xl"><div className="text-gray-400 uppercase">City</div><div className="font-medium">{(client as any).address?.city || '—'}</div></div>
+            <div className="bg-gray-50 dark:bg-gray-700/30 p-3 rounded-xl"><div className="text-gray-400 uppercase">City</div><div className="font-medium">{client.address?.city || '—'}</div></div>
             <div className="bg-gray-50 dark:bg-gray-700/30 p-3 rounded-xl"><div className="text-gray-400 uppercase">Status</div><div className="font-medium capitalize">{client.status}</div></div>
           </div>
           <p className="text-xs text-gray-500">Max Users change requires Super Admin (current: {client.maxUsers}). You can edit other details above.</p>
@@ -344,13 +348,13 @@ const MyClientPage: React.FC = () => {
           <p className="text-xs text-gray-500">Every project has its own <span className="font-medium">domain + projectKey</span>. Bug creation uses <span className="font-medium">your email/token + this project's mapping</span> (verified real-time via <span className="font-mono">/rest/api/3/myself</span>).</p>
           <div className="space-y-4">
             {projects.map(p=> {
-              const pid = (p as any).id || (p as any)._id;
+              const pid = p.id;
               const pj = projectJiras[pid];
               const form = projectJiraForms[pid] || { domain: '', projectKey: '' };
               return (
                 <div key={pid} className="border rounded-xl p-3 space-y-2">
                   <div className="flex justify-between items-center">
-                    <span className="font-medium text-sm">{(p as any).name} <span className="font-mono text-xs text-gray-500">{(p as any).displayId || ''}</span></span>
+                    <span className="font-medium text-sm">{p.name} <span className="font-mono text-xs text-gray-500">{p.displayId || ''}</span></span>
                     <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700">{pj?.enabled ? `${pj.domain} / ${pj.projectKey}` : 'Not mapped'}</span>
                   </div>
                   {canManage ? (
@@ -490,7 +494,7 @@ const MyClientPage: React.FC = () => {
               <label className="flex gap-2 text-sm"><input type="checkbox" checked={invite.whatsappSameAsMobile} onChange={e=>setInvite({...invite,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Role *</label>
-                <select value={invite.role} onChange={e=>setInvite({...invite,role:e.target.value as any})} className="w-full border p-2 rounded">
+                <select value={invite.role} onChange={e=>setInvite({...invite,role:e.target.value as ClientMemberRole})} className="w-full border p-2 rounded">
                   <option value="client_admin">Client Admin</option><option value="member">Member</option><option value="viewer">Viewer</option>
                 </select>
               </div>

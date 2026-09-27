@@ -21,7 +21,7 @@ const ClientDashboardPage: React.FC = () => {
         setClients(data);
         const map: Record<string, SeatUsage> = {};
         for (const c of data) {
-          try { const u = await getClientUsage(c.displayId); map[c.displayId] = u; } catch {}
+          try { const u = await getClientUsage(c.displayId); map[c.displayId] = u; } catch { /* seat usage is supplementary; leave it blank */ }
         }
         setUsageMap(map);
       } finally { setLoading(false); }
@@ -104,7 +104,7 @@ const ClientDashboardPage: React.FC = () => {
               <div key={c._id} onClick={() => navigate(`/admin/clients/${c.displayId}`)} className="py-3 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700/30 px-2 rounded-lg cursor-pointer">
                 <div>
                   <p className="text-sm font-medium">{c.displayId} • {c.name}</p>
-                  <p className="text-xs text-gray-400">{(c as any).address?.city || ''} {(c as any).address?.state ? `• ${ (c as any).address.state}` : ''}</p>
+                  <p className="text-xs text-gray-400">{c.address?.city || ''} {c.address?.state ? `• ${c.address.state}` : ''}</p>
                 </div>
                 <span className={`text-xs px-2 py-1 rounded-full ${c.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{c.status}</span>
               </div>

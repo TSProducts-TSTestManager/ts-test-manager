@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { getClientUsage, getClientUsers, createClientAdmin, resetClientAdminPassword, deactivateUser, restoreUser, updateClient, getClients, updateClientUser } from '../../services/clientApi';
+import { getClientUsage, getClientUsers, createClientAdmin, resetClientAdminPassword, deactivateUser, restoreUser, updateClient, getClients, updateClientUser, getClientsError } from '../../services/clientApi';
 import { useAuthStore } from '../../store/authStore';
 import { connectJira, disconnectJira, getJiraConfig } from '../../services/jiraApi';
-import { SeatUsage, ClientUser, Client } from '../../types/client';
+import { SeatUsage, ClientUser, Client, ClientMemberRole, CreateClientAdminInput } from '../../types/client';
 import { Eye, EyeOff, ShieldCheck, User as UserIcon, Eye as EyeIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { isValidPhone, normalizePhone } from '../../utils/phone';
@@ -14,8 +14,8 @@ const ClientDetailPage: React.FC = () => {
   const [users, setUsers] = useState<ClientUser[]>([]);
   const [client, setClient] = useState<Client | null>(null);
   const [tab, setTab] = useState<'users'|'jira'|'settings'>('users');
-  const [jira, setJira] = useState<any>(null);
-  const [invite, setInvite] = useState({ email: '', firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false, tempPassword: '', role: 'client_admin' as 'client_admin'|'member'|'viewer' });
+  const [jira, setJira] = useState<NonNullable<Client['jira']> | null>(null);
+  const [invite, setInvite] = useState({ email: '', firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false, tempPassword: '', role: 'client_admin' as ClientMemberRole });
   const [jiraForm, setJiraForm] = useState({ domain: '', email: '', apiToken: '', projectKey: '' });
   const [editMax, setEditMax] = useState<number | ''>('');
   const [showResetModal, setShowResetModal] = useState(false);
@@ -24,7 +24,7 @@ const ClientDetailPage: React.FC = () => {
   const [showResetPwdEye, setShowResetPwdEye] = useState(false);
   const [showDeactivateConfirm, setShowDeactivateConfirm] = useState<ClientUser | null>(null);
   const [editingClient, setEditingClient] = useState(false);
-  const [editForm, setEditForm] = useState({ clientName: '', firstName: '', lastName: '', description: '', plan: 'starter', mobile: '', whatsapp: '', whatsappSameAsMobile: false, addressLine1: '', addressLine2: '', city: '', state: '', country: 'India', pinCode: '' });
+  const [editForm, setEditForm] = useState({ clientName: '', firstName: '', lastName: '', description: '', plan: 'starter' as Client['plan'], mobile: '', whatsapp: '', whatsappSameAsMobile: false, addressLine1: '', addressLine2: '', city: '', state: '', country: 'India', pinCode: '' });
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showEditUserModal, setShowEditUserModal] = useState(false);
   const [userPage, setUserPage] = useState(1);
@@ -37,8 +37,8 @@ const ClientDetailPage: React.FC = () => {
     return { label: 'Viewer', cls: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800', Icon: EyeIcon };
   };
   const { user } = useAuthStore();
-  const isSuperAdmin = (user as any)?.role === 'super_admin';
-  const isClientAdmin = (user as any)?.role === 'client_admin';
+  const isSuperAdmin = user?.role === 'super_admin';
+  const isClientAdmin = user?.role === 'client_admin';
   const indianStates = ["Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal","Delhi","Jammu and Kashmir","Ladakh","Puducherry","Chandigarh","Andaman and Nicobar Islands","Dadra and Nagar Haveli and Daman and Diu","Lakshadweep"];
   const isValidEmail = (v: string) => /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(v);
   const isValidPin = (v: string) => /^[1-9][0-9]{5}$/.test(v.trim());
@@ -51,11 +51,11 @@ const ClientDetailPage: React.FC = () => {
   const [editUserForm, setEditUserForm] = useState({ firstName: '', lastName: '', mobile: '', whatsapp: '', whatsappSameAsMobile: false });
   const navigate = useNavigate();
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!displayId) return;
-    try { setUsage(await getClientUsage(displayId)); } catch {}
-    try { setUsers(await getClientUsers(displayId, 'all')); } catch (e:any){ toast.error(e.message); }
-    try { setJira(await getJiraConfig(displayId)); } catch {}
+    try { setUsage(await getClientUsage(displayId)); } catch { /* seat usage is supplementary; leave it blank */ }
+    try { setUsers(await getClientUsers(displayId, 'all')); } catch (e: unknown){ toast.error(getClientsError(e)); }
+    try { setJira(await getJiraConfig(displayId)); } catch { /* JIRA is optional; leave it unconfigured */ }
     try {
       const all = await getClients();
       const c = all.find(x=>x.displayId===displayId) || null;
@@ -70,18 +70,18 @@ const ClientDetailPage: React.FC = () => {
           mobile: normalizePhone(c.mobile || ''),
           whatsapp: normalizePhone(c.whatsapp || ''),
           whatsappSameAsMobile: !!c.whatsappSameAsMobile,
-          addressLine1: (c as any).address?.addressLine1 || '',
-          addressLine2: (c as any).address?.addressLine2 || '',
-          city: (c as any).address?.city || '',
-          state: (c as any).address?.state || '',
-          country: (c as any).address?.country || 'India',
-          pinCode: (c as any).address?.pinCode || '',
+          addressLine1: c.address?.addressLine1 || '',
+          addressLine2: c.address?.addressLine2 || '',
+          city: c.address?.city || '',
+          state: c.address?.state || '',
+          country: c.address?.country || 'India',
+          pinCode: c.address?.pinCode || '',
         });
         setEditMax(c.maxUsers);
       }
-    } catch {}
-  };
-  useEffect(() => { load(); }, [displayId]);
+    } catch { /* keep whatever was already loaded rather than blanking the form */ }
+  }, [displayId]);
+  useEffect(() => { load(); }, [load]);
   useEffect(() => { setUserPage(1); }, [users.length]);
 
   const handleInvite = async (e: React.FormEvent) => {
@@ -93,7 +93,7 @@ const ClientDetailPage: React.FC = () => {
     const wp = invite.whatsappSameAsMobile ? invite.mobile : invite.whatsapp;
     if (wp && !isValidPhone(wp)) { toast.error('Whatsapp must be 10 digits (India)'); return; }
     try {
-      const payload: any = {
+      const payload: CreateClientAdminInput = {
         email: invite.email,
         firstName: invite.firstName.trim(),
         lastName: invite.lastName.trim(),
@@ -109,13 +109,13 @@ const ClientDetailPage: React.FC = () => {
       setInvite({ email:'', firstName:'', lastName:'', mobile:'', whatsapp:'', whatsappSameAsMobile:false, tempPassword:'', role: 'client_admin' });
       setShowInviteModal(false);
       load();
-    } catch(e:any){ toast.error(e.message); }
+    } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
   const handleDeactivate = async (uid: string) => {
-    try { await deactivateUser(displayId!, uid); toast.success('Deactivated'); load(); } catch(e:any){ toast.error(e.message); }
+    try { await deactivateUser(displayId!, uid); toast.success('Deactivated'); load(); } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
   const handleRestore = async (uid: string) => {
-    try { await restoreUser(displayId!, uid); toast.success('Restored'); load(); } catch(e:any){ toast.error(e.message); }
+    try { await restoreUser(displayId!, uid); toast.success('Restored'); load(); } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
   const openResetModal = (u: ClientUser) => {
     setResetTarget(u);
@@ -125,7 +125,7 @@ const ClientDetailPage: React.FC = () => {
   };
   const handleResetConfirm = async () => {
     if (!resetTarget || !resetPwd) { toast.error('Password required'); return; }
-    try { await resetClientAdminPassword(displayId!, resetTarget._id, resetPwd); toast.success(`Password reset for ${resetTarget.email}`); setShowResetModal(false); setResetTarget(null); } catch(e:any){ toast.error(e.message); }
+    try { await resetClientAdminPassword(displayId!, resetTarget._id, resetPwd); toast.success(`Password reset for ${resetTarget.email}`); setShowResetModal(false); setResetTarget(null); } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
   const handleSaveMax = async () => {
     if (editMax === '') return;
@@ -133,7 +133,7 @@ const ClientDetailPage: React.FC = () => {
     if (num === -1 && client?.plan !== 'enterprise') { toast.error('Unlimited (-1) allowed only for Enterprise plan'); return; }
     const allowed = getAllowedMax(client?.plan || 'starter');
     if (num !== -1 && allowed !== Infinity && num > allowed) { toast.error(`Max Users ${num} exceeds ${client?.plan} limit (${planLimits[client?.plan || 'starter']}) +50% (max ${allowed}). Upgrade plan.`); return; }
-    try { await updateClient(displayId!, { maxUsers: num } as any); toast.success('Max users updated'); load(); } catch(e:any){ toast.error(e.message); }
+    try { await updateClient(displayId!, { maxUsers: num }); toast.success('Max users updated'); load(); } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
   const handleSaveClientEdit = async () => {
     if (!editForm.clientName.trim() || !editForm.firstName.trim() || !editForm.lastName.trim()) { toast.error('Client Name, First & Last required'); return; }
@@ -155,7 +155,7 @@ const ClientDetailPage: React.FC = () => {
       await updateClient(displayId!, {
         name: editForm.clientName.trim(),
         description: editForm.description,
-        plan: editForm.plan as any,
+        plan: editForm.plan,
         contactFirstName: editForm.firstName.trim(),
         contactLastName: editForm.lastName.trim(),
         mobile: normalizePhone(editForm.mobile) || undefined,
@@ -169,15 +169,15 @@ const ClientDetailPage: React.FC = () => {
           country: editForm.country.trim() || 'India',
           pinCode: editForm.pinCode.trim(),
         },
-      } as any);
+      });
       toast.success('Client updated');
       setEditingClient(false);
       load();
-    } catch(e:any){ toast.error(e.message); }
+    } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
   const handleJiraConnect = async (e: React.FormEvent) => {
     e.preventDefault();
-    try { await connectJira(displayId!, jiraForm); toast.success('JIRA connected'); load(); } catch(e:any){ toast.error(e.message); }
+    try { await connectJira(displayId!, jiraForm); toast.success('JIRA connected'); load(); } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
   const openEditUser = (u: ClientUser) => {
     setEditUserTarget(u);
@@ -209,7 +209,7 @@ const ClientDetailPage: React.FC = () => {
       setShowEditUserModal(false);
       setEditUserTarget(null);
       load();
-    } catch(e:any){ toast.error(e.message); }
+    } catch(e: unknown){ toast.error(getClientsError(e)); }
   };
 
   if (!displayId) return <div className="bg-white dark:bg-gray-900 min-h-full p-6">Missing client</div>;
@@ -237,10 +237,10 @@ const ClientDetailPage: React.FC = () => {
               <div><div className="text-gray-400 uppercase tracking-wider">Created</div><div className="font-medium">{client ? new Date(client.createdAt).toLocaleDateString() : '—'}</div></div>
               <div><div className="text-gray-400 uppercase tracking-wider">Seats</div><div className="font-medium">{usage ? `${usage.active}/${usage.max===-1?'∞':usage.max} (${usage.pct}%)` : '—'}</div></div>
             </div>
-            {(client as any)?.address && (
+            {client?.address && (
               <div className="text-xs pt-2">
                 <div className="text-gray-400 uppercase tracking-wider">Address</div>
-                <div className="font-medium">{(client as any).address.addressLine1}{(client as any).address.addressLine2 ? `, ${(client as any).address.addressLine2}` : ''}, {(client as any).address.city}, {(client as any).address.state}, {(client as any).address.country} - {(client as any).address.pinCode}</div>
+                <div className="font-medium">{client.address.addressLine1}{client.address.addressLine2 ? `, ${client.address.addressLine2}` : ''}, {client.address.city}, {client.address.state}, {client.address.country} - {client.address.pinCode}</div>
               </div>
             )}
           </div>
@@ -469,7 +469,7 @@ const ClientDetailPage: React.FC = () => {
               <div className="flex gap-2 items-end">
                 <div className="flex-1">
                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Plan</label>
-                  <select value={editForm.plan} onChange={e=>setEditForm({...editForm,plan:e.target.value})} className="w-full border p-2 rounded"><option value="free">Free [3 Users]</option><option value="starter">Starter [10 Users]</option><option value="pro">Pro [25 Users]</option><option value="enterprise">Enterprise [Unlimited]</option></select>
+                  <select value={editForm.plan} onChange={e=>setEditForm({...editForm,plan:e.target.value as Client['plan']})} className="w-full border p-2 rounded"><option value="free">Free [3 Users]</option><option value="starter">Starter [10 Users]</option><option value="pro">Pro [25 Users]</option><option value="enterprise">Enterprise [Unlimited]</option></select>
                 </div>
               </div>
               <p className="text-xs text-gray-500">Plan {editForm.plan} limit {planLimits[editForm.plan] === Infinity ? 'Unlimited' : `${planLimits[editForm.plan]} Users`} → max {getAllowedMax(editForm.plan) === Infinity ? 'Unlimited' : `${getAllowedMax(editForm.plan)} Users`} (+50%). Exceed requires plan upgrade.</p>
@@ -524,7 +524,7 @@ const ClientDetailPage: React.FC = () => {
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={()=>setShowDeactivateConfirm(null)} className="px-4 py-2 border rounded">Cancel</button>
-              <button onClick={async()=>{ try{ await handleDeactivate(showDeactivateConfirm._id); setShowDeactivateConfirm(null);}catch{}}} className="bg-red-600 text-white px-4 py-2 rounded">Deactivate</button>
+              <button onClick={async()=>{ try{ await handleDeactivate(showDeactivateConfirm._id); setShowDeactivateConfirm(null);}catch{ /* handleDeactivate reports the error; keep the dialog open */ }}} className="bg-red-600 text-white px-4 py-2 rounded">Deactivate</button>
             </div>
           </div>
         </div>
@@ -566,7 +566,7 @@ const ClientDetailPage: React.FC = () => {
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={invite.whatsappSameAsMobile} onChange={e=>setInvite({...invite,whatsappSameAsMobile:e.target.checked})} /> Whatsapp same as Mobile</label>
               <div>
                 <label className="text-xs font-medium text-gray-600">Role *</label>
-                <select value={invite.role} onChange={e=>setInvite({...invite, role: e.target.value as any})} className="w-full border p-2 rounded">
+                <select value={invite.role} onChange={e=>setInvite({...invite, role: e.target.value as ClientMemberRole})} className="w-full border p-2 rounded">
                   <option value="client_admin">Client Admin</option>
                   <option value="member">Member</option>
                   <option value="viewer">Viewer</option>

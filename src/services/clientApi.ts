@@ -1,13 +1,13 @@
 import axios, { AxiosError } from 'axios';
 import { API_URL } from '../utils/api';
 import { ApiResponse, ApiErrorResponse } from '../types/api/testManager.api';
-import { Client, SeatUsage, ClientUser } from '../types/client';
+import { Client, SeatUsage, ClientUser, CreateClientInput, CreateClientAdminInput, UpdateClientUserInput } from '../types/client';
 
 axios.defaults.withCredentials = true;
 
 const getErrorMessage = (error: unknown): string => {
   const e = error as AxiosError<ApiErrorResponse & { code?: string; usage?: SeatUsage }>;
-  return (e.response?.data as any)?.message || e.message || 'An error occurred';
+  return e.response?.data?.message || e.message || 'An error occurred';
 };
 
 export const getClients = async (): Promise<Client[]> => {
@@ -15,7 +15,7 @@ export const getClients = async (): Promise<Client[]> => {
   return res.data.data || [];
 };
 
-export const createClient = async (data: { name?: string; description?: string; plan?: string; maxUsers: number; firstName?: string; lastName?: string; mobile?: string; whatsapp?: string; whatsappSameAsMobile?: boolean; address?: { addressLine1: string; addressLine2?: string; city: string; state: string; country: string; pinCode: string } }): Promise<Client> => {
+export const createClient = async (data: CreateClientInput): Promise<Client> => {
   const res = await axios.post<ApiResponse<Client>>(`${API_URL}/clients`, data);
   if (!res.data.data) throw new Error('No data');
   return res.data.data;
@@ -38,7 +38,7 @@ export const getClientUsers = async (displayId: string, status: 'active'|'inacti
   return res.data.data || [];
 };
 
-export const createClientAdmin = async (displayId: string, data: { email: string; name?: string; tempPassword?: string; firstName?: string; lastName?: string; mobile?: string; whatsapp?: string; whatsappSameAsMobile?: boolean }) => {
+export const createClientAdmin = async (displayId: string, data: CreateClientAdminInput) => {
   const res = await axios.post(`${API_URL}/clients/${displayId}/admins`, data);
   return res.data;
 };
@@ -58,7 +58,7 @@ export const restoreUser = async (displayId: string, userId: string) => {
   return res.data;
 };
 
-export const updateClientUser = async (displayId: string, userId: string, data: { firstName?: string; lastName?: string; mobile?: string; whatsapp?: string; whatsappSameAsMobile?: boolean; role?: string }) => {
+export const updateClientUser = async (displayId: string, userId: string, data: UpdateClientUserInput) => {
   const res = await axios.patch(`${API_URL}/clients/${displayId}/users/${userId}`, data);
   return res.data.data;
 };
