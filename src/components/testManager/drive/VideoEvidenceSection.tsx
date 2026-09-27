@@ -8,6 +8,7 @@ import { DriveConnection, VideoEvidence } from "../../../types/testManager";
 import DriveConnectPanel from "./DriveConnectPanel";
 import VideoEvidenceUploader from "./VideoEvidenceUploader";
 import VideoEvidencePlayer from "./VideoEvidencePlayer";
+import { DRIVE_FEATURE_ENABLED } from "../../../utils/flags";
 
 interface VideoEvidenceSectionProps {
   projectId: string;
@@ -59,12 +60,12 @@ const VideoEvidenceSection: React.FC<VideoEvidenceSectionProps> = ({
   }, [projectId, scope]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!DRIVE_FEATURE_ENABLED || !enabled) return;
     setLoading(true);
     void reload();
   }, [enabled, reload]);
 
-  if (!enabled) return null;
+  if (!DRIVE_FEATURE_ENABLED || !enabled) return null;
 
   const handleUploaded = (evidence: VideoEvidence) => {
     setEvidences((prev) => [...prev, evidence]);

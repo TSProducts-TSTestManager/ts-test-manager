@@ -5,6 +5,7 @@ import { useTestManagerStore } from '../../store/testManagerStore';
 import { useAuthStore } from '../../store/authStore';
 import { Project, CustomFieldDefinition, CustomFieldOption, ProjectSettings } from '../../types/testManager';
 import ProjectDriveFiles from './drive/ProjectDriveFiles';
+import { DRIVE_FEATURE_ENABLED } from '../../utils/flags';
 
 interface Props {
     isOpen: boolean;
@@ -90,7 +91,7 @@ const ProjectSettingsModal: React.FC<Props> = ({ isOpen, onClose, project }) => 
         { id: 'testCases', label: 'Test Cases' },
         { id: 'customFields', label: 'Custom Fields' },
         { id: 'integrations', label: 'Integrations' },
-        { id: 'files', label: 'Files' },
+        ...(DRIVE_FEATURE_ENABLED ? [{ id: 'files' as TabType, label: 'Files' }] : []),
     ];
 
     return (
@@ -156,7 +157,7 @@ const ProjectSettingsModal: React.FC<Props> = ({ isOpen, onClose, project }) => 
                                     project={project}
                                 />
                             )}
-                            {activeTab === 'files' && (
+                            {DRIVE_FEATURE_ENABLED && activeTab === 'files' && (
                                 <ProjectDriveFiles projectId={project.id} />
                             )}
                         </>
@@ -357,19 +358,7 @@ const IntegrationsTab: React.FC<{
     isOwner: boolean;
     project?: Project | null;
 }> = ({ settings, setSettings, isOwner, project }) => {
-    if (!isOwner) {
-        return (
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Video Evidence</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Only the project owner can change video evidence settings.
-                </p>
-            </div>
-        );
-    }
-
-    return (
-        <div className="space-y-6">
+    const jiraCard = (
             <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">JIRA Project Mapping</h3>
                 <div className="space-y-3">
@@ -394,7 +383,25 @@ const IntegrationsTab: React.FC<{
                     </p>
                 </div>
             </div>
+    );
 
+    if (!isOwner) {
+        if (!DRIVE_FEATURE_ENABLED) return <div className="space-y-6">{jiraCard}</div>;
+        return (
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Video Evidence</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Only the project owner can change video evidence settings.
+                </p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            {jiraCard}
+
+            {DRIVE_FEATURE_ENABLED && (
             <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Google Drive Video Evidence</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
@@ -454,6 +461,7 @@ const IntegrationsTab: React.FC<{
                     )}
                 </div>
             </div>
+            )}
         </div>
     );
 };

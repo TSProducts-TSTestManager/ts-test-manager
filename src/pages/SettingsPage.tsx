@@ -13,6 +13,7 @@ import axios from "axios";
 import ProviderLogo from "../components/ProviderLogo";
 import { PROVIDER_BRANDS } from "../utils/providerBrands";
 import type { AIProvider } from "../utils/providerBrands";
+import { DRIVE_FEATURE_ENABLED } from "../utils/flags";
 
 interface Tab {
     id: string;
@@ -181,7 +182,7 @@ const SettingsPage: React.FC = () => {
         { id: "general", label: "General" },
         { id: "security", label: "Security" },
         { id: "ai-providers", label: "AI Providers" },
-        { id: "integrations", label: "Integrations" },
+        ...(DRIVE_FEATURE_ENABLED ? [{ id: "integrations", label: "Integrations" }] : []),
     ];
 
     return (
@@ -227,7 +228,7 @@ const SettingsPage: React.FC = () => {
                     {activeTab === "general" && <GeneralTab user={user} />}
                     {activeTab === "security" && <SecurityTab />}
                     {activeTab === "ai-providers" && <AiProvidersTab />}
-                    {activeTab === "integrations" && <IntegrationsTab />}
+                    {DRIVE_FEATURE_ENABLED && activeTab === "integrations" && <IntegrationsTab />}
                 </motion.div>
             </div>
         </div>

@@ -10,6 +10,7 @@ import type { LucideIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { isValidPhone, normalizePhone } from '../../utils/phone';
 import ClientDriveSettings from '../../components/testManager/drive/ClientDriveSettings';
+import { DRIVE_FEATURE_ENABLED } from '../../utils/flags';
 
 const MyClientPage: React.FC = () => {
   const { user } = useAuthStore();
@@ -189,7 +190,7 @@ const MyClientPage: React.FC = () => {
     { id: 'users', label: 'Users', icon: Users, count: active },
     { id: 'myJira', label: 'My JIRA', icon: UserCircle, count: myJira?.enabled ? 1 : 0 },
     { id: 'projectJira', label: 'Project JIRA', icon: Layers, count: projects.length },
-    { id: 'drive', label: 'Drive', icon: HardDrive, count: null },
+    ...(DRIVE_FEATURE_ENABLED ? [{ id: 'drive' as const, label: 'Drive', icon: HardDrive, count: null }] : []),
   ];
 
   return (
@@ -385,7 +386,7 @@ const MyClientPage: React.FC = () => {
         </div>
       )}
 
-      {tab==='drive' && (
+      {DRIVE_FEATURE_ENABLED && tab==='drive' && (
         <div className="bg-white dark:bg-gray-800 rounded-2xl border p-4">
           <ClientDriveSettings displayId={client.displayId} />
         </div>
