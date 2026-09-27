@@ -323,6 +323,8 @@ export interface TestRunListItem {
 
 export interface TestRunGroup {
     id: string;
+    /** Sequential client-scoped ID, e.g. GRP-0001 */
+    displayId?: string;
     name: string;
     description?: string;
     projectId: string;

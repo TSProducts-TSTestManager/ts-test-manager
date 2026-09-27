@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { getClients, createClient, getClientUsage } from '../../services/clientApi';
-import { Client, SeatUsage } from '../../types/client';
+import { getClients, createClient, getClientUsage, getClientsError } from '../../services/clientApi';
+import { Client, SeatUsage, CreateClientInput } from '../../types/client';
 import { Search, LayoutGrid, Table2, Eye } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { isValidPhone, normalizePhone } from '../../utils/phone';
@@ -29,9 +29,9 @@ const ClientsPage: React.FC = () => {
       const data = await getClients();
       setClients(data);
       for (const c of data) {
-        try { const u = await getClientUsage(c.displayId); setUsageMap(m => ({ ...m, [c.displayId]: u })); } catch {}
+        try { const u = await getClientUsage(c.displayId); setUsageMap(m => ({ ...m, [c.displayId]: u })); } catch { /* seat usage is supplementary; leave it blank */ }
       }
-    } catch (e: any) { toast.error(e.message); } finally { setLoading(false); }
+    } catch (e: unknown) { toast.error(getClientsError(e)); } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
 
@@ -39,19 +39,18 @@ const ClientsPage: React.FC = () => {
     const q = search.trim().toLowerCase();
     if (!q) return clients;
     return clients.filter(c => {
-      const addr = (c as any).address || {};
       return (
         c.displayId.toLowerCase().includes(q) ||
         c.name.toLowerCase().includes(q) ||
         (c.description || '').toLowerCase().includes(q) ||
-        ((c as any).contactFirstName || '').toLowerCase().includes(q) ||
-        ((c as any).contactLastName || '').toLowerCase().includes(q) ||
-        (`${(c as any).contactFirstName || ''} ${(c as any).contactLastName || ''}`.toLowerCase().includes(q)) ||
+        (c.contactFirstName || '').toLowerCase().includes(q) ||
+        (c.contactLastName || '').toLowerCase().includes(q) ||
+        (`${c.contactFirstName || ''} ${c.contactLastName || ''}`.toLowerCase().includes(q)) ||
         (c.mobile || '').includes(q) ||
         (c.whatsapp || '').includes(q) ||
-        (addr.city || '').toLowerCase().includes(q) ||
-        (addr.state || '').toLowerCase().includes(q) ||
-        (addr.pinCode || '').includes(q) ||
+        (c.address?.city || '').toLowerCase().includes(q) ||
+        (c.address?.state || '').toLowerCase().includes(q) ||
+        (c.address?.pinCode || '').includes(q) ||
         c.plan.toLowerCase().includes(q)
       );
     });
@@ -68,7 +67,7 @@ const ClientsPage: React.FC = () => {
     if (form.maxUsers !== -1 && form.maxUsers > allowedMax) { toast.error(`Max Users ${form.maxUsers} exceeds ${form.plan} plan limit (${planLimits[form.plan]}) +50% (max ${allowedMax}). Upgrade plan.`); return; }
     if (form.maxUsers === -1 && form.plan !== 'enterprise') { toast.error('Unlimited (-1) allowed only for Enterprise plan'); return; }
     try {
-      const payload: any = {
+      const payload: CreateClientInput = {
         name: form.name.trim(),
         description: form.description,
         plan: form.plan,
@@ -92,7 +91,7 @@ const ClientsPage: React.FC = () => {
       setShowCreate(false);
       setForm({ firstName: '', lastName: '', name: '', description: '', plan: 'starter', maxUsers: 10, mobile: '', whatsapp: '', whatsappSameAsMobile: false, addressLine1: '', addressLine2: '', city: '', state: '', country: 'India', pinCode: '' });
       load();
-    } catch (e: any) { toast.error(e.message); }
+    } catch (e: unknown) { toast.error(getClientsError(e)); }
   };
 
   if (loading) return <div className="bg-white dark:bg-gray-900 min-h-full p-6">Loading clients...</div>;
@@ -131,7 +130,7 @@ const ClientsPage: React.FC = () => {
             const u = usageMap[c.displayId];
             const pct = u ? u.pct : 0;
             const barColor = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-yellow-500' : 'bg-green-500';
-            const addr = (c as any).address;
+                   const addr = c.address;
             return (
               <div key={c._id} onClick={() => navigate(`/admin/clients/${c.displayId}`)} className="border border-gray-100 dark:border-gray-700 rounded-2xl p-5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all cursor-pointer bg-white dark:bg-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] flex flex-col">
                 <div className="flex justify-between items-start">
@@ -139,7 +138,7 @@ const ClientsPage: React.FC = () => {
                   <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${c.status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-red-100 text-red-800'}`}>{c.status}</span>
                 </div>
                 <h3 className="font-semibold mt-3 truncate text-gray-900 dark:text-gray-100" title={c.name}>{c.name}</h3>
-                <p className="text-xs text-gray-600 dark:text-gray-400 truncate mt-1">Contact: {(c as any).contactFirstName || '—'} {(c as any).contactLastName || ''} {(c as any).mobile ? `• ${ normalizePhone((c as any).mobile)}` : ''}</p>
+                 <p className="text-xs text-gray-600 dark:text-gray-400 truncate mt-1">Contact: {c.contactFirstName || '—'} {c.contactLastName || ''} {c.mobile ? `• ${ normalizePhone(c.mobile)}` : ''}</p>
                 {addr && <p className="text-xs text-gray-500 truncate">{addr.city}, {addr.state} - {addr.pinCode}</p>}
                 <p className="text-xs text-gray-400 truncate mt-1">{c.description || '—'}</p>
                 <div className="mt-4 space-y-2">
@@ -174,13 +173,13 @@ const ClientsPage: React.FC = () => {
               <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                 {filtered.map(c => {
                   const u = usageMap[c.displayId];
-                  const addr = (c as any).address;
+            const addr = c.address;
                   return (
                     <tr key={c._id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                       <td className="px-4 py-3 font-mono text-xs bg-gray-100 dark:bg-gray-700 inline-block mt-2 ml-4 rounded-full">{c.displayId}</td>
                       <td className="px-4 py-3"><div className="font-medium text-gray-900 dark:text-gray-100 truncate max-w-[180px]" title={c.name}>{c.name}</div><div className="text-xs text-gray-400 truncate max-w-[180px]">{c.description || '—'}</div></td>
-                      <td className="px-4 py-3"><div className="text-gray-900 dark:text-gray-100 whitespace-nowrap">{(c as any).contactFirstName || '—'} {(c as any).contactLastName || ''}</div></td>
-                      <td className="px-4 py-3 whitespace-nowrap">{(c as any).mobile || '—'}</td>
+                      <td className="px-4 py-3"><div className="text-gray-900 dark:text-gray-100 whitespace-nowrap">{c.contactFirstName || '—'} {c.contactLastName || ''}</div></td>
+                      <td className="px-4 py-3 whitespace-nowrap">{c.mobile || '—'}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-xs">{addr ? `${addr.city}, ${addr.state}` : '—'}<div className="text-gray-400">{addr?.pinCode || ''}</div></td>
                       <td className="px-4 py-3"><span className="text-xs capitalize bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 px-2 py-1 rounded-full">{c.plan}</span></td>
                       <td className="px-4 py-3 whitespace-nowrap">{u ? `${u.active}/${u.max === -1 ? '∞' : u.max}` : c.maxUsers}</td>

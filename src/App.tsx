@@ -65,7 +65,7 @@ const SuperAdminRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated, user } = useAuthStore();
   if (!isAuthenticated) return <Navigate to='/login' replace />;
   if (!user?.isVerified) return <Navigate to='/verify-email' replace />;
-  if ((user as any)?.role !== 'super_admin') return <Navigate to='/' replace />;
+  if (user?.role !== 'super_admin') return <Navigate to='/' replace />;
   return <>{children}</>;
 };
 
@@ -73,13 +73,13 @@ const ClientRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated, user } = useAuthStore();
   if (!isAuthenticated) return <Navigate to='/login' replace />;
   if (!user?.isVerified) return <Navigate to='/verify-email' replace />;
-  if ((user as any)?.role === 'super_admin') return <Navigate to='/admin/dashboard' replace />;
+  if (user?.role === 'super_admin') return <Navigate to='/admin/dashboard' replace />;
   return <>{children}</>;
 };
 
 const SuperAdminRedirect: React.FC = () => {
   const { user } = useAuthStore();
-  if ((user as any)?.role === 'super_admin') return <Navigate to='/admin/dashboard' replace />;
+  if (user?.role === 'super_admin') return <Navigate to='/admin/dashboard' replace />;
   return <Navigate to='/dashboard' replace />;
 };
 

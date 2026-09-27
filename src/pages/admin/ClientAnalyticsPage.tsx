@@ -18,7 +18,7 @@ const ClientAnalyticsPage: React.FC = () => {
       setClients(data);
       const map: Record<string, SeatUsage> = {};
       for (const c of data) {
-        try { map[c.displayId] = await getClientUsage(c.displayId); } catch {}
+        try { map[c.displayId] = await getClientUsage(c.displayId); } catch { /* seat usage is supplementary; render the table without it */ }
       }
       setUsageMap(map);
       setLoading(false);
@@ -42,7 +42,7 @@ const ClientAnalyticsPage: React.FC = () => {
   const cityData = useMemo(() => {
     const m: Record<string, number> = {};
     clients.forEach(c => {
-      const city = (c as any).address?.city || "Unknown";
+      const city = c.address?.city || "Unknown";
       m[city] = (m[city] || 0) + 1;
     });
     return Object.entries(m).map(([name, value]) => ({ name, value })).sort((a,b)=>b.value-a.value).slice(0, 6);

@@ -33,6 +33,50 @@ export interface Client {
   };
 }
 
+export interface CreateClientInput {
+  name?: string;
+  description?: string;
+  plan?: string;
+  maxUsers: number;
+  firstName?: string;
+  lastName?: string;
+  mobile?: string;
+  whatsapp?: string;
+  whatsappSameAsMobile?: boolean;
+  address?: {
+    addressLine1: string;
+    addressLine2?: string;
+    city: string;
+    state: string;
+    country: string;
+    pinCode: string;
+  };
+}
+
+/** Roles a client admin may assign to a user of their own client. */
+export type ClientMemberRole = 'client_admin' | 'member' | 'viewer';
+
+export interface CreateClientAdminInput {
+  email: string;
+  name?: string;
+  tempPassword?: string;
+  firstName?: string;
+  lastName?: string;
+  mobile?: string;
+  whatsapp?: string;
+  whatsappSameAsMobile?: boolean;
+  role?: ClientMemberRole;
+}
+
+export interface UpdateClientUserInput {
+  firstName?: string;
+  lastName?: string;
+  mobile?: string;
+  whatsapp?: string;
+  whatsappSameAsMobile?: boolean;
+  role?: ClientMemberRole;
+}
+
 export interface SeatUsage {
   active: number;
   inactive: number;
@@ -50,9 +94,24 @@ export interface ClientUser {
   mobile?: string;
   whatsapp?: string;
   whatsappSameAsMobile?: boolean;
-  role: 'super_admin' | 'client_admin' | 'member' | 'viewer';
+  role: 'super_admin' | ClientMemberRole;
   status: 'active' | 'inactive';
   clientId?: string;
   isVerified: boolean;
   createdAt: string;
+}
+
+/**
+ * JIRA integration status as returned by the `/integrations` endpoints.
+ * Only `enabled` is guaranteed — the remaining fields depend on the scope
+ * (per-user returns `email`, per-project returns `domain` + `projectKey`).
+ */
+export interface JiraIntegration {
+  enabled: boolean;
+  domain?: string;
+  email?: string;
+  projectKey?: string;
+  defaultIssueType?: string;
+  apiToken?: string;
+  connectedAt?: string;
 }
