@@ -98,7 +98,11 @@ export const useAuthStore = create<AuthStoreState>((set) => ({
 	verifyEmail: async (code: string): Promise<{ user: User; success: boolean }> => {
 		set({ isLoading: true, error: null });
 		try {
-			const response = await axios.post<{ user: User; success: boolean }>(`${API_URL}/auth/verify-email`, { code });
+			// Include the account email so the backend can count failed attempts
+			// per user (5-attempt lockout); falls back to code-only lookup if the
+			// store was reloaded (server still rate-limits by IP).
+			const email = useAuthStore.getState().user?.email;
+			const response = await axios.post<{ user: User; success: boolean }>(`${API_URL}/auth/verify-email`, { code, email });
 			set({ user: response.data.user, isAuthenticated: true, isLoading: false });
 			return response.data;
 		} catch (error) {

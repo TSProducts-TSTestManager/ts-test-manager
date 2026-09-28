@@ -56,20 +56,27 @@ export function useRealtimeTickets({
       socketService.connect();
     }
 
+    // Copy the ref handlers once so registration and cleanup use the exact
+    // same function references (and satisfy exhaustive-deps).
+    const onTicketCreated = handleTicketCreated.current;
+    const onTicketUpdated = handleTicketUpdated.current;
+    const onTicketDeleted = handleTicketDeleted.current;
+
     // Set up event listeners (only once)
     if (!listenersSetup.current) {
-      socketService.on("ticket:created", handleTicketCreated.current);
-      socketService.on("ticket:updated", handleTicketUpdated.current);
-      socketService.on("ticket:deleted", handleTicketDeleted.current);
+      socketService.on("ticket:created", onTicketCreated);
+      socketService.on("ticket:updated", onTicketUpdated);
+      socketService.on("ticket:deleted", onTicketDeleted);
       listenersSetup.current = true;
     }
 
-    // Cleanup on unmount
+    // Cleanup on unmount — remove only our handlers so other components'
+    // listeners on the same events survive (F4).
     return () => {
       if (listenersSetup.current) {
-        socketService.off("ticket:created");
-        socketService.off("ticket:updated");
-        socketService.off("ticket:deleted");
+        socketService.off("ticket:created", onTicketCreated);
+        socketService.off("ticket:updated", onTicketUpdated);
+        socketService.off("ticket:deleted", onTicketDeleted);
         listenersSetup.current = false;
       }
     };

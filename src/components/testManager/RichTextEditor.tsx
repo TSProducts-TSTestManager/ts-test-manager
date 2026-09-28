@@ -7,6 +7,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { Bold, Italic, List, ListOrdered, Strikethrough, Heading1, Heading2, Quote, ImagePlus, Link as LinkIcon, Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { uploadImage, validateImageFile } from '../../utils/imageUpload';
+import { sanitizeHtml } from '../../utils/sanitize';
 import LinkModal from './LinkModal';
 
 interface RichTextEditorProps {
@@ -47,7 +48,9 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, onBl
                 placeholder: placeholder,
             }),
         ],
-        content: content,
+        // Sanitize at the editor boundary: content arrives from API/storage and
+        // TipTap would otherwise parse stored markup as-is (F2).
+        content: sanitizeHtml(content),
         editable: editable,
         onUpdate: ({ editor }) => {
             onChange(editor.getHTML());

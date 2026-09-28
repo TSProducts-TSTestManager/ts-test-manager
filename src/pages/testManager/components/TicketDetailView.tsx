@@ -449,7 +449,7 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
                                                 }
                                             }
                                         }}
-                                        dangerouslySetInnerHTML={{ __html: ticket.description }}
+                                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(ticket.description) }}
                                     />
                                 </div>
                             ) : (
