@@ -50,7 +50,7 @@ import CreateRunModal from './components/CreateRunModal';
 import EditTestRunModal from './components/EditTestRunModal';
 import ExecuteRunModal from './components/ExecuteRunModal';
 import RunDetailView from './components/RunDetailView';
-import { filterTestRunsBySearch, getRunStatusColor, generateSuiteTitle } from './components/testRunUtils';
+import { getRunStatusColor, generateSuiteTitle } from './components/testRunUtils';
 
 const RUNS_PAGE_SIZE = 40;
 
@@ -93,6 +93,7 @@ const TestRunsPage: React.FC = () => {
         setSearchQuery,
         clearSearchQuery,
         createTicket,
+        setRefreshTestRunsCallback,
     } = useTestManagerStore(
         (state) => ({
             activeProject: state.activeProject,
@@ -106,6 +107,7 @@ const TestRunsPage: React.FC = () => {
             setSearchQuery: state.setSearchQuery,
             clearSearchQuery: state.clearSearchQuery,
             createTicket: state.createTicket,
+            setRefreshTestRunsCallback: state.setRefreshTestRunsCallback,
         }),
         shallow
     );
@@ -114,13 +116,44 @@ const TestRunsPage: React.FC = () => {
     const canWrite = useProjectWriteAccess(activeProject);
     const readOnlyToast = () => toast.error('You have read-only access to this project');
     const customFieldDefinitions: CustomFieldDefinition[] = (projectSettings?.testCases?.customFields || []).filter((f: CustomFieldDefinition) => !f.deleted);
-    const [testRuns, setTestRuns] = useState<TestRunListItem[]>([]);
+    const [testRuns, setTestRunsState] = useState<TestRunListItem[]>([]);
+    /**
+     * Mirror of the run list for the socket handlers.
+     *
+     * Those callbacks run outside React, so they read this instead of waiting
+     * for a render. Every write to the list goes through `setTestRuns` below,
+     * which is what keeps it honest.
+     */
+    const testRunsRef = useRef<TestRunListItem[]>(testRuns);
+    const setTestRuns = useCallback<React.Dispatch<React.SetStateAction<TestRunListItem[]>>>((action) => {
+        setTestRunsState((previous) => {
+            const next = typeof action === 'function'
+                ? (action as (previous: TestRunListItem[]) => TestRunListItem[])(previous)
+                : action;
+            testRunsRef.current = next;
+            return next;
+        });
+    }, []);
     const [testRunGroups, setTestRunGroups] = useState<TestRunGroup[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [hasMoreRuns, setHasMoreRuns] = useState(false);
     const [runsOffset, setRunsOffset] = useState(0);
     const [runsTotal, setRunsTotal] = useState(0);
+    /**
+     * Move the loaded count and the server total together.
+     *
+     * Adjusting only one of them is what made the "Loaded X / Y" readout drift
+     * away from what the list actually held after a create, clone or delete.
+     */
+    const noteRunAdded = useCallback(() => {
+        setRunsOffset((previous) => previous + 1);
+        setRunsTotal((previous) => previous + 1);
+    }, []);
+    const noteRunRemoved = useCallback(() => {
+        setRunsOffset((previous) => Math.max(previous - 1, 0));
+        setRunsTotal((previous) => Math.max(previous - 1, 0));
+    }, []);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
     const [editingGroup, setEditingGroup] = useState<TestRunGroup | undefined>(undefined);
@@ -146,6 +179,50 @@ const TestRunsPage: React.FC = () => {
         }, 300);
         return () => clearTimeout(timer);
     }, [searchQuery]);
+
+    // Every run list input the server filters and sorts on, as one memo so the
+    // loader re-runs only when a value actually changes. Filtering here used to
+    // run against the loaded page only, so a status or group filter could never
+    // find a match past page one.
+    const runListParams = useMemo<
+        Omit<Parameters<typeof testRunApi.getTestRunsPaginated>[1], 'limit' | 'offset'>
+    >(
+        () => ({
+            search: debouncedSearch || undefined,
+            sortField: runSortField,
+            sortDir: runSortDir,
+            status: selectedRunStatusFilter === 'all' ? undefined : [selectedRunStatusFilter],
+            // 'ungrouped' maps to the API's explicit "no group" sentinel.
+            groupId: selectedGroupFilter === 'all'
+                ? undefined
+                : selectedGroupFilter === 'ungrouped'
+                ? 'none'
+                : selectedGroupFilter,
+            // The list's group picker means "this group and everything under it".
+            groupSubtree:
+                selectedGroupFilter !== 'all' && selectedGroupFilter !== 'ungrouped'
+                    ? true
+                    : undefined,
+            hasTickets: hasTicketsFilter === 'all' ? undefined : hasTicketsFilter === 'yes',
+        }),
+        [debouncedSearch, hasTicketsFilter, runSortDir, runSortField, selectedGroupFilter, selectedRunStatusFilter]
+    );
+
+    /**
+     * Whether the list is every run in the project.
+     *
+     * The server narrows it otherwise, and the client cannot reproduce that
+     * narrowing (ticket counts live in another collection, group filters walk a
+     * tree), so a realtime create is only trusted while nothing is filtering.
+     */
+    const isUnfilteredView = useMemo(
+        () =>
+            !debouncedSearch &&
+            selectedRunStatusFilter === 'all' &&
+            selectedGroupFilter === 'all' &&
+            hasTicketsFilter === 'all',
+        [debouncedSearch, hasTicketsFilter, selectedGroupFilter, selectedRunStatusFilter]
+    );
 
     const handleRunSort = useCallback((field: typeof runSortField) => {
         if (runSortField === field) {
@@ -283,6 +360,10 @@ const TestRunsPage: React.FC = () => {
         projectId: activeProject,
         setTestRuns,
         setExecuteRun,
+        runsRef: testRunsRef,
+        isUnfilteredView,
+        onRunAdded: noteRunAdded,
+        onRunRemoved: noteRunRemoved,
     });
 
     const location = useLocation();
@@ -309,8 +390,7 @@ const TestRunsPage: React.FC = () => {
             const result = await testRunApi.getTestRunsPaginated(activeProject, {
                 limit: RUNS_PAGE_SIZE,
                 offset: nextOffset,
-                sortField: runSortField,
-                sortDir: runSortDir,
+                ...runListParams,
             });
 
             setTestRuns((previous) => {
@@ -338,10 +418,9 @@ const TestRunsPage: React.FC = () => {
                 setIsLoadingMore(false);
             }
         }
-    }, [activeProject, runSortField, runSortDir]);
+    }, [activeProject, runListParams, setTestRuns]);
 
-    const closeDetailView = useCallback(() => {
-        detailRequestSequenceRef.current += 1;
+    const closeDetailView = useCallback(() => {        detailRequestSequenceRef.current += 1;
         setDetailRunId(null);
         setDetailRun(null);
         setExecuteRun(null);
@@ -414,6 +493,26 @@ const TestRunsPage: React.FC = () => {
             errorMessage: 'Could not load the linked test run',
         });
     }, [loadDetailRun]);
+
+    /**
+     * Refresh: re-read the run list from the server, plus the open run's detail
+     * when one is showing, so item results and the status badge are current.
+     *
+     * Declared here rather than beside fetchRuns because it needs loadDetailRun.
+     */
+    const handleRefresh = useCallback(async () => {
+        await fetchRuns(true, 0);
+        if (detailRunId) {
+            await loadDetailRun(detailRunId);
+        }
+        toast.success('Reloaded test runs from server');
+    }, [fetchRuns, detailRunId, loadDetailRun]);
+
+    // Expose the refresh to the toolbar in the layout.
+    useEffect(() => {
+        setRefreshTestRunsCallback(handleRefresh);
+        return () => setRefreshTestRunsCallback(null);
+    }, [setRefreshTestRunsCallback, handleRefresh]);
 
     // Fetch test run groups
     const fetchGroups = useCallback(async () => {
@@ -549,7 +648,7 @@ const TestRunsPage: React.FC = () => {
             }
             return [listItem, ...previous];
         });
-        setRunsOffset((previous) => previous + 1);
+        noteRunAdded();
         fetchTags();
     };
 
@@ -612,7 +711,7 @@ const TestRunsPage: React.FC = () => {
             await testRunApi.deleteTestRun(runId);
             toast.success('Test run deleted');
             setTestRuns((previous) => previous.filter((run) => run.id !== runId));
-            setRunsOffset((previous) => Math.max(previous - 1, 0));
+            noteRunRemoved();
         } catch (error: unknown) {
             toast.error((error as Error).message || 'Failed to delete');
         }
@@ -630,7 +729,7 @@ const TestRunsPage: React.FC = () => {
                 }
                 return [listItem, ...previous];
             });
-            setRunsOffset((previous) => previous + 1);
+            noteRunAdded();
         } catch (error: unknown) {
             toast.error((error as Error).message || 'Failed to clone');
         }
@@ -753,11 +852,6 @@ const TestRunsPage: React.FC = () => {
         await createTicket(activeProject, data);
     }, [activeProject, canWrite, createTicket]);
 
-    const groupNameById = useMemo(
-        () => new Map(testRunGroups.map((group) => [group.id, group.name])),
-        [testRunGroups]
-    );
-
     const runTeamSuggestions = useMemo(() => {
         const teamSet = new Set<string>();
         testRuns.forEach((run) => {
@@ -766,38 +860,11 @@ const TestRunsPage: React.FC = () => {
         return Array.from(teamSet).sort();
     }, [testRuns]);
 
-    const allDescendantGroupIds = useCallback((groupId: string): Set<string> => {
-        const ids = new Set<string>([groupId]);
-        const children = testRunGroups.filter(g => g.parentId === groupId);
-        for (const child of children) {
-            const childDescendants = allDescendantGroupIds(child.id);
-            childDescendants.forEach(id => ids.add(id));
-        }
-        return ids;
-    }, [testRunGroups]);
-
-    const filteredRuns = useMemo(() => {
-        const groupFilteredRuns = testRuns.filter((run) => {
-            if (selectedGroupFilter === 'all') return true;
-            if (selectedGroupFilter === 'ungrouped') return !run.groupId;
-            const groupIds = allDescendantGroupIds(selectedGroupFilter);
-            return run.groupId ? groupIds.has(run.groupId) : false;
-        });
-
-        const statusFilteredRuns = selectedRunStatusFilter === 'all'
-            ? groupFilteredRuns
-            : groupFilteredRuns.filter((run) => run.status === selectedRunStatusFilter);
-
-        // "Has tickets" toggle
-        const ticketFilteredRuns =
-            hasTicketsFilter === 'all'
-                ? statusFilteredRuns
-                : hasTicketsFilter === 'yes'
-                  ? statusFilteredRuns.filter((run) => (run.ticketCount ?? 0) > 0)
-                  : statusFilteredRuns.filter((run) => (run.ticketCount ?? 0) === 0);
-
-        return filterTestRunsBySearch(ticketFilteredRuns, debouncedSearch, groupNameById);
-    }, [testRuns, selectedGroupFilter, selectedRunStatusFilter, hasTicketsFilter, debouncedSearch, groupNameById, allDescendantGroupIds]);
+    // Search, group, status and ticket filters are all applied by the server, so
+    // the loaded rows are already the matches. The group subtree, the "ungrouped"
+    // case and the has-tickets counts are resolved in the query, which is what
+    // makes a filter able to see past the rows already in memory.
+    const filteredRuns = testRuns;
 
     const isDetailLoading = Boolean(detailRunId) && (!detailRun || detailRun.id !== detailRunId);
 

@@ -1,7 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, Check, RotateCcw } from 'lucide-react';
 import { useTestManagerStore } from '../../store/testManagerStore';
-import { Status, Priority } from '../../types/testManager';
+import { Status, Priority, TestType } from '../../types/testManager';
+
+/** 'unset' lets the user filter for cases that never had a test type assigned. */
+const TEST_TYPE_OPTIONS: (TestType | 'unset')[] = [...Object.values(TestType), 'unset'];
+const TEST_TYPE_LABELS: Record<TestType | 'unset', string> = {
+    ...(Object.fromEntries(
+        Object.values(TestType).map((t) => [t, t])
+    ) as Record<TestType, string>),
+    unset: 'Not set',
+};
 
 const FilterModal: React.FC = () => {
     const {
@@ -41,6 +50,15 @@ const FilterModal: React.FC = () => {
         });
     };
 
+    const handleTestTypeToggle = (testType: TestType | 'unset') => {
+        setLocalFilters(prev => {
+            const next = prev.testType.includes(testType)
+                ? prev.testType.filter(t => t !== testType)
+                : [...prev.testType, testType];
+            return { ...prev, testType: next };
+        });
+    };
+
     const handleDateChange = (type: 'start' | 'end', value: string) => {
         setLocalFilters(prev => ({
             ...prev,
@@ -73,6 +91,7 @@ const FilterModal: React.FC = () => {
         setLocalFilters({
             status: [],
             priority: [],
+            testType: [],
             dateRange: { start: null, end: null },
             createdAtRange: { start: null, end: null }
         });
@@ -84,7 +103,6 @@ const FilterModal: React.FC = () => {
             case Status.InReview: return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800';
             case Status.Ready: return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800';
             case Status.Updated: return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800';
-            case Status.Archived: return 'bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-gray-700';
             default: return 'bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border-transparent dark:border-gray-700';
         }
     };
@@ -153,6 +171,28 @@ const FilterModal: React.FC = () => {
                                             }`}
                                     >
                                         {priority}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Test Type Filter */}
+                    <div className="space-y-3">
+                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block">Test Type</label>
+                        <div className="flex flex-wrap gap-2">
+                            {TEST_TYPE_OPTIONS.map((testType) => {
+                                const isSelected = localFilters.testType.includes(testType);
+                                return (
+                                    <button
+                                        key={testType}
+                                        onClick={() => handleTestTypeToggle(testType)}
+                                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${isSelected
+                                                ? 'ring-2 ring-offset-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800 ring-purple-500'
+                                                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 hover:bg-gray-50 dark:hover:bg-gray-600'
+                                            }`}
+                                    >
+                                        {TEST_TYPE_LABELS[testType]}
                                     </button>
                                 );
                             })}

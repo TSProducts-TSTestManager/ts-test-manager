@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { ChevronRight, ChevronDown, Folder, Layers, Check, Home, Map, Grid2x2, Table } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, Layers, Check, Home, Map, Grid2x2, Table, Loader2, Search } from 'lucide-react';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { getAreasByProject, getAreasBySuite } from '../../services/testManagerApi';
+import { useProjectOptions } from '../../hooks/useProjectOptions';
 
 interface ContextBreadcrumbProps {
     showSuiteSelector?: boolean;
@@ -19,7 +20,6 @@ interface ContextBreadcrumbProps {
 
 const ContextBreadcrumb: React.FC<ContextBreadcrumbProps> = ({ showSuiteSelector = true, filteredSuites, viewToggle, rightContent, beforeToggle, className = '' }) => {
     const {
-        projects,
         testSuites,
         activeProject,
         activeSuite,
@@ -42,13 +42,26 @@ const ContextBreadcrumb: React.FC<ContextBreadcrumbProps> = ({ showSuiteSelector
     const projectRef = useRef<HTMLDivElement>(null);
     const suiteRef = useRef<HTMLDivElement>(null);
     const areaRef = useRef<HTMLDivElement>(null);
+    const projectScrollRef = useRef<HTMLDivElement>(null);
+    const projectSentinelRef = useRef<HTMLDivElement>(null);
 
     // Areas fetched from API for the project-level (All Cases) view
     const [projectAreas, setProjectAreas] = useState<string[]>([]);
     // Areas fetched from API for the suite-level view
     const [suiteAreas, setSuiteAreas] = useState<string[]>([]);
 
-    const currentProject = projects.find(p => p.id === activeProject);
+    const {
+        options: projectOptions,
+        search: projectSearch,
+        setSearch: setProjectSearch,
+        isSearching: isProjectSearching,
+        hasMore: projectsHasMore,
+        isSearchingMore: projectsSearchingMore,
+        loadMore: loadMoreProjects,
+        reset: resetProjectSearch,
+    } = useProjectOptions(activeProject);
+
+    const currentProject = projectOptions.find(p => p.id === activeProject);
     const currentSuite = testSuites.find(s => s.id === activeSuiteId);
     const suiteOptions = filteredSuites ?? testSuites;
 
@@ -69,6 +82,31 @@ const ContextBreadcrumb: React.FC<ContextBreadcrumbProps> = ({ showSuiteSelector
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // Reset the project search when the dropdown is dismissed so it does not
+    // linger into the next open.
+    useEffect(() => {
+        if (!isProjectOpen) resetProjectSearch();
+    }, [isProjectOpen, resetProjectSearch]);
+
+    // Page through the matches as the dropdown scrolls. The observer watches a
+    // sentinel inside the dropdown's own scroll container, so it only fires
+    // while the dropdown is actually visible.
+    useEffect(() => {
+        if (!isProjectOpen || !projectsHasMore) return;
+        const root = projectScrollRef.current;
+        const target = projectSentinelRef.current;
+        if (!root || !target) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries.some((entry) => entry.isIntersecting)) loadMoreProjects();
+            },
+            { root, rootMargin: '120px' }
+        );
+        observer.observe(target);
+        return () => observer.disconnect();
+    }, [isProjectOpen, projectsHasMore, loadMoreProjects]);
 
     const handleProjectChange = async (projectId: string) => {
         setActiveProject(projectId);
@@ -198,25 +236,52 @@ const ContextBreadcrumb: React.FC<ContextBreadcrumbProps> = ({ showSuiteSelector
                             <div className="absolute top-full left-0 mt-1 w-56 sm:w-[28rem] max-w-[calc(100vw-2rem)] bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-100 dark:border-gray-700 py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
                                 <div className="px-3 py-2 border-b border-gray-50 dark:border-gray-700">
                                     <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Switch Project</p>
+                                    <div className="mt-2 relative">
+                                        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+                                        <input
+                                            type="text"
+                                            value={projectSearch}
+                                            onChange={(event) => setProjectSearch(event.target.value)}
+                                            placeholder="Search projects..."
+                                            autoFocus
+                                            className="w-full pl-7 pr-7 py-1.5 text-xs bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        />
+                                        {isProjectSearching && (
+                                            <Loader2 size={13} className="absolute right-2 top-1/2 -translate-y-1/2 animate-spin text-gray-400" />
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="max-h-64 overflow-y-auto">
-                                    {projects.map(project => (
-                                        <button
-                                            key={project.id}
-                                            onClick={() => handleProjectChange(project.id)}
-                                            title={project.name}
-                                            className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${activeProject === project.id ? 'text-blue-500 dark:text-blue-400 bg-blue-500/10 dark:bg-blue-400/20' : 'text-gray-700 dark:text-gray-300'}`}
-                                        >
-                                            <Folder size={14} className={activeProject === project.id ? 'text-blue-500 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} />
-                                            <span className="truncate flex-1">
-                                                {project.displayId && (
-                                                    <span className="font-mono text-xs text-gray-400 dark:text-gray-500 mr-1.5">{project.displayId}</span>
-                                                )}
-                                                {project.name}
-                                            </span>
-                                            {activeProject === project.id && <Check size={14} />}
-                                        </button>
-                                    ))}
+                                <div ref={projectScrollRef} className="max-h-64 overflow-y-auto">
+                                    {projectOptions.length === 0 ? (
+                                        <div className="px-3 py-6 text-center text-xs text-gray-500 dark:text-gray-400">
+                                            {isProjectSearching ? 'Searching...' : 'No projects found'}
+                                        </div>
+                                    ) : (
+                                        projectOptions.map(project => (
+                                            <button
+                                                key={project.id}
+                                                onClick={() => handleProjectChange(project.id)}
+                                                title={project.name}
+                                                className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${activeProject === project.id ? 'text-blue-500 dark:text-blue-400 bg-blue-500/10 dark:bg-blue-400/20' : 'text-gray-700 dark:text-gray-300'}`}
+                                            >
+                                                <Folder size={14} className={activeProject === project.id ? 'text-blue-500 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} />
+                                                <span className="truncate flex-1">
+                                                    {project.displayId && (
+                                                        <span className="font-mono text-xs text-gray-400 dark:text-gray-500 mr-1.5">{project.displayId}</span>
+                                                    )}
+                                                    {project.name}
+                                                </span>
+                                                {activeProject === project.id && <Check size={14} />}
+                                            </button>
+                                        ))
+                                    )}
+                                    {projectsHasMore && <div ref={projectSentinelRef} className="h-1" />}
+                                    {projectsSearchingMore && (
+                                        <div className="flex items-center justify-center gap-2 py-2 text-xs text-gray-500 dark:text-gray-400">
+                                            <Loader2 size={13} className="animate-spin" />
+                                            Loading more...
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}

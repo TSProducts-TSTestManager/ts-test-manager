@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { TestCase, Priority, Status, CustomFieldDefinition } from '../../types/testManager';
+import { TestCase, Priority, Status, TestType, CustomFieldDefinition } from '../../types/testManager';
 import { X, Edit2, ChevronDown, Share2 } from 'lucide-react';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import RichTextEditor from './RichTextEditor';
@@ -114,13 +114,23 @@ const TestCaseViewModal: React.FC<TestCaseViewModalProps> = React.memo(function 
         emitFieldChange('status', status);
     };
 
+    const handleTestTypeChange = (testType: TestType | '') => {
+        const updated = {
+            ...localCase,
+            testType: testType || undefined,
+            lastModified: new Date().toISOString(),
+        };
+        setLocalCase(updated);
+        onUpdate?.(updated);
+        emitFieldChange('testType', testType || null);
+    };
+
     const getStatusColor = (status: Status) => {
         switch (status) {
             case Status.Draft: return 'text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
             case Status.InReview: return 'text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800';
             case Status.Ready: return 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800';
             case Status.Updated: return 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800';
-            case Status.Archived: return 'text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
             default: return 'text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
         }
     };
@@ -331,6 +341,25 @@ const TestCaseViewModal: React.FC<TestCaseViewModalProps> = React.memo(function 
                                 </div>
                             ) : null;
                         })()}
+
+                        {/* Test Type - sits directly above Page / Area so the
+                            classification is read before the location it covers. */}
+                        <div className="mb-5">
+                            <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Test Type</label>
+                            <div className="relative">
+                                <select
+                                    value={localCase.testType ?? ''}
+                                    onChange={(e) => handleTestTypeChange(e.target.value as TestType | '')}
+                                    className="w-full appearance-none rounded-lg py-2 pl-3 pr-8 text-sm font-medium outline-none transition-all cursor-pointer border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:opacity-80 focus:ring-2 focus:ring-offset-1 focus:ring-blue-100"
+                                >
+                                    <option value="">Not set</option>
+                                    {Object.values(TestType).map(t => (
+                                        <option key={t} value={t}>{t}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400 dark:text-gray-500 pointer-events-none opacity-50" />
+                            </div>
+                        </div>
 
                         {/* Page/Area */}
                         {localCase.area && (

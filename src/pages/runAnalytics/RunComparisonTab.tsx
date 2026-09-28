@@ -99,19 +99,38 @@ const TestRunAnalyticsTab: React.FC<TestRunAnalyticsTabProps> = ({
             setIsLoadingRuns(true);
             setError(null);
             try {
-                const result = await testRunApi.getTestRunsPaginated(projectId, {
-                    limit: 40,
-                    offset: 0,
-                });
+                // Page through the project's runs rather than taking the first
+                // 40: the date and tag filters below only run against what is
+                // loaded, so a partial fetch silently hid older runs.
+                type RunListItem = Awaited<ReturnType<typeof testRunApi.getTestRunsPaginated>>['items'][number];
+                const allRuns: RunListItem[] = [];
+                const PAGE_SIZE = 100;
+                const MAX_RUNS = 5000;
+
+                let offset = 0;
+                let hasMore = true;
+                while (hasMore && allRuns.length < MAX_RUNS) {
+                    const result = await testRunApi.getTestRunsPaginated(projectId, {
+                        limit: PAGE_SIZE,
+                        offset,
+                        groupId,
+                        hasTickets: onlyRunsWithTickets ? true : undefined,
+                    });
+                    if (cancelled) return;
+
+                    allRuns.push(...result.items);
+                    offset += result.items.length;
+                    hasMore =
+                        result.meta.hasMore && result.items.length > 0 && offset < result.meta.total;
+                }
                 if (cancelled) return;
 
                 const start = startDate ? new Date(startDate).getTime() : null;
                 const end = endDate ? new Date(endDate).getTime() : null;
                 const wantedTags = (tags ?? []).map((t) => t.toLowerCase());
 
-                const options: RunOption[] = result.items
+                const options: RunOption[] = allRuns
                     .filter((run) => {
-                        if (groupId && run.groupId !== groupId) return false;
                         if (onlyRunsWithTickets && (run.ticketCount ?? 0) === 0) return false;
                         if (wantedTags.length > 0) {
                             const runTags = (run.tags ?? []).map((t) => t.toLowerCase());

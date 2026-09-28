@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Save, Plus, Trash2, GripVertical, Settings2 } from 'lucide-react';
+import { X, Save, Plus, Trash2, GripVertical, Settings2, ChevronUp, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { useAuthStore } from '../../store/authStore';
-import { Project, CustomFieldDefinition, CustomFieldOption, ProjectSettings } from '../../types/testManager';
+import { Project, CustomFieldDefinition, CustomFieldOption, ProjectSettings, TestCaseTableColumnKey, TEST_CASE_TABLE_COLUMNS, TEST_CASE_TABLE_COLUMN_LABELS, resolveHiddenTableColumns, resolveTableColumnOrder } from '../../types/testManager';
 import ProjectDriveFiles from './drive/ProjectDriveFiles';
 import { DRIVE_FEATURE_ENABLED } from '../../utils/flags';
 
@@ -294,15 +294,48 @@ const TestCasesTab: React.FC<{
         { key: 'assignedTester', label: 'Assigned Tester' },
     ];
 
-    const defaultColumns = [
-        { key: 'id', label: 'ID' },
-        { key: 'title', label: 'Title' },
-        { key: 'priority', label: 'Priority' },
-        { key: 'status', label: 'Status' },
-        { key: 'createdAt', label: 'Created Date' },
-        { key: 'lastModified', label: 'Last Modified' },
-        { key: 'assignedTester', label: 'Assigned Tester' },
-    ];
+    const defaultColumns = TEST_CASE_TABLE_COLUMNS.map((key) => ({
+        key,
+        label: TEST_CASE_TABLE_COLUMN_LABELS[key],
+    }));
+
+    /**
+     * The order shown in the settings list. Falls back to the built-in order so
+     * a project that has never customised it still shows every column.
+     */
+    const activeColumnOrder = resolveTableColumnOrder(
+        settings.testCases?.table?.columnOrder
+    );
+
+    const moveColumn = (key: TestCaseTableColumnKey, direction: -1 | 1) => {
+        setSettings((prev) => {
+            const order = resolveTableColumnOrder(prev.testCases?.table?.columnOrder);
+            const index = order.indexOf(key);
+            const target = index + direction;
+            if (index === -1 || target < 0 || target >= order.length) {
+                return prev;
+            }
+            const next = [...order];
+            [next[index], next[target]] = [next[target], next[index]];
+            return {
+                ...prev,
+                testCases: {
+                    ...prev.testCases,
+                    table: { ...prev.testCases?.table, columnOrder: next },
+                },
+            };
+        });
+    };
+
+    const resetColumnOrder = () => {
+        setSettings((prev) => ({
+            ...prev,
+            testCases: {
+                ...prev.testCases,
+                table: { ...prev.testCases?.table, columnOrder: undefined },
+            },
+        }));
+    };
 
     return (
         <div className="space-y-6">
@@ -329,22 +362,70 @@ const TestCasesTab: React.FC<{
 
             {/* Hidden Table Columns */}
             <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Table Columns</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                    Hide columns from the test case table view.
-                </p>
+                <div className="flex items-start justify-between gap-4 mb-2">
+                    <div>
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Table Columns</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                            Hide columns from the test case table view, and set the order they appear in.
+                        </p>
+                    </div>
+                    {settings.testCases?.table?.columnOrder && (
+                        <button
+                            onClick={resetColumnOrder}
+                            className="flex-shrink-0 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                            Reset order
+                        </button>
+                    )}
+                </div>
+
                 <div className="space-y-2">
-                    {defaultColumns.map((column) => (
-                        <label key={column.key} className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg cursor-pointer transition-colors">
-                            <input
-                                type="checkbox"
-                                checked={settings.testCases?.table?.hiddenDefaultColumns?.[column.key as keyof typeof settings.testCases.table.hiddenDefaultColumns] || false}
-                                onChange={() => toggleHiddenColumn(column.key)}
-                                className="w-4 h-4 text-blue-600 dark:text-blue-500 rounded focus:ring-blue-500 dark:focus:ring-blue-400 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
-                            />
-                            <span className="text-sm text-gray-700 dark:text-gray-300">{column.label}</span>
-                        </label>
-                    ))}
+                    {activeColumnOrder.map((columnKey, index) => {
+                        const column = defaultColumns.find((c) => c.key === columnKey);
+                        if (!column) return null;
+                        const hiddenMap = resolveHiddenTableColumns(
+                            settings.testCases?.table?.hiddenDefaultColumns
+                        );
+                        const isHidden = hiddenMap[columnKey] === true;
+                        return (
+                            <div
+                                key={column.key}
+                                className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg transition-colors"
+                            >
+                                <label className="flex items-center gap-3 flex-1 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={!isHidden}
+                                        onChange={() => toggleHiddenColumn(column.key)}
+                                        className="w-4 h-4 text-blue-600 dark:text-blue-500 rounded focus:ring-blue-500 dark:focus:ring-blue-400 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+                                    />
+                                    <span className={`text-sm ${isHidden ? 'text-gray-400 dark:text-gray-500 line-through' : 'text-gray-700 dark:text-gray-300'}`}>
+                                        {column.label}
+                                    </span>
+                                </label>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={() => moveColumn(columnKey, -1)}
+                                        disabled={index === 0}
+                                        className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 disabled:hover:text-gray-400 rounded transition-colors"
+                                        title="Move up"
+                                        aria-label={`Move ${column.label} up`}
+                                    >
+                                        <ChevronUp className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => moveColumn(columnKey, 1)}
+                                        disabled={index === activeColumnOrder.length - 1}
+                                        className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 disabled:hover:text-gray-400 rounded transition-colors"
+                                        title="Move down"
+                                        aria-label={`Move ${column.label} down`}
+                                    >
+                                        <ChevronDown className="h-4 w-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
         </div>

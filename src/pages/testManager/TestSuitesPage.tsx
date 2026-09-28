@@ -13,7 +13,7 @@ import ContextBreadcrumb from '../../components/testManager/ContextBreadcrumb';
 import ProjectPresenceIndicator from '../../components/testManager/ProjectPresenceIndicator';
 import TagInput from '../../components/testManager/TagInput';
 import { getTagColor } from '../../utils/tagColors';
-import { TestSuite } from '../../types/testManager';
+import { TestSuite, ArchiveScope } from '../../types/testManager';
 import { useProjectPresence } from '../../hooks/useProjectPresence';
 import { useProjectWriteAccess } from '../../utils/projectPermissions';
 import { Tag, X, ChevronDown, Check } from 'lucide-react';
@@ -26,7 +26,7 @@ type StoredSuiteTagFilter = {
 };
 
 const TestSuitesPage: React.FC = () => {
-    const { activeProject, testCases, testSuites, projects, setActiveSuiteWithId, fetchTestCases, fetchTestCasesByProject, fetchTestSuites, fetchProjects, updateTestSuite, deleteTestSuite, setActiveProject, setActiveArea, clearFilters, searchQuery, clearSearchQuery } = useTestManagerStore(
+    const { activeProject, testCases, testSuites, projects, setActiveSuiteWithId, fetchTestCases, fetchTestCasesByProject, fetchTestSuites, fetchProjects, updateTestSuite, deleteTestSuite, archiveTestSuite, restoreTestSuite, setActiveProject, setActiveArea, clearFilters, searchQuery, clearSearchQuery } = useTestManagerStore(
         (state) => ({
             activeProject: state.activeProject,
             testCases: state.testCases,
@@ -39,6 +39,8 @@ const TestSuitesPage: React.FC = () => {
             fetchProjects: state.fetchProjects,
             updateTestSuite: state.updateTestSuite,
             deleteTestSuite: state.deleteTestSuite,
+            archiveTestSuite: state.archiveTestSuite,
+            restoreTestSuite: state.restoreTestSuite,
             setActiveProject: state.setActiveProject,
             setActiveArea: state.setActiveArea,
             clearFilters: state.clearFilters,
@@ -70,7 +72,13 @@ const TestSuitesPage: React.FC = () => {
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [suiteToEdit, setSuiteToEdit] = useState<TestSuite | null>(null);
     const [suiteToDelete, setSuiteToDelete] = useState<TestSuite | null>(null);
+    const [suiteToArchive, setSuiteToArchive] = useState<TestSuite | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isArchiving, setIsArchiving] = useState(false);
+    // Which slice of the list to show. Archived suites are hidden unless the
+    // user explicitly switches to them, and the two views need separate
+    // fetches because the server filters on the flag.
+    const [suiteScope, setSuiteScope] = useState<ArchiveScope>('active');
     const [selectedSuiteIds, setSelectedSuiteIds] = useState<string[]>([]);
     const [bulkTags, setBulkTags] = useState<string[]>([]);
     const [isBulkUpdatingTags, setIsBulkUpdatingTags] = useState(false);
@@ -195,17 +203,24 @@ const TestSuitesPage: React.FC = () => {
 
         if (activeProject) {
             setIsSuitesLoading(true);
-            // Fetch suites and test cases in parallel for stats
+            // Fetch suites and test cases in parallel for stats. Cases follow the
+            // same scope so the per-suite progress bars describe the same slice
+            // of work the list is showing.
             Promise.all([
-                fetchTestSuites(activeProject),
-                fetchTestCasesByProject(activeProject),
+                fetchTestSuites(activeProject, suiteScope),
+                fetchTestCasesByProject(activeProject, suiteScope),
             ]).finally(() => {
                 setIsSuitesLoading(false);
             });
         } else {
             setIsSuitesLoading(false);
         }
-    }, [activeProject, fetchTestSuites, fetchTestCasesByProject, searchParams]);
+    }, [activeProject, suiteScope, fetchTestSuites, fetchTestCasesByProject, searchParams]);
+
+    // Switching views invalidates any selection made in the other one.
+    useEffect(() => {
+        setSelectedSuiteIds([]);
+    }, [suiteScope]);
 
     // Filter test cases by active project
     const projectTestCases = useMemo(() => (
@@ -264,7 +279,12 @@ const TestSuitesPage: React.FC = () => {
                 ? 'No test suites match your search or filters.'
                 : 'No test suites match the selected filters.',
         }
-        : undefined;
+        : suiteScope === 'archived' && testSuites.length === 0
+            ? {
+                title: 'No Archived Test Suites',
+                description: 'Test suites you archive will appear here so you can restore them later.',
+            }
+            : undefined;
 
     const selectedSuites = testSuites.filter((suite) => selectedSuiteIds.includes(suite.id));
 
@@ -375,11 +395,16 @@ const TestSuitesPage: React.FC = () => {
             clearFilters();
             // Reset area filter when selecting a suite
             setActiveArea(null);
-            // Fetch test cases for this suite before navigating
-            fetchTestCases(suiteId);
+            // Fetch test cases for this suite before navigating, matching the
+            // scope we are viewing so an archived suite lands on archived cases.
+            fetchTestCases(suiteId, suiteScope);
         }
-        // Navigate to test cases page
-        navigate('/test-manager/cases');
+        // Carry the scope across so the cases page opens on the matching list.
+        navigate(
+            suiteScope === 'archived'
+                ? `/test-manager/cases?scope=archived${suiteId ? `&suiteId=${encodeURIComponent(suiteId)}` : ''}`
+                : '/test-manager/cases'
+        );
     };
 
     const handleCreateSuite = () => {
@@ -395,6 +420,57 @@ const TestSuitesPage: React.FC = () => {
     const handleDeleteSuite = (suite: TestSuite) => {
         if (!canWrite) { readOnlyToast(); return; }
         setSuiteToDelete(suite);
+    };
+
+    const handleArchiveSuite = (suite: TestSuite) => {
+        if (!canWrite) { readOnlyToast(); return; }
+        setSuiteToArchive(suite);
+    };
+
+    const handleRestoreSuite = async (suite: TestSuite) => {
+        if (!canWrite) { readOnlyToast(); return; }
+        try {
+            await restoreTestSuite(suite.id);
+            toast.success(`Test suite "${suite.name}" restored`);
+            if (activeProject) {
+                await Promise.all([
+                    fetchTestSuites(activeProject, suiteScope),
+                    fetchTestCasesByProject(activeProject, suiteScope),
+                ]);
+            }
+        } catch (error: unknown) {
+            console.error('Failed to restore suite:', error);
+            toast.error((error as Error)?.message || 'Failed to restore test suite');
+        }
+    };
+
+    const confirmArchiveSuite = async () => {
+        if (!canWrite) { readOnlyToast(); return; }
+        if (!suiteToArchive) return;
+
+        const suiteName = suiteToArchive.name;
+        const caseCount = suiteToArchive.caseCount ?? 0;
+        setIsArchiving(true);
+        try {
+            await archiveTestSuite(suiteToArchive.id);
+            setSuiteToArchive(null);
+            toast.success(
+                caseCount > 0
+                    ? `Archived "${suiteName}" and its ${caseCount} test case${caseCount > 1 ? 's' : ''}`
+                    : `Archived "${suiteName}"`
+            );
+            if (activeProject) {
+                await Promise.all([
+                    fetchTestSuites(activeProject, suiteScope),
+                    fetchTestCasesByProject(activeProject, suiteScope),
+                ]);
+            }
+        } catch (error: unknown) {
+            console.error('Failed to archive suite:', error);
+            toast.error((error as Error)?.message || 'Failed to archive test suite');
+        } finally {
+            setIsArchiving(false);
+        }
     };
 
     const confirmDeleteSuite = async () => {
@@ -472,9 +548,26 @@ const TestSuitesPage: React.FC = () => {
                     showSuiteSelector={false}
                     viewToggle={{ mode: viewMode, onToggle: handleViewModeToggle }}
                     rightContent={activeProject ? <ProjectPresenceIndicator users={projectUsers} maxDisplay={4} /> : undefined}
-                    beforeToggle={allTags.length > 0 || hasSuitesWithNoTags ? (
-                        <div className="relative" ref={tagFilterRef}>
-                            <button
+                    beforeToggle={(
+                        <>
+                            <div className="inline-flex items-center rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 p-0.5 shadow-sm dark:shadow-none">
+                                {(['active', 'archived'] as const).map((scope) => (
+                                    <button
+                                        key={scope}
+                                        onClick={() => setSuiteScope(scope)}
+                                        className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                                            suiteScope === scope
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
+                                        }`}
+                                    >
+                                        {scope === 'active' ? 'Active' : 'Archived'}
+                                    </button>
+                                ))}
+                            </div>
+                            {allTags.length > 0 || hasSuitesWithNoTags ? (
+                                <div className="relative" ref={tagFilterRef}>
+                                    <button
                                 onClick={() => setTagFilterOpen(!tagFilterOpen)}
                                 className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border rounded-lg transition-colors shadow-sm dark:shadow-none ${
                                     activeTagFilterCount > 0
@@ -552,8 +645,10 @@ const TestSuitesPage: React.FC = () => {
                                     </div>
                                 </div>
                             )}
-                        </div>
-                    ) : undefined}
+                                </div>
+                            ) : null}
+                        </>
+                    )}
                 />
             </div>
 
@@ -631,6 +726,21 @@ const TestSuitesPage: React.FC = () => {
                     requireConfirmationText="delete"
                 />
 
+                <ConfirmationModal
+                    isOpen={!!suiteToArchive}
+                    onClose={() => setSuiteToArchive(null)}
+                    onConfirm={confirmArchiveSuite}
+                    title="Archive Test Suite"
+                    message={
+                        (suiteToArchive?.caseCount ?? 0) > 0
+                            ? `Archiving "${suiteToArchive?.name}" also archives its ${suiteToArchive?.caseCount} test case${(suiteToArchive?.caseCount ?? 0) > 1 ? 's' : ''}. They will be hidden from test runs and analytics. You can restore the suite and its cases at any time.`
+                            : `Archiving "${suiteToArchive?.name}" will hide it from the active list. You can restore it at any time.`
+                    }
+                    confirmText="Archive Suite"
+                    isDestructive={true}
+                    isLoading={isArchiving}
+                />
+
                 <TestSuiteList
                     testCases={projectTestCases}
                     testSuites={filteredTestSuites}
@@ -638,6 +748,8 @@ const TestSuitesPage: React.FC = () => {
                     onCreate={handleCreateSuite}
                     onEdit={handleEditSuite}
                     onDelete={handleDeleteSuite}
+                    onArchive={handleArchiveSuite}
+                    onRestore={handleRestoreSuite}
                     viewMode={viewMode}
                     onViewModeToggle={handleViewModeToggle}
                     selectedSuiteIds={selectedSuiteIds}

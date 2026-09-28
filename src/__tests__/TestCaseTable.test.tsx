@@ -60,6 +60,9 @@ vi.mock('lucide-react', () => ({
     ArrowDown: () => <span data-testid="icon-down" />,
     RotateCcw: () => <span data-testid="icon-reset" />,
     ChevronRight: () => <span data-testid="icon-chevron" />,
+    Loader2: () => <span data-testid="icon-loader" />,
+    Archive: () => <span data-testid="icon-archive" />,
+    ArchiveRestore: () => <span data-testid="icon-archive-restore" />,
 }));
 
 // Stub IdDisplay – render the id text directly
@@ -235,8 +238,10 @@ describe('TestCaseTable – virtualized rendering', () => {
         const grid = container.querySelector('[role="grid"]');
         expect(grid).toBeTruthy();
         const headerCells = grid!.querySelectorAll('thead th');
-        // Default visible columns: ID, Title, Priority, Status, Last Modified, Created Date, Assignee, Actions
-        expect(headerCells.length).toBe(8);
+        // Default visible columns: ID, Title, Page / Area, Test Type, Priority,
+        // Status, Last Modified, Assignee, Actions. Created Date is hidden by
+        // default (see DEFAULT_HIDDEN_TABLE_COLUMNS).
+        expect(headerCells.length).toBe(9);
     });
 
     it('reflects selection state via checkbox when in selection mode', () => {

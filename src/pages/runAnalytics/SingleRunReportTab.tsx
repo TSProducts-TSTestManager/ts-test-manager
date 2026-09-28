@@ -132,17 +132,18 @@ const SingleRunReportTab: React.FC<SingleRunReportTabProps> = ({
         const load = async () => {
             setIsLoadingRuns(true);
             try {
-                const result = await testRunApi.getTestRunsPaginated(projectId, {
-                    limit: 40,
-                    offset: 0,
-                });
+                // Every run, not just the newest page: this list is a "pick one"
+                // picker that filters client-side, so a capped fetch would make
+                // older runs unreachable and could show an empty picker for a
+                // project that clearly has runs.
+                const allRuns = await testRunApi.getTestRuns(projectId);
                 if (cancelled) return;
 
                 const start = startDate ? new Date(startDate).getTime() : null;
                 const end = endDate ? new Date(endDate).getTime() : null;
                 const wantedTags = (tags ?? []).map((t) => t.toLowerCase());
 
-                const options: RunOption[] = result.items
+                const options: RunOption[] = allRuns
                     .filter((run) => {
                         if (groupId && run.groupId !== groupId) return false;
                         if (onlyRunsWithTickets && (run.ticketCount ?? 0) === 0) return false;

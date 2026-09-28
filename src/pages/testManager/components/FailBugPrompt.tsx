@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Bug, ChevronDown, Loader2, Layers, ClipboardList, X, Box, Users } from 'lucide-react';
 import RichTextEditor from '../../../components/testManager/RichTextEditor';
 import TagInput from '../../../components/testManager/TagInput';
-import { CaseSnapshot, TicketPriority, TicketSeverity, FailureType } from '../../../types/testManager';
+import TicketAttachmentPicker from '../../../components/testManager/TicketAttachmentPicker';
+import { CaseSnapshot, TicketPriority, TicketSeverity, FailureType, TicketAttachment } from '../../../types/testManager';
 import {
     getTicketPrioritySelectColor,
     getTicketSeveritySelectColor,
@@ -17,6 +18,8 @@ export interface FailBugPromptData {
     severity: TicketSeverity;
     failureType?: FailureType;
     tags: string[];
+    /** Files forwarded to the linked JIRA bug (never stored in TSM) */
+    attachments?: TicketAttachment[];
 }
 
 export interface FailBugPromptProps {
@@ -99,6 +102,7 @@ const FailBugPrompt: React.FC<FailBugPromptProps> = ({
     const [severity, setSeverity] = useState<TicketSeverity>(defaults.severity);
     const [failureType, setFailureType] = useState<FailureType>(FailureType.Other);
     const [tags, setTags] = useState<string[]>(DEFAULT_TAGS);
+    const [attachments, setAttachments] = useState<TicketAttachment[]>([]);
 
     // Seed the form each time the prompt is mounted for a new failing case.
     useEffect(() => {
@@ -107,6 +111,7 @@ const FailBugPrompt: React.FC<FailBugPromptProps> = ({
         setPriority(defaults.priority);
         setSeverity(defaults.severity);
         setTags(DEFAULT_TAGS);
+        setAttachments([]);
         const suggested = suggestFailureType(`${caseSnapshot.title} ${caseSnapshot.stepsContent || ''} ${caseSnapshot.expectedResult || ''} ${[...DEFAULT_TAGS, ...(tagSuggestions || [])].join(' ')}`);
         setFailureType(suggested);
     }, [caseSnapshot.title, seededDescription, defaults.priority, defaults.severity, caseSnapshot.stepsContent, caseSnapshot.expectedResult, tagSuggestions]);
@@ -122,6 +127,7 @@ const FailBugPrompt: React.FC<FailBugPromptProps> = ({
             severity,
             failureType,
             tags,
+            attachments: attachments.length > 0 ? attachments : undefined,
         });
     };
 
@@ -264,6 +270,13 @@ const FailBugPrompt: React.FC<FailBugPromptProps> = ({
                         placeholder="Describe what went wrong. Steps to reproduce, expected vs actual, screenshots, etc."
                     />
                 </div>
+
+                {/* Attachments → handed to the linked JIRA bug on save */}
+                <TicketAttachmentPicker
+                    attachments={attachments}
+                    onChange={setAttachments}
+                    disabled={isSubmitting}
+                />
 
                 {/* Tags */}
                 <div className="mb-2">

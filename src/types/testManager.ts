@@ -6,12 +6,31 @@ export enum Priority {
     Critical = 'Critical'
 }
 
+// Archiving is a separate lifecycle flag (`archived` on the entity), not a
+// workflow status. Status stays purely about review progress.
 export enum Status {
     Draft = 'Draft',
     InReview = 'In Review',
     Ready = 'Ready',
     Updated = 'Updated',
-    Archived = 'Archived',
+}
+
+/**
+ * Which slice of the archive-aware lists to show.
+ * 'active' = hide archived (default), 'archived' = archived only.
+ */
+export type ArchiveScope = 'active' | 'archived';
+
+/**
+ * What kind of check a test case performs. Optional: cases created before this
+ * field existed have no value rather than a misleading default.
+ */
+export enum TestType {
+    Positive = 'Positive',
+    Negative = 'Negative',
+    UI = 'UI',
+    Performance = 'Performance',
+    Other = 'Other',
 }
 
 export enum TestRunStatus {
@@ -100,12 +119,95 @@ export interface HiddenDefaultFields {
 export interface HiddenDefaultColumns {
     id?: boolean;
     title?: boolean;
+    area?: boolean;
+    testType?: boolean;
     priority?: boolean;
     status?: boolean;
     createdAt?: boolean;
     lastModified?: boolean;
     assignedTester?: boolean;
 }
+
+/** Built-in test case table columns, in their default display order. */
+export const TEST_CASE_TABLE_COLUMNS = [
+    'id',
+    'title',
+    'area',
+    'testType',
+    'priority',
+    'status',
+    'lastModified',
+    'createdAt',
+    'assignedTester',
+] as const;
+export type TestCaseTableColumnKey = (typeof TEST_CASE_TABLE_COLUMNS)[number];
+
+export const TEST_CASE_TABLE_COLUMN_LABELS: Record<TestCaseTableColumnKey, string> = {
+    id: 'ID',
+    title: 'Title',
+    area: 'Page / Area',
+    testType: 'Test Type',
+    priority: 'Priority',
+    status: 'Status',
+    lastModified: 'Last Modified',
+    createdAt: 'Created Date',
+    assignedTester: 'Assigned Tester',
+};
+
+/**
+ * Starting state for a project that has never customised its table: every
+ * built-in column visible in the order declared above, except Created Date,
+ * which is redundant next to Last Modified for day-to-day work. Projects
+ * adjust this in Settings > Test Cases > Table Columns, and an explicitly saved
+ * `hiddenDefaultColumns` object always wins over this.
+ */
+export const DEFAULT_HIDDEN_TABLE_COLUMNS: Required<HiddenDefaultColumns> = {
+    id: false,
+    title: false,
+    area: false,
+    testType: false,
+    priority: false,
+    status: false,
+    lastModified: false,
+    createdAt: true,
+    assignedTester: false,
+};
+
+/**
+ * Merge a project's stored column settings over the app defaults.
+ *
+ * Mongoose gives every project document a fully-populated `hiddenDefaultColumns`
+ * object, so "not configured" cannot be detected by absence alone. A stored
+ * object that hides nothing is treated as not configured, which is what lets
+ * projects saved before a default change pick the new default up. Once a user
+ * hides any column their object is respected verbatim.
+ */
+export const resolveHiddenTableColumns = (
+    saved?: HiddenDefaultColumns
+): Required<HiddenDefaultColumns> => {
+    if (!saved || !Object.values(saved).some((hidden) => hidden === true)) {
+        return DEFAULT_HIDDEN_TABLE_COLUMNS;
+    }
+    return { ...DEFAULT_HIDDEN_TABLE_COLUMNS, ...saved };
+};
+
+/**
+ * Resolve the display order for the built-in columns.
+ *
+ * A stored `columnOrder` is honoured first, then any column it omits keeps its
+ * built-in default position at the end. That lets a project reorder a subset
+ * without restating the full list, and keeps a column added in a later release
+ * from disappearing for existing projects.
+ */
+export const resolveTableColumnOrder = (
+    columnOrder?: readonly TestCaseTableColumnKey[],
+): TestCaseTableColumnKey[] => {
+    const known = new Set<string>(TEST_CASE_TABLE_COLUMNS);
+    const preferred = (columnOrder ?? []).filter((key) => known.has(key));
+    const seen = new Set(preferred);
+    const remaining = TEST_CASE_TABLE_COLUMNS.filter((key) => !seen.has(key));
+    return [...preferred, ...remaining];
+};
 
 export interface VideoEvidenceSettings {
     enabled: boolean;
@@ -118,6 +220,7 @@ export interface ProjectSettings {
         table?: {
             hiddenDefaultColumns?: HiddenDefaultColumns;
             visibleCustomFieldIds?: string[];
+            columnOrder?: TestCaseTableColumnKey[];
         };
         customFields?: CustomFieldDefinition[];
     };
@@ -235,6 +338,9 @@ export interface TestSuite {
     description?: string;
     tags?: string[];
     caseCount?: number;
+    /** Soft-deleted. Hidden unless the Archived view is selected. */
+    archived?: boolean;
+    archivedAt?: string | null;
     createdAt: string;
     updatedAt: string;
 }
@@ -254,6 +360,8 @@ export interface TestCase {
     title: string;
     priority: Priority;
     status: Status; // Unified status
+    /** Optional. Undefined for cases created before the field existed. */
+    testType?: TestType;
     createdAt: string;
     lastModified: string;
     assignedTester: Tester;
@@ -269,6 +377,9 @@ export interface TestCase {
     history?: HistoryEntry[];
     projectId: string;
     order?: number;
+    /** Soft-deleted. Hidden from lists, the run picker, and analytics. */
+    archived?: boolean;
+    archivedAt?: string | null;
 }
 
 // Test Run Types
@@ -809,12 +920,17 @@ export interface TestRunTrendReport {
 
 // ===== Ticket Types =====
 
+// Mirrors the JIRA workflow statuses so both sides map 1:1.
 export enum TicketStatus {
+    ToDo = 'To Do',
     Open = 'Open',
-    InProgress = 'In Progress',
-    Resolved = 'Resolved',
-    Closed = 'Closed',
     Reopened = 'Reopened',
+    InProgress = 'In Progress',
+    QATesting = 'QA/Testing',
+    OutOfScope = 'Out of scope',
+    Resolved = 'Resolved',
+    Done = 'Done',
+    Closed = 'Closed',
 }
 
 export enum TicketPriority {
@@ -904,6 +1020,8 @@ export interface Ticket {
     jiraIssueKey?: string | null;
     jiraUrl?: string | null;
     jiraStatus?: string | null;
+    /** When JIRA status was last re-read, so the UI can show how current it is. */
+    jiraLastSyncAt?: string | null;
     createdAt: string;
     updatedAt: string;
 }

@@ -16,7 +16,14 @@ export enum Status {
   InReview = "In Review",
   Ready = "Ready",
   Updated = "Updated",
-  Archived = "Archived",
+}
+
+export enum TestType {
+  Positive = "Positive",
+  Negative = "Negative",
+  UI = "UI",
+  Performance = "Performance",
+  Other = "Other",
 }
 
 // Base API Response
@@ -104,6 +111,8 @@ export interface TestSuiteResponse {
   projectId: string;
   createdBy: string;
   caseCount: number;
+  archived: boolean;
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -117,6 +126,7 @@ export interface HistoryEntryResponse {
     title?: string;
     priority?: Priority;
     status?: Status;
+    testType?: TestType;
     area?: string;
     expectedResult?: string;
     testDescription?: string;
@@ -133,6 +143,7 @@ export interface TestCaseResponse {
   title: string;
   priority: Priority;
   status: Status;
+  testType?: TestType;
   projectId: string;
   suiteId: string;
   suite: string; // Suite name for display
@@ -146,6 +157,8 @@ export interface TestCaseResponse {
   history: HistoryEntryResponse[];
   order: number;
   lastModified: string;
+  archived: boolean;
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -184,6 +197,8 @@ export interface CreateTestCaseRequest {
   title: string;
   priority?: Priority;
   status?: Status;
+  /** Empty string clears the field; omit to leave it untouched. */
+  testType?: TestType | "";
   assignedTesterId?: string;
   area?: string;
   expectedResult?: string;
@@ -197,6 +212,8 @@ export interface UpdateTestCaseRequest {
   title?: string;
   priority?: Priority;
   status?: Status;
+  /** Empty string clears the field; omit to leave it untouched. */
+  testType?: TestType | "";
   assignedTesterId?: string;
   area?: string;
   expectedResult?: string;
@@ -442,12 +459,17 @@ export interface ApiErrorResponse {
 // TICKET TYPES
 // ============================================================================
 
+// Mirrors the JIRA workflow statuses so both sides map 1:1.
 export enum TicketStatus {
+  ToDo = "To Do",
   Open = "Open",
-  InProgress = "In Progress",
-  Resolved = "Resolved",
-  Closed = "Closed",
   Reopened = "Reopened",
+  InProgress = "In Progress",
+  QATesting = "QA/Testing",
+  OutOfScope = "Out of scope",
+  Resolved = "Resolved",
+  Done = "Done",
+  Closed = "Closed",
 }
 
 export enum TicketPriority {
@@ -563,6 +585,8 @@ export interface TicketListResponse {
   jiraIssueKey?: string | null;
   jiraUrl?: string | null;
   jiraStatus?: string | null;
+  /** When JIRA status was last re-read, so the UI can show how current it is. */
+  jiraLastSyncAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

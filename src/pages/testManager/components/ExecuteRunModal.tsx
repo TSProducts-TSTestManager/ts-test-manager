@@ -362,6 +362,7 @@ const ExecuteRunModal: React.FC<ExecuteRunModalProps> = ({
                 relatedRunId: testRun.id,
                 relatedRunItemId: pendingFail.itemId,
                 tags: data.tags.length > 0 ? data.tags : undefined,
+                attachments: data.attachments,
             });
             toast.success('Bug logged');
             const fail = pendingFail;

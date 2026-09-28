@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import toast from 'react-hot-toast';
 import { TestCase, TestSuite, Status } from '../../types/testManager';
-import { Folder, MoreHorizontal, PieChart, Plus, Pencil, Trash2, Share2, ArrowUp, ArrowDown, Tag, Play } from 'lucide-react';
+import { Folder, MoreHorizontal, PieChart, Plus, Pencil, Trash2, Share2, ArrowUp, ArrowDown, Tag, Play, Archive, ArchiveRestore } from 'lucide-react';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { getTagColor } from '../../utils/tagColors';
 
@@ -14,6 +14,8 @@ interface TestSuiteListProps {
     onCreate: () => void;
     onEdit?: (suite: TestSuite) => void;
     onDelete?: (suite: TestSuite) => void;
+    onArchive?: (suite: TestSuite) => void;
+    onRestore?: (suite: TestSuite) => void;
     viewMode: 'card' | 'table';
     onViewModeToggle: () => void;
     selectedSuiteIds: string[];
@@ -42,6 +44,8 @@ const TestSuiteList: React.FC<TestSuiteListProps> = ({
     onCreate,
     onEdit,
     onDelete,
+    onArchive,
+    onRestore,
     viewMode,
     onViewModeToggle: _onViewModeToggle,
     selectedSuiteIds,
@@ -104,11 +108,10 @@ const TestSuiteList: React.FC<TestSuiteListProps> = ({
         const inReview = cases.filter(c => c.status === Status.InReview).length;
         const draft = cases.filter(c => c.status === Status.Draft).length;
         const updated = cases.filter(c => c.status === Status.Updated).length;
-        const archived = cases.filter(c => c.status === Status.Archived).length;
 
         const progress = total === 0 ? 0 : Math.round((ready / total) * 100);
 
-        return { total, ready, inReview, draft, updated, archived, progress };
+        return { total, ready, inReview, draft, updated, progress };
     };
 
     const getSortedSuites = () => {
@@ -181,6 +184,20 @@ const TestSuiteList: React.FC<TestSuiteListProps> = ({
         setDropdownPosition(null);
         if (selectedSuite && onDelete) {
             onDelete(selectedSuite);
+        }
+    };
+
+    const handleArchive = () => {
+        setDropdownPosition(null);
+        if (selectedSuite && onArchive) {
+            onArchive(selectedSuite);
+        }
+    };
+
+    const handleRestore = () => {
+        setDropdownPosition(null);
+        if (selectedSuite && onRestore) {
+            onRestore(selectedSuite);
         }
     };
 
@@ -258,7 +275,15 @@ const TestSuiteList: React.FC<TestSuiteListProps> = ({
                                             <Folder className="h-5 w-5 fill-blue-100 dark:fill-blue-900/50" strokeWidth={2} />
                                         </div>
                                         <div>
-                                            <h3 className="font-semibold text-gray-900 dark:text-white text-lg tracking-tight">{suite.name}</h3>
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="font-semibold text-gray-900 dark:text-white text-lg tracking-tight">{suite.name}</h3>
+                                                {suite.archived && (
+                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                                        <Archive className="h-2.5 w-2.5" />
+                                                        Archived
+                                                    </span>
+                                                )}
+                                            </div>
                                             <span className="text-xs text-gray-400 dark:text-gray-500 font-medium uppercase tracking-wider">{stats.total} Cases</span>                                            {suite.tags && suite.tags.length > 0 && (
                                                 <div className="flex flex-wrap gap-1 mt-1.5">
                                                     {suite.tags.map(tag => (
@@ -329,13 +354,6 @@ const TestSuiteList: React.FC<TestSuiteListProps> = ({
                                                 style={{ width: `${(stats.updated / stats.total) * 100}%` }}
                                             />
                                         )}
-                                        {/* Archived - Gray */}
-                                        {stats.archived > 0 && (
-                                            <div
-                                                className="bg-gray-300 dark:bg-gray-600 h-full transition-all duration-500"
-                                                style={{ width: `${(stats.archived / stats.total) * 100}%` }}
-                                            />
-                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -375,15 +393,6 @@ const TestSuiteList: React.FC<TestSuiteListProps> = ({
                                     >
                                         <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />
                                         {stats.updated} Updated
-                                    </button>
-                                )}
-                                {stats.archived > 0 && (
-                                    <button
-                                        onClick={(e) => handleStatusClick(e, suite, Status.Archived)}
-                                        className="flex items-center gap-1.5 text-xs font-medium text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 px-2.5 py-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-                                    >
-                                        <div className="h-1.5 w-1.5 rounded-full bg-gray-300" />
-                                        {stats.archived} Archived
                                     </button>
                                 )}
                                 {stats.total === 0 && (
@@ -499,6 +508,12 @@ const TestSuiteList: React.FC<TestSuiteListProps> = ({
                                                     <Folder className="h-4 w-4 fill-blue-100 dark:fill-blue-900/50" strokeWidth={2} />
                                                 </div>
                                                 <span className="text-sm font-medium text-gray-900 dark:text-white">{suite.name}</span>
+                                                {suite.archived && (
+                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                                        <Archive className="h-2.5 w-2.5" />
+                                                        Archived
+                                                    </span>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="py-4 px-4">
@@ -530,12 +545,6 @@ const TestSuiteList: React.FC<TestSuiteListProps> = ({
                                                         <div
                                                             className="bg-blue-500 h-full transition-all duration-500"
                                                             style={{ width: `${(stats.updated / stats.total) * 100}%` }}
-                                                        />
-                                                    )}
-                                                    {stats.archived > 0 && (
-                                                        <div
-                                                            className="bg-gray-300 dark:bg-gray-600 h-full transition-all duration-500"
-                                                            style={{ width: `${(stats.archived / stats.total) * 100}%` }}
                                                         />
                                                     )}
                                                 </div>
@@ -577,15 +586,6 @@ const TestSuiteList: React.FC<TestSuiteListProps> = ({
                                                     >
                                                         <div className="h-1 w-1 rounded-full bg-blue-500" />
                                                         {stats.updated} Updated
-                                                    </button>
-                                                )}
-                                                {stats.archived > 0 && (
-                                                    <button
-                                                        onClick={(e) => handleStatusClick(e, suite, Status.Archived)}
-                                                        className="flex items-center gap-1 text-xs font-medium text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-                                                    >
-                                                        <div className="h-1 w-1 rounded-full bg-gray-300" />
-                                                        {stats.archived} Archived
                                                     </button>
                                                 )}
                                                 {stats.total === 0 && (
@@ -694,6 +694,25 @@ const TestSuiteList: React.FC<TestSuiteListProps> = ({
                     <Pencil className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                     Edit Suite
                 </button>
+                {selectedSuite?.archived ? (
+                    <button
+                        onClick={handleRestore}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    >
+                        <ArchiveRestore className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                        Restore Suite
+                    </button>
+                ) : (
+                    onArchive && (
+                        <button
+                            onClick={handleArchive}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        >
+                            <Archive className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                            Archive Suite
+                        </button>
+                    )
+                )}
                 <div className="h-px bg-gray-100 dark:bg-gray-700 my-1" />
                 <button
                     onClick={handleDelete}

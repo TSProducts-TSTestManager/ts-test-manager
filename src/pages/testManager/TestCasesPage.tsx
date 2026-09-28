@@ -10,23 +10,26 @@ import EmptyProjectState from '../../components/testManager/EmptyProjectState';
 import ContextBreadcrumb from '../../components/testManager/ContextBreadcrumb';
 import GeminiGenerationModal from '../../components/testManager/GeminiGenerationModal';
 import ExportTestCasesModal from '../../components/testManager/ExportTestCasesModal';
-import ImportTestCasesModal from '../../components/testManager/ImportTestCasesModal';
+import ImportTestCasesModal, { UploadCasePayload } from '../../components/testManager/ImportTestCasesModal';
 import ProjectPresenceIndicator from '../../components/testManager/ProjectPresenceIndicator';
 import { mapTestCaseResponse, useTestManagerStore } from '../../store/testManagerStore';
 import { useRealtimeTestCases } from '../../hooks/useRealtimeTestCases';
 import { useProjectPresence } from '../../hooks/useProjectPresence';
-import { TestCase, Status, Priority, CustomFieldDefinition, HiddenDefaultColumns } from '../../types/testManager';
-import { reorderTestCases, getTestCase, getTestSuite, bulkImportTestCasesWithSuite, getTestCasesByProjectPaginated, getTestCasesBySuitePaginated } from '../../services/testManagerApi';
+import { TestCase, Status, Priority, TestType, CustomFieldDefinition, HiddenDefaultColumns, ArchiveScope, resolveHiddenTableColumns } from '../../types/testManager';
+import { reorderTestCases, getTestCase, getTestSuite, getTestCasesByProjectPaginated, getTestCasesBySuitePaginated, createTestCaseInProject, CaseListQuery } from '../../services/testManagerApi';
 import { exportTestCasesToCSV, exportTestCasesToXLSX, ExportColumn } from '../../utils/exportTestCases';
 import { escapeHtml } from '../../utils/sanitize';
-import { CreateTestCaseWithSuiteRequest, UpdateTestCaseRequest } from '../../types/api/testManager.api';
+import { UpdateTestCaseRequest } from '../../types/api/testManager.api';
 import { useProjectWriteAccess } from '../../utils/projectPermissions';
-import { Sparkles, GripVertical, ArrowUp, ArrowDown, RotateCcw, Tag, X, ChevronDown, Check, Loader2 } from 'lucide-react';
+import { Sparkles, GripVertical, ArrowUp, ArrowDown, RotateCcw, Tag, X, ChevronDown, Check, Loader2, Archive, ArchiveRestore } from 'lucide-react';
 import { getTagColor } from '../../utils/tagColors';
 
 const getSuiteTagFilterStorageKey = (projectId: string) => `testSuitesTagFilter:${projectId}`;
 const PROJECT_CASES_PAGE_SIZE = 30;
-const STATUS_FILTER_PAGE_SIZE = 100;
+/** Page size used while walking the whole result set for an export. */
+const EXPORT_PAGE_SIZE = 200;
+/** Hard ceiling on an export so one click cannot pull the entire database. */
+const MAX_EXPORT_ROWS = 10000;
 
 type StoredSuiteTagFilter = {
     selectedTags: string[];
@@ -64,7 +67,11 @@ const TestCasesPage: React.FC = () => {
         setActiveArea,
         setExportTestCasesCallback,
         setImportTestCasesCallback,
+        setRefreshTestCasesCallback,
         setTestCases,
+        archiveTestCase,
+        restoreTestCase,
+        bulkArchiveTestCases,
     } = useTestManagerStore(
         (state) => ({
             testCases: state.testCases,
@@ -96,7 +103,11 @@ const TestCasesPage: React.FC = () => {
             setActiveArea: state.setActiveArea,
             setExportTestCasesCallback: state.setExportTestCasesCallback,
             setImportTestCasesCallback: state.setImportTestCasesCallback,
+            setRefreshTestCasesCallback: state.setRefreshTestCasesCallback,
             setTestCases: state.setTestCases,
+            archiveTestCase: state.archiveTestCase,
+            restoreTestCase: state.restoreTestCase,
+            bulkArchiveTestCases: state.bulkArchiveTestCases,
         }),
         shallow
     );
@@ -139,9 +150,7 @@ const TestCasesPage: React.FC = () => {
     const projectCasesScrollContainerRef = useRef<HTMLDivElement>(null);
     const projectCasesSentinelRef = useRef<HTMLDivElement>(null);
     const suiteCasesSentinelRef = useRef<HTMLDivElement>(null);
-    const statusFilterSentinelRef = useRef<HTMLDivElement>(null);
-    const [statusFilterVisibleCount, setStatusFilterVisibleCount] = useState(STATUS_FILTER_PAGE_SIZE);
-    
+
     // Track if we've already processed the testCaseId URL parameter
     const processedTestCaseIdRef = useRef<string | null>(null);
     const processedSuiteIdRef = useRef<string | null>(null);
@@ -154,6 +163,62 @@ const TestCasesPage: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
+
+    // Which slice of the list to show. Archived cases are hidden unless the
+    // user switches to them; the server filters on the flag, so the two views
+    // need separate loads.
+    const [caseScope, setCaseScope] = useState<ArchiveScope>(() => {
+        const fromUrl = new URLSearchParams(window.location.search).get('scope');
+        return fromUrl === 'archived' ? 'archived' : 'active';
+    });
+
+    // Debounce the header search so a keystroke does not fire a request each time.
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    useEffect(() => {
+        const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+        return () => clearTimeout(handle);
+    }, [searchQuery]);
+
+    // Everything the list can filter and sort on, sent to the server so the
+    // result covers the whole dataset rather than the rows already in memory.
+    // Kept as a memo so the loaders re-run only when a value really changes.
+    const caseListQuery = useMemo<CaseListQuery>(() => {
+        const query: CaseListQuery = {
+            limit: PROJECT_CASES_PAGE_SIZE,
+            offset: 0,
+            archived: caseScope,
+            search: debouncedSearch || undefined,
+            status: filters.status.length > 0 ? filters.status : undefined,
+            priority: filters.priority.length > 0 ? filters.priority : undefined,
+            testType: filters.testType.length > 0 ? filters.testType : undefined,
+            area: activeArea || undefined,
+            lastModifiedStart: filters.dateRange.start,
+            lastModifiedEnd: filters.dateRange.end,
+            createdStart: filters.createdAtRange?.start,
+            createdEnd: filters.createdAtRange?.end,
+        };
+
+        // 'custom' is the manual drag order, which the server applies as its
+        // default. Only a real column sort needs to travel with the request.
+        if (sortInfo && sortInfo.sortMode === 'standard') {
+            query.sortField = sortInfo.sortField;
+            query.sortDir = sortInfo.sortOrder;
+        }
+
+        return query;
+    }, [
+        activeArea,
+        caseScope,
+        debouncedSearch,
+        filters.createdAtRange?.end,
+        filters.createdAtRange?.start,
+        filters.dateRange.end,
+        filters.dateRange.start,
+        filters.priority,
+        filters.status,
+        filters.testType,
+        sortInfo,
+    ]);
 
     const loadProjectCases = useCallback(async (reset = true, offsetValue = 0) => {
         if (!activeProject) return;
@@ -171,7 +236,7 @@ const TestCasesPage: React.FC = () => {
         try {
             const currentOffset = reset ? 0 : offsetValue;
             const result = await getTestCasesByProjectPaginated(activeProject, {
-                limit: PROJECT_CASES_PAGE_SIZE,
+                ...caseListQuery,
                 offset: currentOffset,
             });
             const mapped = result.items.map(mapTestCaseResponse);
@@ -200,7 +265,7 @@ const TestCasesPage: React.FC = () => {
                 setIsProjectCasesLoadingMore(false);
             }
         }
-    }, [activeProject, setTestCases]);
+    }, [activeProject, caseListQuery, setTestCases]);
 
     const loadSuiteCases = useCallback(async (reset = true, offsetValue = 0) => {
         if (!activeSuiteId) return;
@@ -218,7 +283,7 @@ const TestCasesPage: React.FC = () => {
         try {
             const currentOffset = reset ? 0 : offsetValue;
             const result = await getTestCasesBySuitePaginated(activeSuiteId, {
-                limit: PROJECT_CASES_PAGE_SIZE,
+                ...caseListQuery,
                 offset: currentOffset,
             });
             const mapped = result.items.map(mapTestCaseResponse);
@@ -247,30 +312,7 @@ const TestCasesPage: React.FC = () => {
                 setIsSuiteCasesLoadingMore(false);
             }
         }
-    }, [activeSuiteId, setTestCases]);
-
-    const requiresFullSuiteDataset = useMemo(() => (
-        !!activeSuiteId && (
-            !!activeArea ||
-            !!searchQuery ||
-            filters.status.length > 0 ||
-            filters.priority.length > 0 ||
-            !!filters.dateRange.start ||
-            !!filters.dateRange.end ||
-            !!filters.createdAtRange?.start ||
-            !!filters.createdAtRange?.end
-        )
-    ), [
-        activeArea,
-        activeSuiteId,
-        filters.createdAtRange?.end,
-        filters.createdAtRange?.start,
-        filters.dateRange.end,
-        filters.dateRange.start,
-        filters.priority,
-        filters.status,
-        searchQuery,
-    ]);
+    }, [activeSuiteId, caseListQuery, setTestCases]);
 
     // Restore suite tag filter state per project (shared with TestSuitesPage)
     useEffect(() => {
@@ -350,7 +392,12 @@ const TestCasesPage: React.FC = () => {
     const projectSettings = activeProject ? getProjectSettings(activeProject) : null;
     const customFieldDefinitions: CustomFieldDefinition[] = (projectSettings?.testCases?.customFields || []).filter((f: CustomFieldDefinition) => !f.deleted);
     const visibleCustomFieldIds: string[] = projectSettings?.testCases?.table?.visibleCustomFieldIds || [];
-    const hiddenColumns: HiddenDefaultColumns = projectSettings?.testCases?.table?.hiddenDefaultColumns || {};
+    const hiddenColumns: HiddenDefaultColumns = resolveHiddenTableColumns(projectSettings?.testCases?.table?.hiddenDefaultColumns);
+// Stable reference when unset so the table's memoized column list is not rebuilt every render.
+const tableColumnOrder = useMemo(
+    () => projectSettings?.testCases?.table?.columnOrder,
+    [projectSettings?.testCases?.table?.columnOrder]
+);
 
     // Ensure projects are loaded when this page is visited directly
     useEffect(() => {
@@ -502,15 +549,7 @@ const TestCasesPage: React.FC = () => {
             setProjectCasesHasMore(false);
             setProjectCasesOffset(0);
             setProjectCasesTotal(0);
-
-            if (requiresFullSuiteDataset) {
-                setSuiteCasesHasMore(false);
-                setSuiteCasesOffset(0);
-                setSuiteCasesTotal(0);
-                fetchTestCases(activeSuiteId);
-            } else {
-                loadSuiteCases(true, 0);
-            }
+            loadSuiteCases(true, 0);
         } else if (activeProject) {
             setSuiteCasesHasMore(false);
             setSuiteCasesOffset(0);
@@ -519,13 +558,11 @@ const TestCasesPage: React.FC = () => {
             loadProjectCases(true, 0);
         }
     }, [
-        activeArea,
         activeProject,
         activeSuiteId,
-        fetchTestCases,
+        caseListQuery,
         loadProjectCases,
         loadSuiteCases,
-        requiresFullSuiteDataset,
         searchParams,
     ]);
 
@@ -574,7 +611,7 @@ const TestCasesPage: React.FC = () => {
     }, [activeSuiteId, handleLoadMoreProjectCases, isProjectCasesLoading, isProjectCasesLoadingMore, projectCasesHasMore]);
 
     useEffect(() => {
-        if (!activeSuiteId || requiresFullSuiteDataset || !suiteCasesHasMore || isSuiteCasesLoading || isSuiteCasesLoadingMore) {
+        if (!activeSuiteId || !suiteCasesHasMore || isSuiteCasesLoading || isSuiteCasesLoadingMore) {
             return;
         }
 
@@ -604,7 +641,6 @@ const TestCasesPage: React.FC = () => {
         handleLoadMoreSuiteCases,
         isSuiteCasesLoading,
         isSuiteCasesLoadingMore,
-        requiresFullSuiteDataset,
         suiteCasesHasMore,
     ]);
 
@@ -677,7 +713,10 @@ const TestCasesPage: React.FC = () => {
             toast.error('You have read-only access to this project');
             return;
         }
-        updateTestCase(caseId, { [field]: value } as UpdateTestCaseRequest);
+        // The table's Test Type cell sends '' to clear, which the API reads as
+        // "unset" rather than "leave unchanged".
+        const payload = field === 'testType' ? { testType: value as TestType | '' } : { [field]: value };
+        updateTestCase(caseId, payload as UpdateTestCaseRequest);
     }, [canWrite, updateTestCase]);
 
     const handleStatusChange = useCallback((caseId: string, status: Status) => {
@@ -687,6 +726,79 @@ const TestCasesPage: React.FC = () => {
         }
         updateTestCase(caseId, { status: status });
     }, [canWrite, updateTestCase]);
+
+    /** Reload the current scope after a write so counts and the list agree. */
+    const refreshCurrentScope = useCallback(async () => {
+        if (activeSuiteId) {
+            loadSuiteCases(true, 0);
+        } else if (activeProject) {
+            loadProjectCases(true, 0);
+        }
+    }, [activeSuiteId, activeProject, loadSuiteCases, loadProjectCases]);
+
+    const handleScopeChange = useCallback((scope: ArchiveScope) => {
+        setCaseScope(scope);
+        // A selection made in one view is meaningless in the other.
+        clearSelection();
+        const next = new URLSearchParams(searchParams);
+        if (scope === 'archived') {
+            next.set('scope', 'archived');
+        } else {
+            next.delete('scope');
+        }
+        setSearchParams(next, { replace: true });
+    }, [clearSelection, searchParams, setSearchParams]);
+
+    const handleArchiveCase = useCallback(async (testCase: TestCase) => {
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            return;
+        }
+        try {
+            await archiveTestCase(testCase.id);
+            toast.success(`Archived "${testCase.title}"`);
+            await refreshCurrentScope();
+        } catch (error) {
+            console.error('Failed to archive test case:', error);
+            toast.error(error instanceof Error ? error.message : 'Failed to archive test case');
+        }
+    }, [canWrite, archiveTestCase, refreshCurrentScope]);
+
+    const handleRestoreCase = useCallback(async (testCase: TestCase) => {
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            return;
+        }
+        try {
+            await restoreTestCase(testCase.id);
+            toast.success(`Restored "${testCase.title}"`);
+            await refreshCurrentScope();
+        } catch (error) {
+            console.error('Failed to restore test case:', error);
+            toast.error(error instanceof Error ? error.message : 'Failed to restore test case');
+        }
+    }, [canWrite, restoreTestCase, refreshCurrentScope]);
+
+    const handleBulkArchive = useCallback(async (archived: boolean) => {
+        if (!canWrite) {
+            toast.error('You have read-only access to this project');
+            return;
+        }
+        const ids = selectedTestCaseIds;
+        if (ids.length === 0) return;
+
+        try {
+            await bulkArchiveTestCases(ids, archived);
+            toast.success(
+                `${archived ? 'Archived' : 'Restored'} ${ids.length} test case${ids.length > 1 ? 's' : ''}`
+            );
+            clearSelection();
+            await refreshCurrentScope();
+        } catch (error) {
+            console.error('Failed to bulk archive test cases:', error);
+            toast.error(error instanceof Error ? error.message : 'Failed to update test cases');
+        }
+    }, [canWrite, selectedTestCaseIds, bulkArchiveTestCases, clearSelection, refreshCurrentScope]);
 
     const allSuiteTags = useMemo(
         () => Array.from(new Set(testSuites.flatMap(suite => suite.tags || []))).sort(),
@@ -722,106 +834,19 @@ const TestCasesPage: React.FC = () => {
         });
     }, [testSuites, selectedSuiteTags, includeSuitesWithNoTags, isSuiteTagFilterModeOn]);
 
-    // Memoize the filtered & searched test cases to avoid re-computing on every render
-    const displayedCases = useMemo(() => {
-        let cases = activeArea
-            ? testCases.filter(tc => tc.area === activeArea)
-            : testCases;
+    // Filters, search, area and sort are applied by the server, so the loaded
+    // rows are already the matches. Re-filtering here would only ever narrow
+    // what a single page returned.
+    const displayedCases = testCases;
 
-        // Apply client-side filters
-        if (filters.status.length > 0) {
-            cases = cases.filter(tc => filters.status.includes(tc.status));
-        }
-
-        if (filters.priority.length > 0) {
-            cases = cases.filter(tc => filters.priority.includes(tc.priority));
-        }
-
-        if (filters.dateRange.start) {
-            const startDate = new Date(filters.dateRange.start);
-            startDate.setHours(0, 0, 0, 0);
-            const startTime = startDate.getTime();
-            cases = cases.filter(tc => new Date(tc.lastModified).getTime() >= startTime);
-        }
-
-        if (filters.dateRange.end) {
-            const endDate = new Date(filters.dateRange.end);
-            endDate.setHours(23, 59, 59, 999);
-            const endTime = endDate.getTime();
-            cases = cases.filter(tc => new Date(tc.lastModified).getTime() <= endTime);
-        }
-
-        if (filters.createdAtRange?.start) {
-            const startDate = new Date(filters.createdAtRange.start);
-            startDate.setHours(0, 0, 0, 0);
-            const startTime = startDate.getTime();
-            cases = cases.filter(tc => new Date(tc.createdAt).getTime() >= startTime);
-        }
-
-        if (filters.createdAtRange?.end) {
-            const endDate = new Date(filters.createdAtRange.end);
-            endDate.setHours(23, 59, 59, 999);
-            const endTime = endDate.getTime();
-            cases = cases.filter(tc => new Date(tc.createdAt).getTime() <= endTime);
-        }
-
-        // Apply search filter
-        if (searchQuery) {
-            const query = searchQuery.toLowerCase();
-            cases = cases.filter(tc =>
-                tc.title.toLowerCase().includes(query) ||
-                tc.id.toLowerCase().includes(query) ||
-                (tc.displayId || '').toLowerCase().includes(query) ||
-                (tc.area && tc.area.toLowerCase().includes(query))
-            );
-        }
-
-        return cases;
-    }, [testCases, activeArea, filters, searchQuery]);
-
-    // Client-side pagination for status-filtered suite view
-    const isStatusFilterActive = filters.status.length > 0 && !!activeSuiteId;
-
-    const paginatedDisplayedCases = useMemo(() => {
-        if (isStatusFilterActive) {
-            return displayedCases.slice(0, statusFilterVisibleCount);
-        }
-        return displayedCases;
-    }, [displayedCases, isStatusFilterActive, statusFilterVisibleCount]);
-
-    const statusFilterHasMore = isStatusFilterActive && statusFilterVisibleCount < displayedCases.length;
-
-    // Reset visible count when status filter or active suite changes
-    useEffect(() => {
-        setStatusFilterVisibleCount(STATUS_FILTER_PAGE_SIZE);
-    }, [filters.status, activeSuiteId]);
-
-    // IntersectionObserver for status-filter sentinel
-    useEffect(() => {
-        if (!statusFilterHasMore) return;
-
-        const sentinel = statusFilterSentinelRef.current;
-        if (!sentinel) return;
-
-        const observer = new IntersectionObserver(
-            (entries) => {
-                if (entries[0]?.isIntersecting) {
-                    setStatusFilterVisibleCount(prev => prev + STATUS_FILTER_PAGE_SIZE);
-                }
-            },
-            {
-                root: projectCasesScrollContainerRef.current,
-                rootMargin: '200px 0px',
-                threshold: 0,
-            }
-        );
-
-        observer.observe(sentinel);
-        return () => observer.disconnect();
-    }, [statusFilterHasMore]);
+    /** Every row the current filter matches — the ceiling for any selection. */
+    const casesTotal = activeSuiteId ? suiteCasesTotal : projectCasesTotal;
 
     const handleSelectAll = useCallback((selectAll: boolean) => {
         if (selectAll) {
+            // Selects what is loaded, not the whole result set. The header
+            // checkbox says as much, and the bulk bar reports the count against
+            // the full total so the two never disagree.
             selectAllTestCases(displayedCases.map(tc => tc.id));
         } else {
             clearSelection();
@@ -838,6 +863,9 @@ const TestCasesPage: React.FC = () => {
                 title: updatedCase.title,
                 priority: updatedCase.priority,
                 status: updatedCase.status,
+                // Empty string clears the field; omitting it would leave the
+                // stored value untouched and make "Not set" unsavable.
+                testType: updatedCase.testType ?? '',
                 area: updatedCase.area,
                 expectedResult: updatedCase.expectedResult,
                 testDescription: updatedCase.testDescription,
@@ -860,6 +888,7 @@ const TestCasesPage: React.FC = () => {
             title: updatedCase.title,
             priority: updatedCase.priority,
             status: updatedCase.status,
+            testType: updatedCase.testType ?? '',
             area: updatedCase.area,
             expectedResult: updatedCase.expectedResult,
             testDescription: updatedCase.testDescription,
@@ -887,7 +916,7 @@ const TestCasesPage: React.FC = () => {
             const orderedIds = reorderedCases.map(tc => tc.id);
             await reorderTestCases(activeSuiteId, orderedIds);
             // Refetch to get updated order from server
-            fetchTestCases(activeSuiteId);
+            loadSuiteCases(true, 0);
         } catch (error) {
             toast.error('Failed to save new order');
             console.error('Reorder error:', error);
@@ -924,7 +953,10 @@ const TestCasesPage: React.FC = () => {
         toast.success(`Added ${cases.length} test cases`);
     };
 
-    const handleExportTestCases = (columns: ExportColumn[], format: 'csv' | 'xlsx') => {
+    const handleExportTestCases = async (columns: ExportColumn[], format: 'csv' | 'xlsx') => {
+        if (!activeProject) return;
+
+        const loadingId = toast.loading('Preparing export...');
         try {
             const projectName = projects.find(p => p.id === activeProject)?.name;
             const suiteName = activeSuite;
@@ -942,9 +974,43 @@ const TestCasesPage: React.FC = () => {
             }, {});
             const exportOptions = { columns, suiteTagsBySuiteId, suiteTagsBySuiteName };
 
+            // The table only holds one page. Walk the rest so the file covers
+            // every row the current filter matches, not what happens to be
+            // scrolled into view.
+            const collected: TestCase[] = [];
+            let offset = 0;
+            let serverTotal = 0;
+            let truncated = false;
+
+            while (collected.length < MAX_EXPORT_ROWS) {
+                const page = activeSuiteId
+                    ? await getTestCasesBySuitePaginated(activeSuiteId, {
+                          ...caseListQuery,
+                          limit: EXPORT_PAGE_SIZE,
+                          offset,
+                      })
+                    : await getTestCasesByProjectPaginated(activeProject, {
+                          ...caseListQuery,
+                          limit: EXPORT_PAGE_SIZE,
+                          offset,
+                      });
+
+                const mapped = page.items.map(mapTestCaseResponse);
+                serverTotal = page.meta.total;
+                collected.push(...mapped);
+                offset += mapped.length;
+
+                if (mapped.length < EXPORT_PAGE_SIZE || !page.meta.hasMore || offset >= serverTotal) break;
+            }
+
+            if (collected.length >= MAX_EXPORT_ROWS && serverTotal > MAX_EXPORT_ROWS) {
+                truncated = true;
+                collected.length = MAX_EXPORT_ROWS;
+            }
+
             if (format === 'xlsx') {
                 exportTestCasesToXLSX(
-                    displayedCases,
+                    collected,
                     exportOptions,
                     customFieldDefinitions,
                     projectName,
@@ -952,7 +1018,7 @@ const TestCasesPage: React.FC = () => {
                 );
             } else {
                 exportTestCasesToCSV(
-                    displayedCases,
+                    collected,
                     exportOptions,
                     customFieldDefinitions,
                     projectName,
@@ -960,50 +1026,104 @@ const TestCasesPage: React.FC = () => {
                 );
             }
 
-            toast.success(`Exported ${displayedCases.length} test case${displayedCases.length !== 1 ? 's' : ''} to ${format.toUpperCase()}`);
+            toast.dismiss(loadingId);
+            if (truncated) {
+                toast(`Exported the first ${MAX_EXPORT_ROWS.toLocaleString()} of ${serverTotal.toLocaleString()} matching test cases`);
+            } else {
+                toast.success(`Exported ${collected.length} test case${collected.length !== 1 ? 's' : ''} to ${format.toUpperCase()}`);
+            }
         } catch (error) {
+            toast.dismiss(loadingId);
             console.error('Export error:', error);
             toast.error(error instanceof Error ? error.message : 'Failed to export test cases');
         }
     };
 
-    const handleImportTestCases = useCallback(async (
-        testCases: CreateTestCaseWithSuiteRequest[],
-        skipDuplicates: boolean,
-        createMissingSuites: boolean
-    ) => {
+    /**
+     * Create a single test case from one spreadsheet row.
+     *
+     * The upload modal calls this once per row so it can show an accurate
+     * uploaded/total counter, and so one bad row cannot roll back good ones.
+     */
+    const handleCreateCaseFromUpload = useCallback(async (payload: UploadCasePayload) => {
         if (!canWrite) {
-            toast.error('You have read-only access to this project');
             throw new Error('You have read-only access to this project');
         }
         if (!activeProject) {
             throw new Error('No project selected');
         }
 
-        try {
-            const result = await bulkImportTestCasesWithSuite(activeProject, {
-                testCases,
-                skipDuplicates,
-                createMissingSuites,
-                defaultSuiteId: activeSuiteId || undefined,
-            });
-
-            // Refresh test suites in case new ones were created
-            await fetchTestSuites(activeProject);
-
-            // Refresh test cases if we have an active suite
-            if (activeSuiteId) {
-                await fetchTestCases(activeSuiteId);
-            } else {
-                await loadProjectCases(true, 0);
-            }
-
-            return result;
-        } catch (error) {
-            console.error('Import error:', error);
-            throw error;
+        // Fall back to the suite the user is currently viewing when the row
+        // does not name one.
+        const suiteName = payload.suiteName?.trim() || undefined;
+        if (!payload.suiteId && !suiteName && !activeSuiteId) {
+            throw new Error('No Test Suite specified for this row');
         }
-    }, [activeProject, activeSuiteId, canWrite, fetchTestSuites, fetchTestCases, loadProjectCases]);
+
+        const response = await createTestCaseInProject(activeProject, {
+            ...payload,
+            suiteId: payload.suiteId ?? (suiteName ? undefined : activeSuiteId ?? undefined),
+            suiteName,
+        });
+
+        if (response.created) {
+            setTestCases((previous) => {
+                if (response.testCase) {
+                    return [mapTestCaseResponse(response.testCase), ...previous];
+                }
+                return previous;
+            });
+        }
+
+        return { skipped: response.skipped };
+    }, [activeProject, activeSuiteId, canWrite, setTestCases]);
+
+    /** Refresh the lists once the upload finishes. */
+    const refreshAfterUpload = useCallback(async () => {
+        if (!activeProject) return;
+        await fetchTestSuites(activeProject);
+        if (activeSuiteId) {
+            await loadSuiteCases(true, 0);
+        } else {
+            await loadProjectCases(true, 0);
+        }
+    }, [activeProject, activeSuiteId, fetchTestSuites, loadSuiteCases, loadProjectCases]);
+
+    /** Re-read suites + cases from the server; backs both the upload's
+     *  post-upload sync and the shared toolbar's Refresh button. */
+    const handleRefreshFromServer = useCallback(async () => {
+        await refreshAfterUpload();
+        toast.success('Reloaded from server');
+    }, [refreshAfterUpload]);
+
+    // Expose the refresh to the toolbar in the layout. Registered here rather
+    // than with the other callbacks because it depends on refreshAfterUpload.
+    useEffect(() => {
+        setRefreshTestCasesCallback(handleRefreshFromServer);
+        return () => setRefreshTestCasesCallback(null);
+    }, [setRefreshTestCasesCallback, handleRefreshFromServer]);
+
+    /**
+     * Ask the server for the authoritative count in the current view.
+     *
+     * Re-reads from the API rather than trusting local state, so the number the
+     * upload screen shows is what the database holds after the refresh.
+     */
+    const checkServerCaseCount = useCallback(async () => {
+        if (!activeProject) return { total: 0 };
+        const result = activeSuiteId
+            ? await getTestCasesBySuitePaginated(activeSuiteId, {
+                  limit: 1,
+                  offset: 0,
+                  archived: caseScope,
+              })
+            : await getTestCasesByProjectPaginated(activeProject, {
+                  limit: 1,
+                  offset: 0,
+                  archived: caseScope,
+              });
+        return { total: result.meta.total };
+    }, [activeProject, activeSuiteId, caseScope]);
 
     if (!activeProject && !selectedCase) {
         return (
@@ -1027,7 +1147,24 @@ const TestCasesPage: React.FC = () => {
                             <ProjectPresenceIndicator users={projectUsers} maxDisplay={4} />
                         ) : null
                     }
-                    beforeToggle={allSuiteTags.length > 0 || hasSuitesWithNoTags ? (
+                    beforeToggle={(
+                        <>
+                            <div className="inline-flex items-center rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 p-0.5 shadow-sm dark:shadow-none">
+                                {(['active', 'archived'] as const).map((scope) => (
+                                    <button
+                                        key={scope}
+                                        onClick={() => handleScopeChange(scope)}
+                                        className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                                            caseScope === scope
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
+                                        }`}
+                                    >
+                                        {scope === 'active' ? 'Active' : 'Archived'}
+                                    </button>
+                                ))}
+                            </div>
+                            {allSuiteTags.length > 0 || hasSuitesWithNoTags ? (
                         <div className="relative" ref={suiteTagFilterRef}>
                             <button
                                 onClick={() => setIsSuiteTagFilterOpen(!isSuiteTagFilterOpen)}
@@ -1108,7 +1245,9 @@ const TestCasesPage: React.FC = () => {
                                 </div>
                             )}
                         </div>
-                    ) : undefined}
+                            ) : null}
+                        </>
+                    )}
                 />
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto px-4 sm:px-6">
                     {/* Sorting controls - Desktop only, next to Generate AI button */}
@@ -1148,13 +1287,53 @@ const TestCasesPage: React.FC = () => {
                 </div>
             </div>
 
+            {/* Bulk archive / restore for the current selection */}
+            {isSelectionMode && selectedTestCaseIds.length > 0 && (
+                <div className="mx-4 mt-4 sm:mx-6 px-4 py-3 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-2 text-sm font-medium text-blue-800 dark:text-blue-200">
+                        <span>
+                            {casesTotal > 0 && casesTotal > selectedTestCaseIds.length
+                                ? `${selectedTestCaseIds.length} of ${casesTotal.toLocaleString()} test cases selected`
+                                : `${selectedTestCaseIds.length} test case${selectedTestCaseIds.length > 1 ? 's' : ''} selected`}
+                        </span>
+                        <button
+                            onClick={clearSelection}
+                            className="text-xs px-2 py-1 rounded-md border border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                        >
+                            Clear
+                        </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {caseScope === 'active' ? (
+                            <button
+                                onClick={() => handleBulkArchive(true)}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition-colors"
+                            >
+                                <Archive className="h-4 w-4" />
+                                Archive Selected
+                            </button>
+                        ) : (
+                            <button
+                                onClick={() => handleBulkArchive(false)}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors"
+                            >
+                                <ArchiveRestore className="h-4 w-4" />
+                                Restore Selected
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* Test Case Table */}
             <div ref={projectCasesScrollContainerRef} className="flex-1 sm:overflow-auto">
                 <TestCaseTable
-                    data={paginatedDisplayedCases}
+                    data={displayedCases}
                     onRowClick={handleRowClick}
                     onViewClick={handleViewClick}
                     onCloneClick={handleCloneClick}
+                    onArchiveClick={handleArchiveCase}
+                    onRestoreClick={handleRestoreCase}
                     isEditMode={isListEditMode}
                     onUpdate={handleInlineUpdate}
                     onStatusChange={handleStatusChange}
@@ -1169,6 +1348,7 @@ const TestCasesPage: React.FC = () => {
                     customFieldDefinitions={customFieldDefinitions}
                     visibleCustomFieldIds={visibleCustomFieldIds}
                     hiddenColumns={hiddenColumns}
+                    columnOrder={tableColumnOrder}
                     // Sorting controls in header (desktop only)
                     showSortControlsInHeader={true}
                     onSortInfoChange={setSortInfo}
@@ -1193,7 +1373,7 @@ const TestCasesPage: React.FC = () => {
                         </div>
                     </div>
                 )}
-                {activeSuiteId && !requiresFullSuiteDataset && (
+                {activeSuiteId && (
                     <div ref={suiteCasesSentinelRef} className="flex justify-center py-3">
                         {(suiteCasesHasMore && isSuiteCasesLoadingMore) ? (
                             <div className="inline-flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
@@ -1203,27 +1383,10 @@ const TestCasesPage: React.FC = () => {
                         ) : null}
                     </div>
                 )}
-                {activeSuiteId && !requiresFullSuiteDataset && (
+                {activeSuiteId && (
                     <div className="flex justify-end px-4 pb-3">
                         <div className="text-xs text-gray-400 dark:text-gray-500">
                             Loaded {Math.min(suiteCasesOffset, displayedCases.length)} / {suiteCasesTotal || displayedCases.length} test cases
-                        </div>
-                    </div>
-                )}
-                {isStatusFilterActive && (
-                    <div ref={statusFilterSentinelRef} className="flex justify-center py-3">
-                        {statusFilterHasMore && (
-                            <div className="inline-flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                                Loading more test cases...
-                            </div>
-                        )}
-                    </div>
-                )}
-                {isStatusFilterActive && (
-                    <div className="flex justify-end px-4 pb-3">
-                        <div className="text-xs text-gray-400 dark:text-gray-500">
-                            Showing {paginatedDisplayedCases.length} / {displayedCases.length} test cases
                         </div>
                     </div>
                 )}
@@ -1239,6 +1402,7 @@ const TestCasesPage: React.FC = () => {
                             title: updatedCase.title,
                             priority: updatedCase.priority,
                             status: updatedCase.status,
+                            testType: updatedCase.testType ?? '',
                             area: updatedCase.area,
                             expectedResult: updatedCase.expectedResult,
                             stepsContent: updatedCase.stepsContent,
@@ -1290,7 +1454,9 @@ const TestCasesPage: React.FC = () => {
                 <ImportTestCasesModal
                     isOpen={isImportModalOpen}
                     onClose={() => setIsImportModalOpen(false)}
-                    onImport={handleImportTestCases}
+                    onCreateCase={handleCreateCaseFromUpload}
+                    onUploadComplete={refreshAfterUpload}
+                    onCheckServerStatus={checkServerCaseCount}
                     customFieldDefinitions={customFieldDefinitions}
                     projectMembers={
                         projects

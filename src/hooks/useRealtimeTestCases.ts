@@ -146,7 +146,22 @@ export function useRealtimeTestCases({
 
       // Only update if it's for the current suite we're viewing
       if (activeSuiteId === data.suiteId) {
-        setTestCases(data.testCases);
+        // The payload is the suite's whole ordered list. Swapping it in
+        // wholesale would replace the page (and the filter) the viewer is on
+        // with every case in the suite, which is what desynced the
+        // "Loaded X / Y" readout from what was actually rendered. Re-rank the
+        // rows already on screen instead and leave membership alone.
+        const rank = new Map(data.testCases.map((testCase, index) => [testCase.id, index]));
+        setTestCases((current) =>
+            [...current]
+                .map((testCase, index) => ({ testCase, index }))
+                .sort((a, b) =>
+                    (rank.get(a.testCase.id) ?? Number.MAX_SAFE_INTEGER) -
+                        (rank.get(b.testCase.id) ?? Number.MAX_SAFE_INTEGER) ||
+                    a.index - b.index
+                )
+                .map((entry) => entry.testCase)
+        );
       }
     },
     [activeSuiteId, setTestCases]

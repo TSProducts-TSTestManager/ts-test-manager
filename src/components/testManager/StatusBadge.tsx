@@ -15,7 +15,6 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ type, value }) => {
         if (value === Status.InReview) colorClass = 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400';
         if (value === Status.Ready) colorClass = 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400';
         if (value === Status.Updated) colorClass = 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400';
-        if (value === Status.Archived) colorClass = 'bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500';
 
         return (
             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border border-transparent ${colorClass}`}>

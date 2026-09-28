@@ -87,14 +87,36 @@ export const getTestRunsPaginated = async (
     /** Column to sort by (createdAt, updatedAt, title, status, displayId) */
     sortField?: string;
     sortDir?: "asc" | "desc";
+    /**
+     * Server-side filters. Filtering in the browser only ever saw the rows
+     * already loaded, so a status/group filter could miss matches past page one.
+     */
+    status?: string[];
+    /** A group id, or 'none' for ungrouped runs. */
+    groupId?: string;
+    /** Also include runs filed under descendants of `groupId`. */
+    groupSubtree?: boolean;
+    hasTickets?: boolean;
+    tag?: string;
   }
 ): Promise<PaginatedTestRunsResult> => {
   try {
+    const query: Record<string, string | number | boolean> = {
+      limit: params.limit,
+      offset: params.offset,
+    };
+    if (params.search?.trim()) query.search = params.search.trim();
+    if (params.sortField) query.sortField = params.sortField;
+    if (params.sortDir) query.sortDir = params.sortDir;
+    if (params.status?.length) query.status = params.status.join(',');
+    if (params.groupId) query.groupId = params.groupId;
+    if (params.groupSubtree) query.groupSubtree = params.groupSubtree;
+    if (params.hasTickets !== undefined) query.hasTickets = params.hasTickets;
+    if (params.tag) query.tag = params.tag;
+
     const response = await axios.get<ApiResponse<TestRunListResponse[]>>(
       `${API_URL}/projects/${projectId}/runs`,
-      {
-        params,
-      }
+      { params: query }
     );
 
     const fallbackMeta: PaginationMeta = {
