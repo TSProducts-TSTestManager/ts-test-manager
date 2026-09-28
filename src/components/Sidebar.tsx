@@ -18,6 +18,7 @@ import {
   Bug,
   Building2,
   LineChart,
+  HelpCircle,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -98,6 +99,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
           to: '/admin/analytics',
           subItems: []
         },
+        {
+          icon: <HelpCircle size={18} />,
+          label: 'Help',
+          to: '/help',
+          subItems: []
+        },
       ]
     : [
         {
@@ -157,6 +164,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
           icon: <PieChart size={18} />,
           label: 'Analytics',
           to: '/analytics',
+          subItems: []
+        },
+        {
+          icon: <HelpCircle size={18} />,
+          label: 'Help',
+          to: '/help',
           subItems: []
         },
       ];
