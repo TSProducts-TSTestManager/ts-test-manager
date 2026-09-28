@@ -302,23 +302,25 @@ export function useRealtimeTestCases({
       listenersSetup.current = true;
     }
 
-    // Cleanup on unmount
+    // Cleanup on unmount — always remove the exact handler registered above;
+    // a bare `off(event)` would also detach listeners owned by other
+    // components (e.g. TestCaseViewModal), silently killing their live sync (F4).
     return () => {
       if (listenersSetup.current) {
-        socketService.off("testcase:created");
-        socketService.off("testcase:updated");
-        socketService.off("testcase:deleted");
-        socketService.off("testcase:reordered");
-        socketService.off("testcase:bulk-deleted");
-        socketService.off("testcase:bulk-status-updated");
-        socketService.off("testcase:cloned");
-        socketService.off("testcase:bulk-imported");
-        socketService.off("testsuite:created");
-        socketService.off("testsuite:updated");
-        socketService.off("testsuite:deleted");
-        socketService.off("project:updated");
-        socketService.off("project:settings-updated");
-        socketService.off("project:deleted");
+        socketService.off("testcase:created", handleTestCaseCreated);
+        socketService.off("testcase:updated", handleTestCaseUpdated);
+        socketService.off("testcase:deleted", handleTestCaseDeleted);
+        socketService.off("testcase:reordered", handleTestCasesReordered);
+        socketService.off("testcase:bulk-deleted", handleTestCasesBulkDeleted);
+        socketService.off("testcase:bulk-status-updated", handleTestCasesBulkStatusUpdated);
+        socketService.off("testcase:cloned", handleTestCaseCloned);
+        socketService.off("testcase:bulk-imported", handleTestCasesBulkImported);
+        socketService.off("testsuite:created", handleTestSuiteCreated);
+        socketService.off("testsuite:updated", handleTestSuiteUpdated);
+        socketService.off("testsuite:deleted", handleTestSuiteDeleted);
+        socketService.off("project:updated", handleProjectUpdated);
+        socketService.off("project:settings-updated", handleProjectSettingsUpdated);
+        socketService.off("project:deleted", handleProjectDeleted);
         listenersSetup.current = false;
       }
     };

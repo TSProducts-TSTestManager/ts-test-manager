@@ -402,7 +402,8 @@ describe('KanbanBoard', () => {
         ];
         renderBoard(tickets);
 
-        // 4 of the 5 columns have no tickets
-        expect(screen.getAllByText('No tickets').length).toBe(4);
+        // Every column except Open (the one holding the ticket) shows the
+        // empty state: TicketStatus currently has 9 members, so 8 are empty.
+        expect(screen.getAllByText('No tickets').length).toBe(Object.values(TicketStatus).length - 1);
     });
 });
