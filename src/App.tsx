@@ -28,6 +28,7 @@ const ClientDetailPage = React.lazy(() => import("./pages/admin/ClientDetailPage
 const ClientDashboardPage = React.lazy(() => import("./pages/admin/ClientDashboardPage"));
 const ClientAnalyticsPage = React.lazy(() => import("./pages/admin/ClientAnalyticsPage"));
 const MyClientPage = React.lazy(() => import("./pages/client/MyClientPage"));
+const HelpPage = React.lazy(() => import("./pages/HelpPage"));
 
 // Non-lazy imports (needed immediately)
 import AppLayout from "./components/AppLayout";
@@ -221,6 +222,9 @@ function App() {
               <Route path='test-run-analytics' element={<ClientRoute><TestRunAnalyticsPage /></ClientRoute>} />
 
               <Route path='settings' element={<SettingsPage />} />
+
+              {/* Help Center — available to all roles */}
+              <Route path='help' element={<HelpPage />} />
 
               <Route path='drive-oauth-redirect' element={<DriveOAuthRedirect />} />
 
