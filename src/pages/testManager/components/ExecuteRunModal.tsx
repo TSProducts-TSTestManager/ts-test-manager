@@ -423,7 +423,7 @@ const ExecuteRunModal: React.FC<ExecuteRunModalProps> = ({
                             Progress: {executedCount} / {totalItems} ({Math.round((executedCount / totalItems) * 100)}%)
                         </div>
                     </div>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex-shrink-0">
+                    <button onClick={onClose} aria-label="Close" className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex-shrink-0">
                         <XCircle className="w-5 h-5 sm:w-6 sm:h-6" />
                     </button>
                 </div>
@@ -476,6 +476,7 @@ const ExecuteRunModal: React.FC<ExecuteRunModalProps> = ({
                             <button
                                 onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
                                 disabled={currentIndex === 0}
+                                aria-label="Previous test case"
                                 className="p-1.5 sm:p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50 active:bg-gray-100 dark:active:bg-gray-700 rounded"
                             >
                                 <ChevronLeft className="w-5 h-5" />
@@ -483,6 +484,7 @@ const ExecuteRunModal: React.FC<ExecuteRunModalProps> = ({
                             <button
                                 onClick={() => setCurrentIndex(Math.min(totalItems - 1, currentIndex + 1))}
                                 disabled={currentIndex === totalItems - 1}
+                                aria-label="Next test case"
                                 className="p-1.5 sm:p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50 active:bg-gray-100 dark:active:bg-gray-700 rounded"
                             >
                                 <ChevronRight className="w-5 h-5" />

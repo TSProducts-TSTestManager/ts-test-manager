@@ -16,7 +16,7 @@ import { mapTestCaseResponse, useTestManagerStore } from '../../store/testManage
 import { useRealtimeTestCases } from '../../hooks/useRealtimeTestCases';
 import { useProjectPresence } from '../../hooks/useProjectPresence';
 import { TestCase, Status, Priority, TestType, CustomFieldDefinition, HiddenDefaultColumns, ArchiveScope, resolveHiddenTableColumns } from '../../types/testManager';
-import { reorderTestCases, getTestCase, getTestSuite, getTestCasesByProjectPaginated, getTestCasesBySuitePaginated, createTestCaseInProject, CaseListQuery } from '../../services/testManagerApi';
+import { reorderTestCases, getTestCase, getTestSuite, getTestCasesByProjectPaginated, getTestCasesBySuitePaginated, createTestCaseInProject, bulkImportTestCasesWithSuite, CaseListQuery } from '../../services/testManagerApi';
 import { exportTestCasesToCSV, exportTestCasesToXLSX, ExportColumn } from '../../utils/exportTestCases';
 import { escapeHtml } from '../../utils/sanitize';
 import { UpdateTestCaseRequest } from '../../types/api/testManager.api';
@@ -1078,6 +1078,41 @@ const tableColumnOrder = useMemo(
         return { skipped: response.skipped };
     }, [activeProject, activeSuiteId, canWrite, setTestCases]);
 
+    /**
+     * Preferred upload path: one bulk-import request for the whole file
+     * (server creates missing suites and reports created/skipped/failed).
+     * The modal falls back to `handleCreateCaseFromUpload` per row if this
+     * batch call fails.
+     */
+    const handleBulkImportFromUpload = useCallback(
+        async (
+            payloads: UploadCasePayload[],
+            options: { skipDuplicates: boolean; createMissingSuites: boolean; defaultSuiteId?: string }
+        ) => {
+            if (!canWrite) {
+                throw new Error('You have read-only access to this project');
+            }
+            if (!activeProject) {
+                throw new Error('No project selected');
+            }
+            return bulkImportTestCasesWithSuite(activeProject, {
+                // Payload fields arrive as plain strings from the spreadsheet;
+                // narrow them to the enums the API expects (validation has
+                // already rejected anything unknown).
+                testCases: payloads.map((payload) => ({
+                    ...payload,
+                    priority: payload.priority as Priority | undefined,
+                    status: payload.status as Status | undefined,
+                    testType: payload.testType as TestType | undefined,
+                })),
+                skipDuplicates: options.skipDuplicates,
+                createMissingSuites: options.createMissingSuites,
+                defaultSuiteId: options.defaultSuiteId,
+            });
+        },
+        [activeProject, canWrite]
+    );
+
     /** Refresh the lists once the upload finishes. */
     const refreshAfterUpload = useCallback(async () => {
         if (!activeProject) return;
@@ -1455,6 +1490,7 @@ const tableColumnOrder = useMemo(
                     isOpen={isImportModalOpen}
                     onClose={() => setIsImportModalOpen(false)}
                     onCreateCase={handleCreateCaseFromUpload}
+                    onBulkImport={handleBulkImportFromUpload}
                     onUploadComplete={refreshAfterUpload}
                     onCheckServerStatus={checkServerCaseCount}
                     customFieldDefinitions={customFieldDefinitions}

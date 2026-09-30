@@ -77,6 +77,7 @@ const TestSuiteSidebar: React.FC<TestSuiteSidebarProps> = ({
                     {searchQuery && (
                         <button
                             onClick={() => setSearchQuery('')}
+                            aria-label="Clear suite search"
                             className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-300/60 dark:hover:bg-gray-600 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                         >
                             <X size={12} />

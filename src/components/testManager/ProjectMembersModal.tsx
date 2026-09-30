@@ -188,6 +188,7 @@ const ProjectMembersModal: React.FC<Props> = ({
                     </div>
                     <button
                         onClick={onClose}
+                        aria-label="Close"
                         className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                     >
                         <X className="h-5 w-5 text-gray-600 dark:text-gray-400" />
@@ -200,7 +201,7 @@ const ProjectMembersModal: React.FC<Props> = ({
                     {error && (
                         <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 p-3 rounded-lg flex items-start gap-2">
                             <span className="flex-1">{error}</span>
-                            <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">
+                            <button onClick={() => setError(null)} aria-label="Dismiss error" className="text-red-400 hover:text-red-600 dark:hover:text-red-300">
                                 <X className="h-4 w-4" />
                             </button>
                         </div>

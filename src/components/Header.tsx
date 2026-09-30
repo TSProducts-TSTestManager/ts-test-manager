@@ -54,6 +54,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
         <div className="flex items-center flex-1 min-w-0">
           <button
             onClick={toggleSidebar}
+            aria-label="Open menu"
             className="mr-3 text-gray-500 hover:text-gray-700 lg:hidden flex-shrink-0 dark:text-gray-400 dark:hover:text-gray-200"
           >
             <Menu size={20} />
@@ -97,7 +98,7 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
           </button>
 
-          <button className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 relative transition-colors rounded-full hover:bg-black/5 dark:hover:bg-white/10">
+          <button aria-label="Notifications" className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 relative transition-colors rounded-full hover:bg-black/5 dark:hover:bg-white/10">
             <Bell size={20} />
             <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-system-red rounded-full border-2 border-white dark:border-[#242424]"></span>
           </button>

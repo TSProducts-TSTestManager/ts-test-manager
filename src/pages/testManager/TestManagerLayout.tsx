@@ -1,5 +1,6 @@
 import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router';
+import toast from 'react-hot-toast';
 import Toolbar from '../../components/testManager/Toolbar';
 import TestSuiteSidebar from '../../components/testManager/TestSuiteSidebar';
 import TestSuiteSidebarDrawer from '../../components/testManager/TestSuiteSidebarDrawer';
@@ -7,7 +8,8 @@ import TestSuiteSidebarToggle from '../../components/testManager/TestSuiteSideba
 import ConfirmationModal from '../../components/testManager/ConfirmationModal';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
-import { ViewMode } from '../../types/testManager';
+import { isGloballyHandledError } from '../../utils/api';
+import { ViewMode, Status } from '../../types/testManager';
 
 const TestManagerLayout: React.FC = () => {
     const {
@@ -29,6 +31,7 @@ const TestManagerLayout: React.FC = () => {
         setSelectionMode,
         selectedTestCaseIds,
         bulkDeleteTestCases,
+        bulkUpdateStatus,
         // Export callback
         onExportTestCases,
         // Import callback
@@ -65,6 +68,11 @@ const TestManagerLayout: React.FC = () => {
         setIsRefreshing(true);
         try {
             await activeRefresh();
+        } catch (error) {
+            console.error('Failed to refresh list from the server', error);
+            if (!isGloballyHandledError(error)) {
+                toast.error((error as Error)?.message || 'Failed to refresh from the server');
+            }
         } finally {
             setIsRefreshing(false);
         }
@@ -160,6 +168,21 @@ const TestManagerLayout: React.FC = () => {
             // Since we don't have toast here, we rely on the component to show updates.
         } catch (error) {
             console.error("Failed to delete test cases", error);
+            if (!isGloballyHandledError(error)) {
+                toast.error((error as Error)?.message || 'Failed to delete the selected test cases');
+            }
+        }
+    };
+
+    /** Bulk-apply a status to every selected test case. */
+    const handleChangeStatus = async (status: Status) => {
+        try {
+            await bulkUpdateStatus(selectedTestCaseIds, status);
+        } catch (error) {
+            console.error('Failed to bulk update status', error);
+            if (!isGloballyHandledError(error)) {
+                toast.error((error as Error)?.message || 'Failed to update the status of the selected test cases');
+            }
         }
     };
 
@@ -209,6 +232,7 @@ const TestManagerLayout: React.FC = () => {
                     onToggleSelectionMode={handleToggleSelectionMode}
                     selectedCount={selectedTestCaseIds.length}
                     onDelete={handleDeleteClick}
+                    onChangeStatus={handleChangeStatus}
                     // Export prop
                     onDownload={onExportTestCases || undefined}
                     // Import prop

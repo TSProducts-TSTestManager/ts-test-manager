@@ -20,6 +20,9 @@ const ProjectsPage: React.FC = () => {
     const [projectToSettings, setProjectToSettings] = useState<Project | null>(null);
     const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    // Only the very first load: the list renders a spinner instead of the
+    // "No projects yet" empty state until the fetch settles.
+    const [isProjectsLoading, setIsProjectsLoading] = useState(true);
     const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
         if (typeof window !== 'undefined') {
             const saved = localStorage.getItem('projectViewMode');
@@ -49,8 +52,15 @@ const ProjectsPage: React.FC = () => {
     useEffect(() => {
         clearSearchQuery();
         setProjectsSearch('');
-        fetchProjects();
+        let active = true;
+        setIsProjectsLoading(true);
+        // fetchProjects never rejects (it stores the error), so this only
+        // resolves — `.finally` keeps the spinner honest either way.
+        fetchProjects().finally(() => {
+            if (active) setIsProjectsLoading(false);
+        });
         return () => {
+            active = false;
             clearSearchQuery();
             setProjectsSearch('');
         };
@@ -188,6 +198,7 @@ const ProjectsPage: React.FC = () => {
             
             <ProjectList
                 projects={filteredProjects}
+                isLoading={isProjectsLoading}
                 onProjectClick={handleProjectClick}
                 onCreate={handleCreateProject}
                 onEdit={handleEditProject}

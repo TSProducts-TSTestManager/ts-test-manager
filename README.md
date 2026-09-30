@@ -122,7 +122,6 @@ Key real-time files:
 │   │   ├── LoadingSpinner.tsx
 │   │   ├── PasswordStrengthMeter.tsx
 │   │   ├── Sidebar.tsx
-│   │   └── SidebarMenuLayout.tsx
 │   ├── pages/
 │   │   ├── ChangePasswordPage.tsx
 │   │   ├── DashboardPage.tsx

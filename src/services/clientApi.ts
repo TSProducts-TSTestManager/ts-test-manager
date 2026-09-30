@@ -28,7 +28,9 @@ export const updateClient = async (displayId: string, data: Partial<Client>): Pr
 };
 
 export const getClientUsage = async (displayId: string): Promise<SeatUsage> => {
-  const res = await axios.get<ApiResponse<SeatUsage>>(`${API_URL}/clients/${displayId}/usage`);
+  // Supplementary data: every caller treats a failure as "leave the column
+  // blank", so it must not raise a global toast on its own.
+  const res = await axios.get<ApiResponse<SeatUsage>>(`${API_URL}/clients/${displayId}/usage`, { silentError: true });
   if (!res.data.data) throw new Error('No data');
   return res.data.data;
 };

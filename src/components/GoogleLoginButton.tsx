@@ -1,4 +1,5 @@
 import React from "react";
+import axios from "axios";
 import { useAuthStore } from "../store/authStore";
 import { useEffect } from "react";
 import { useNavigate, useLocation } from "react-router";
@@ -33,11 +34,10 @@ const GoogleLoginButton: React.FC = () => {
   const handleGoogleLogin = async () => {
     try {
       // This will trigger the backend to generate the Google OAuth URL
-      const response = await fetch(`${API_URL}/auth/google/url`, {
-        method: 'GET',
-        credentials: 'include', // This is crucial - allows cookies to be set and sent
+      const response = await axios.get<{ url?: string }>(`${API_URL}/auth/google/url`, {
+        withCredentials: true, // This is crucial - allows cookies to be set and sent
       });
-      const data = await response.json();
+      const data = response.data;
       
       if (data.url) {
         // Redirect to Google's OAuth page

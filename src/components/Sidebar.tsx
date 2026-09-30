@@ -19,6 +19,7 @@ import {
   Building2,
   LineChart,
   HelpCircle,
+  Braces,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -100,6 +101,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
           subItems: []
         },
         {
+          icon: <Braces size={18} />,
+          label: 'API Reference',
+          to: '/api-reference',
+          subItems: []
+        },
+        {
           icon: <HelpCircle size={18} />,
           label: 'Help',
           to: '/help',
@@ -164,6 +171,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
           icon: <PieChart size={18} />,
           label: 'Analytics',
           to: '/analytics',
+          subItems: []
+        },
+        {
+          icon: <Braces size={18} />,
+          label: 'API Reference',
+          to: '/api-reference',
           subItems: []
         },
         {

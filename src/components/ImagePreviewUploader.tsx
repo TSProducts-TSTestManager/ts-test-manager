@@ -136,6 +136,7 @@ const ImagePreviewUploader: React.FC<ImagePreviewUploaderProps> = ({
                             ) : (
                                 <button
                                     type="button"
+                                    aria-label={`Remove image ${index + 1}`}
                                     onClick={() => removeImage(img.originalIndex)}
                                     className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/60 hover:bg-black/80 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                                     disabled={disabled}
@@ -150,6 +151,7 @@ const ImagePreviewUploader: React.FC<ImagePreviewUploaderProps> = ({
                     {allImages.length < maxImages && !disabled && (
                         <button
                             type="button"
+                            aria-label="Add image"
                             onClick={handleButtonClick}
                             className="w-16 h-16 rounded-lg border-2 border-dashed border-gray-300 hover:border-blue-400 flex items-center justify-center text-gray-400 hover:text-blue-500 transition-colors"
                         >
