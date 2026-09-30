@@ -1,7 +1,14 @@
+# STANDALONE frontend (backend running on the host, e.g. `npm run dev`/pm2).
+# For the full VPS stack use ts-test-manager-backend/docker-compose.prod.yml.
 services:
   frontend:
     build: .
     container_name: ts-test-manager-frontend
     ports:
       - "80:80"
+    environment:
+      # Host loopback reachable from the container via host-gateway
+      API_UPSTREAM: http://host.docker.internal:5000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
