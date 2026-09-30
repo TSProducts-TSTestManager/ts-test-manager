@@ -1,4 +1,4 @@
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 # Feature flags are baked into the bundle at build time. VITE_API_URL is
 # deliberately NOT set: production without it means same-origin "/api",
@@ -6,7 +6,16 @@ WORKDIR /app
 ARG VITE_FEATURE_DRIVE=false
 ENV VITE_FEATURE_DRIVE=$VITE_FEATURE_DRIVE
 COPY package*.json ./
-RUN npm ci
+# `xlsx` is pinned to a tarball on cdn.sheetjs.com rather than the npm registry
+# (the registry only carries up to 0.18.5), so this fetch goes to a third-party
+# CDN instead of the registry npm is fast and reliable against. It is prone to
+# being slow or unreachable from some networks, and the default timeout/retry
+# budget is not enough. The registry-backed packages are unaffected by this.
+RUN npm ci \
+      --fetch-retries=6 \
+      --fetch-retry-mintimeout=20000 \
+      --fetch-retry-maxtimeout=120000 \
+      --fetch-timeout=600000
 COPY . ./
 RUN npm run build
 
