@@ -182,15 +182,18 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, onBl
     const MenuButton = ({
         isActive,
         onClick,
-        icon: Icon
+        icon: Icon,
+        label
     }: {
         isActive: boolean;
         onClick: () => void;
-        icon: React.ElementType
+        icon: React.ElementType;
+        label: string;
     }) => (
         <button
             onClick={onClick}
             onMouseDown={(e) => e.preventDefault()}
+            aria-label={label}
             className={`p-1.5 rounded-md transition-colors ${isActive
                 ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400'
                 : 'text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -208,49 +211,58 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, onBl
                         onClick={() => editor.chain().focus().toggleBold().run()}
                         isActive={editor.isActive('bold')}
                         icon={Bold}
+                        label="Bold"
                     />
                     <MenuButton
                         onClick={() => editor.chain().focus().toggleItalic().run()}
                         isActive={editor.isActive('italic')}
                         icon={Italic}
+                        label="Italic"
                     />
                     <MenuButton
                         onClick={() => editor.chain().focus().toggleStrike().run()}
                         isActive={editor.isActive('strike')}
                         icon={Strikethrough}
+                        label="Strikethrough"
                     />
                     <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
                     <MenuButton
                         onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
                         isActive={editor.isActive('heading', { level: 1 })}
                         icon={Heading1}
+                        label="Heading 1"
                     />
                     <MenuButton
                         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
                         isActive={editor.isActive('heading', { level: 2 })}
                         icon={Heading2}
+                        label="Heading 2"
                     />
                     <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
                     <MenuButton
                         onClick={() => editor.chain().focus().toggleBulletList().run()}
                         isActive={editor.isActive('bulletList')}
                         icon={List}
+                        label="Bullet list"
                     />
                     <MenuButton
                         onClick={() => editor.chain().focus().toggleOrderedList().run()}
                         isActive={editor.isActive('orderedList')}
                         icon={ListOrdered}
+                        label="Numbered list"
                     />
                     <MenuButton
                         onClick={() => editor.chain().focus().toggleBlockquote().run()}
                         isActive={editor.isActive('blockquote')}
                         icon={Quote}
+                        label="Blockquote"
                     />
                     <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
                     <MenuButton
                         onClick={() => setIsLinkModalOpen(true)}
                         isActive={editor.isActive('link')}
                         icon={LinkIcon}
+                        label="Insert link"
                     />
                     <button
                         onClick={() => fileInputRef.current?.click()}
@@ -304,6 +316,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, onBl
                 >
                     <button
                         onClick={() => setZoomedImage(null)}
+                        aria-label="Close image preview"
                         className="absolute top-4 right-4 p-2 text-white/70 hover:text-white bg-black/20 hover:bg-black/40 rounded-full transition-colors"
                     >
                         <X className="w-6 h-6" />

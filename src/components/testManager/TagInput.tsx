@@ -111,6 +111,7 @@ const TagInput: React.FC<TagInputProps> = ({
                         {tag}
                         <button
                             type="button"
+                            aria-label={`Remove ${tag}`}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 removeTag(tag);

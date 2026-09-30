@@ -119,6 +119,7 @@ const FilterModal: React.FC = () => {
                     <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Filter Test Cases</h2>
                     <button
                         onClick={() => toggleFilterModal(false)}
+                        aria-label="Close"
                         className="p-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                     >
                         <X className="w-4 h-4" />

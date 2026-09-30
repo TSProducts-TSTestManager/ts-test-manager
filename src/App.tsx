@@ -29,6 +29,7 @@ const ClientDashboardPage = React.lazy(() => import("./pages/admin/ClientDashboa
 const ClientAnalyticsPage = React.lazy(() => import("./pages/admin/ClientAnalyticsPage"));
 const MyClientPage = React.lazy(() => import("./pages/client/MyClientPage"));
 const HelpPage = React.lazy(() => import("./pages/HelpPage"));
+const ApiReferencePage = React.lazy(() => import("./pages/ApiReferencePage"));
 
 // Non-lazy imports (needed immediately)
 import AppLayout from "./components/AppLayout";
@@ -225,6 +226,9 @@ function App() {
 
               {/* Help Center — available to all roles */}
               <Route path='help' element={<HelpPage />} />
+
+              {/* API Reference — available to all roles (env section gated inside the page) */}
+              <Route path='api-reference' element={<ApiReferencePage />} />
 
               <Route path='drive-oauth-redirect' element={<DriveOAuthRedirect />} />
 

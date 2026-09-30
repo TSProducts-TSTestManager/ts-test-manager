@@ -346,6 +346,7 @@ const TicketDetailView: React.FC<TicketDetailViewProps> = ({
                             </button>
                             <button
                                 onClick={onClose}
+                                aria-label="Close"
                                 className="p-1.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400 transition-colors"
                             >
                                 <X className="h-5 w-5" />

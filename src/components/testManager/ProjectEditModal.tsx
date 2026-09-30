@@ -84,6 +84,7 @@ const ProjectEditModal: React.FC<Props> = ({ isOpen, onClose, project }) => {
                     <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Edit Project</h3>
                     <button 
                         onClick={onClose} 
+                        aria-label="Close"
                         className="p-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                     >
                         <X className="w-5 h-5" />

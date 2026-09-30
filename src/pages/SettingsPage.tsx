@@ -656,7 +656,9 @@ const AiProvidersTab = () => {
             const responses = await Promise.all(
                 PROVIDER_CONFIGS.map(async (config) => {
                     try {
-                        const response = await axios.get(`${API_URL}${config.endpointBase}/settings`, { withCredentials: true });
+                        // silentError: a provider that fails to load just stays on
+                        // its defaults below; the global toast would be noise here.
+                        const response = await axios.get(`${API_URL}${config.endpointBase}/settings`, { withCredentials: true, silentError: true });
                         if (response.data?.success) {
                             return { provider: config.id, data: response.data.data as ProviderSettingsData };
                         }

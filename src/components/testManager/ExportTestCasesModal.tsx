@@ -88,6 +88,7 @@ const ExportTestCasesModal: React.FC<ExportTestCasesModalProps> = ({
                     </div>
                     <button
                         onClick={onClose}
+                        aria-label="Close"
                         className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
                     >
                         <X className="h-6 w-6" />

@@ -369,32 +369,39 @@ export const listClientDriveFiles = async (
 };
 
 /**
- * Downloads a file via `fetch` + object URL rather than a plain `<a href>`.
- * A bare link to a cross-origin API would not carry the auth cookie, so it
- * would 401; fetching with `credentials: 'include'` does.
+ * Downloads a file through the shared axios client as a Blob rather than a
+ * plain `<a href>`. A bare link to a cross-origin API would not carry the auth
+ * cookie, so it would 401; the shared client sends `withCredentials` and gets
+ * the same base URL and global error handling as every other API call.
  */
 export const downloadClientDriveFile = async (
   projectId: string,
   fileId: string,
   fileName: string
 ): Promise<void> => {
-  const response = await fetch(
-    `${API_URL}/drive/project/${projectId}/files/${fileId}`,
-    { credentials: "include" }
-  );
-
-  if (!response.ok) {
+  let blob: Blob;
+  try {
+    const response = await axios.get<Blob>(
+      `${API_URL}/drive/project/${projectId}/files/${fileId}`,
+      { responseType: "blob", withCredentials: true }
+    );
+    blob = response.data;
+  } catch (error) {
+    // A non-2xx rejects here, and with responseType "blob" its body arrives as
+    // a Blob rather than parsed JSON — unwrap it the same way fetch did.
     let message = "Download failed";
-    try {
-      const body = (await response.json()) as { message?: string };
-      message = body.message || message;
-    } catch {
-      // non-JSON error body; keep the default
+    const body = axios.isAxiosError(error) ? error.response?.data : undefined;
+    if (body instanceof Blob) {
+      try {
+        const parsed = JSON.parse(await body.text()) as { message?: string };
+        message = parsed.message || message;
+      } catch {
+        // non-JSON error body; keep the default
+      }
     }
     throw new Error(message);
   }
 
-  const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

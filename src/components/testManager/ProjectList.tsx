@@ -9,6 +9,9 @@ import ProjectActionSheet from './ProjectActionSheet';
 
 interface ProjectListProps {
     projects: Project[];
+    /** True while the very first list fetch is in flight — shows a spinner
+     *  instead of the empty state so the list does not flash as "no projects". */
+    isLoading?: boolean;
     onProjectClick: (id: string) => void;
     onCreate: () => void;
     onEdit?: (project: Project) => void;
@@ -40,7 +43,7 @@ type ProjectSortField =
 
 const PROJECT_NUMERIC_SORT_FIELDS: ProjectSortField[] = ['suites', 'cases', 'bugs', 'openBugs', 'members'];
 
-const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList({ projects, onProjectClick, onCreate, onEdit, onSettings, onDelete, viewMode = 'card', onViewModeToggle, searchQuery = '', onSearchChange }) {
+const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList({ projects, isLoading = false, onProjectClick, onCreate, onEdit, onSettings, onDelete, viewMode = 'card', onViewModeToggle, searchQuery = '', onSearchChange }) {
     const { user } = useAuthStore();
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const [showMembersModal, setShowMembersModal] = useState(false);
@@ -246,6 +249,7 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
                 <button
                     onClick={() => setTablePage(p => Math.max(1, p - 1))}
                     disabled={safePage === 1}
+                    aria-label="Previous page"
                     className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
                     <ChevronLeft size={16} />
@@ -254,6 +258,7 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
                 <button
                     onClick={() => setTablePage(p => Math.min(totalPages, p + 1))}
                     disabled={safePage === totalPages}
+                    aria-label="Next page"
                     className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
                     <ChevronRight size={16} />
@@ -267,7 +272,12 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
             <div className="p-6 md:p-8">
                 {searchToolbar}
 
-                {viewMode === 'table' ? (
+                {isLoading ? (
+                    <div className="flex flex-col items-center justify-center gap-3 py-20" role="status">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" aria-hidden="true" />
+                        <span className="sr-only">Loading projects…</span>
+                    </div>
+                ) : viewMode === 'table' ? (
                     <>
                         <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
                             <div className="overflow-x-auto">
@@ -404,6 +414,7 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
                                             </button>
                                             <button
                                                 onClick={(e) => handleMenuClick(e, project)}
+                                                aria-label="Project actions"
                                                 className="p-2 text-gray-300 dark:text-gray-600 hover:text-gray-600 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors opacity-0 group-hover:opacity-100 md:opacity-0 opacity-100"
                                             >
                                                 <MoreHorizontal className="h-5 w-5" />

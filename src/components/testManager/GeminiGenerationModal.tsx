@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import axios from 'axios';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Sparkles, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -199,17 +200,29 @@ const GeminiGenerationModal: React.FC<GeminiGenerationModalProps> = ({
             setIsLoadingSettings(true);
             try {
                 const readSettings = async (url: string): Promise<ProviderSettingsData | null> => {
-                    const response = await fetch(url, { credentials: 'include' });
-                    if (!response.ok) {
-                        return null;
-                    }
+                    try {
+                        // silentError: five of these fire in parallel on open and the
+                        // modal already renders its own "no providers configured" state.
+                        const response = await axios.get<{ success?: boolean; data?: ProviderSettingsData }>(url, {
+                            withCredentials: true,
+                            silentError: true,
+                        });
+                        const result = response.data;
+                        const data = result?.data;
+                        if (!result?.success || !data) {
+                            return null;
+                        }
 
-                    const result = await response.json();
-                    if (!result?.success || !result?.data) {
-                        return null;
+                        return data;
+                    } catch (error) {
+                        // Keep the old `!response.ok → null` contract for HTTP errors;
+                        // genuine network failures still bubble to the caller's catch,
+                        // which shows its own toast.
+                        if (axios.isAxiosError(error) && error.response) {
+                            return null;
+                        }
+                        throw error;
                     }
-
-                    return result.data as ProviderSettingsData;
                 };
 
                 const settingsResults = await Promise.all(
@@ -307,6 +320,10 @@ const GeminiGenerationModal: React.FC<GeminiGenerationModalProps> = ({
         try {
             const endpoint = `${API_URL}${PROVIDER_META[selectedProvider].endpointBase}/generate-stream`;
 
+            // Intentionally fetch, not the shared axios client: this is an SSE
+            // stream read chunk-by-chunk via response.body.getReader(), and the
+            // browser XHR adapter axios uses cannot expose a partial body. The
+            // abort signal and the per-status errors below are handled here.
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
@@ -475,7 +492,7 @@ const GeminiGenerationModal: React.FC<GeminiGenerationModalProps> = ({
                             <Sparkles className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Generate with AI</h2>
                         </div>
-                        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300">
+                        <button onClick={onClose} aria-label="Close" className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300">
                             <X className="w-5 h-5" />
                         </button>
                     </div>

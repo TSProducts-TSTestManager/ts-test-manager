@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import toast from 'react-hot-toast';
 import { X, Upload, FileUp, AlertCircle, CheckCircle2, AlertTriangle, Download, Info, Server, RefreshCw } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
@@ -12,6 +13,15 @@ interface ImportTestCasesModalProps {
     onClose: () => void;
     /** Creates one case per call so the upload can report progress row by row. */
     onCreateCase: (payload: UploadCasePayload) => Promise<{ skipped: boolean }>;
+    /**
+     * Preferred upload path: sends every row to the server's bulk-import
+     * endpoint in ONE request. Falls back to `onCreateCase` per row when this
+     * is not provided or when the batch request fails.
+     */
+    onBulkImport?: (
+        payloads: UploadCasePayload[],
+        options: { skipDuplicates: boolean; createMissingSuites: boolean; defaultSuiteId?: string }
+    ) => Promise<BulkImportWithSuiteResult>;
     /** Called once after the last row, so the page can reload suites + cases. */
     onUploadComplete?: () => Promise<void> | void;
     /**
@@ -63,6 +73,7 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
     isOpen,
     onClose,
     onCreateCase,
+    onBulkImport,
     onUploadComplete,
     onCheckServerStatus,
     customFieldDefinitions,
@@ -187,10 +198,10 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
                     }
                     finish(XLSX.utils.sheet_to_csv(sheet));
                 } catch (error) {
-                    alert(`Error reading the workbook: ${(error as Error).message}`);
+                    toast.error(`Error reading the workbook: ${(error as Error).message}`);
                 }
             };
-            reader.onerror = () => alert('Error reading the file');
+            reader.onerror = () => toast.error('Error reading the file');
             reader.readAsArrayBuffer(file);
             return;
         }
@@ -211,7 +222,7 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
                 setStep(2);
             },
             error: (error) => {
-                alert(`Error parsing CSV: ${(error as Error).message}`);
+                toast.error(`Error parsing CSV: ${(error as Error).message}`);
             },
         });
     };
@@ -228,12 +239,19 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
     const COMMENTS_HEADERS = ['comments', 'notes'];
     const TEST_TYPE_HEADERS = ['test type', 'testtype', 'type'];
 
-    const normalizeImportedStatus = (value: string): Status | '' => {        const trimmedValue = value.trim();
+    /**
+     * Maps a spreadsheet status onto the current Status enum.
+     * Returns '' for an empty cell, `null` when the value is not recognised —
+     * the caller turns that into a validation error instead of silently
+     * coercing every unknown value to a status the user never chose.
+     */
+    const normalizeImportedStatus = (value: string): Status | '' | null => {        const trimmedValue = value.trim();
         if (!trimmedValue) return '';
 
         const normalizedValue = trimmedValue.toLowerCase();
 
-        // Map old status values to new ones
+        // Legacy execution results from old exports (pass/fail/blocked/retest)
+        // map onto the workflow states the model uses today.
         if (normalizedValue === 'pass' || normalizedValue === 'passed') return Status.Ready;
         if (normalizedValue === 'fail' || normalizedValue === 'failed') return Status.Ready;
         if (normalizedValue === 'ready for testing' || normalizedValue === 'ready') return Status.Ready;
@@ -254,8 +272,8 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
             return trimmedValue as Status;
         }
 
-        // Default to Ready for unrecognized values
-        return Status.Ready;
+        // Unrecognized — reported as a validation error, never silently coerced
+        return null;
     };
 
     const normalizeImportedTestType = (value: string): TestType | '' => {
@@ -394,8 +412,8 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
         // Check for duplicate mappings
         const duplicates = getDuplicateMappings();
         if (duplicates.length > 0) {
-            alert(
-                `Cannot proceed: The following fields are mapped multiple times:\n\n${duplicates.join(', ')}\n\nEach field can only be mapped once.`
+            toast.error(
+                `Cannot proceed: mapped multiple times — ${duplicates.join(', ')}. Each field can only be mapped once.`
             );
             return false;
         }
@@ -403,7 +421,7 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
         // Check if title is mapped
         const titleMapping = columnMappings.find((m) => m.testCaseField === 'title');
         if (!titleMapping) {
-            alert('Title field must be mapped to proceed with import');
+            toast.error('Title field must be mapped to proceed with import');
             return false;
         }
 
@@ -438,12 +456,11 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
             const statusMapping = columnMappings.find((m) => m.testCaseField === 'status');
             if (statusMapping) {
                 const status = row[statusMapping.csvColumn]?.trim();
-                const normalizedStatus = normalizeImportedStatus(status || '');
-                if (normalizedStatus && !Object.values(Status).includes(normalizedStatus)) {
+                if (status && normalizeImportedStatus(status) === null) {
                     errors.push({
                         row: rowNum,
                         field: 'Status',
-                        message: `Invalid status: "${status}". Must be one of: ${Object.values(Status).join(', ')}`,
+                        message: `Unrecognized status: "${status}". Must be one of: ${Object.values(Status).join(', ')} (legacy values like "pass"/"fail" map automatically)`,
                     });
                 }
             }
@@ -562,90 +579,138 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
         });
     };
 
+    /** One row paired with its original file row number (1-based). */
+    type NumberedPayload = { payload: UploadCasePayload; row: number };
+
     /**
-     * Upload every row, one request per row, in file order.
+     * Fallback upload path: one request per row, in file order.
      *
      * Sequential rather than parallel on purpose: the counter the user watches
      * has to equal what is committed, and a shared suite being created on the
      * first row must exist before the second row joins it. A failing row is
      * recorded and the upload continues, so one bad line cannot abandon the rest.
      */
+    const importRowByRow = async (
+        rows: NumberedPayload[],
+        combined: BulkImportWithSuiteResult,
+        options: { total: number; baseUploaded: number; forceSkipDuplicate: boolean }
+    ) => {
+        let uploaded = options.baseUploaded;
+        for (const { payload, row } of rows) {
+            setCurrentRowLabel(`Row ${row}: ${payload.title}`);
+            try {
+                const result = await onCreateCase({
+                    ...payload,
+                    createSuiteIfMissing: createMissingSuites,
+                    skipIfDuplicate: options.forceSkipDuplicate || skipDuplicates,
+                });
+                if (result.skipped) {
+                    combined.skipped++;
+                    combined.duplicates!.push(payload.title);
+                } else {
+                    combined.created++;
+                }
+            } catch (error: unknown) {
+                combined.failed++;
+                combined.errors.push({
+                    index: row,
+                    title: payload.title,
+                    message: (error as Error)?.message || 'Failed to create test case',
+                });
+            }
+            uploaded++;
+            setUploadProgress({ uploaded, total: options.total, created: combined.created, skipped: combined.skipped, failed: combined.failed });
+        }
+    };
+
     const handleImport = async () => {
-        const payloads = transformData();
-        setImporting(true);
-        setImportResult(null);
-        setUploadProgress({ uploaded: 0, total: payloads.length, created: 0, skipped: 0, failed: 0 });
-        setCurrentRowLabel(null);
+        const allPayloads = transformData();
+        const total = allPayloads.length;
+
+        // Rows that failed validation are never sent — they go straight into
+        // the error report so the file can be fixed and the rest imported.
+        const rowsWithErrors = new Set(validationErrors.map((error) => error.row));
 
         const combined: BulkImportWithSuiteResult = {
             created: 0,
             skipped: 0,
             failed: 0,
-            errors: [],
+            errors: validationErrors.map((error) => ({
+                index: error.row,
+                title: allPayloads[error.row - 1]?.title || '',
+                message: `${error.field}: ${error.message}`,
+            })),
             duplicates: [],
             suitesCreated: [],
             suiteStats: {},
         };
-        const seenSuiteNames = new Set<string>();
+
+        // Repeated suite+title rows inside the same file are duplicates before
+        // the server ever sees them, so they are skipped without a request.
+        // Every payload keeps its original row number so error reports point
+        // at the right line of the file.
+        const unique: NumberedPayload[] = [];
         const seenInFile = new Set<string>();
-
-        let uploaded = 0;
-        let created = 0;
-        let skipped = 0;
-        let failed = 0;
-
-        for (let i = 0; i < payloads.length; i++) {
-            const payload = payloads[i];
-            const rowNumber = i + 1;
-
-            // A repeated suite+title inside the same file is a duplicate even
-            // before the server sees it, so skip it without a request.
+        const suiteNamesInFile = new Set<string>();
+        allPayloads.forEach((payload, index) => {
+            const row = index + 1;
+            if (rowsWithErrors.has(row)) return;
             const suiteKey = (payload.suiteName || payload.suiteId || '').trim().toLowerCase();
             const dedupeKey = `${suiteKey}::${payload.title.trim().toLowerCase()}`;
             if (seenInFile.has(dedupeKey)) {
-                skipped++;
                 combined.skipped++;
                 combined.duplicates!.push(payload.title);
-                seenSuiteNames.add(payload.suiteName || '');
-                uploaded++;
-                setUploadProgress({ uploaded, total: payloads.length, created, skipped, failed });
-                continue;
+                return;
             }
             seenInFile.add(dedupeKey);
+            if (payload.suiteName) suiteNamesInFile.add(payload.suiteName);
+            unique.push({ payload, row });
+        });
+        combined.failed = rowsWithErrors.size;
 
-            setCurrentRowLabel(`Row ${rowNumber}: ${payload.title}`);
+        setImporting(true);
+        setImportResult(null);
+        setUploadProgress({ uploaded: 0, total, created: 0, skipped: combined.skipped, failed: combined.failed });
+        setCurrentRowLabel(null);
 
+        if (rowsWithErrors.size > 0) {
+            toast.error(`Skipping ${rowsWithErrors.size} row(s) with validation errors — included in the error report`);
+        }
+
+        // Preferred path: the whole file goes up in ONE bulk-import request
+        // instead of one HTTP call per row.
+        let usedBulk = false;
+        if (onBulkImport && unique.length > 0) {
+            setCurrentRowLabel(`Sending ${unique.length} test cases in a single request…`);
             try {
-                const result = await onCreateCase({
-                    ...payload,
-                    createSuiteIfMissing: createMissingSuites,
-                    skipIfDuplicate: skipDuplicates,
+                const result = await onBulkImport(unique.map((entry) => entry.payload), {
+                    skipDuplicates,
+                    createMissingSuites,
+                    defaultSuiteId: defaultSuiteId || undefined,
                 });
-
-                if (payload.suiteName) {
-                    seenSuiteNames.add(payload.suiteName);
-                }
-
-                if (result.skipped) {
-                    skipped++;
-                    combined.skipped++;
-                    combined.duplicates!.push(payload.title);
-                } else {
-                    created++;
-                    combined.created++;
-                }
-            } catch (error: unknown) {
-                failed++;
-                combined.failed++;
-                combined.errors.push({
-                    index: rowNumber,
-                    title: payload.title,
-                    message: (error as Error)?.message || 'Failed to create test case',
-                });
+                combined.created = result.created;
+                combined.skipped += result.skipped;
+                combined.failed += result.failed;
+                combined.errors.push(...(result.errors ?? []));
+                combined.duplicates!.push(...(result.duplicates ?? []));
+                combined.suitesCreated = result.suitesCreated ?? [];
+                combined.suiteStats = result.suiteStats ?? {};
+                usedBulk = true;
+                setUploadProgress({ uploaded: total, total, created: combined.created, skipped: combined.skipped, failed: combined.failed });
+            } catch (error) {
+                // The batch may have partially committed — the per-row retry
+                // forces skipIfDuplicate so nothing can be created twice.
+                console.error('Bulk import failed, falling back to per-row upload:', error);
+                toast.error('Batch upload failed — retrying row by row');
             }
+        }
 
-            uploaded++;
-            setUploadProgress({ uploaded, total: payloads.length, created, skipped, failed });
+        if (unique.length > 0 && !usedBulk) {
+            await importRowByRow(unique, combined, {
+                total,
+                baseUploaded: combined.skipped + rowsWithErrors.size,
+                forceSkipDuplicate: Boolean(onBulkImport),
+            });
         }
 
         setCurrentRowLabel(null);
@@ -657,14 +722,15 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
             console.error('Failed to refresh after upload:', error);
         }
 
-        // Only report suites the upload actually had to create, which the
-        // single-case endpoint does not tell us; surface the distinct names it
-        // resolved instead.
-        combined.suitesCreated = createMissingSuites
-            ? Array.from(seenSuiteNames).filter((name) =>
-                  !availableSuites.some((s) => s.name.toLowerCase() === name.toLowerCase())
-              )
-            : [];
+        // Bulk responses report the suites they created; the per-row path
+        // reports the distinct names it had to resolve itself.
+        if (!usedBulk) {
+            combined.suitesCreated = createMissingSuites
+                ? Array.from(suiteNamesInFile).filter((name) =>
+                      !availableSuites.some((s) => s.name.toLowerCase() === name.toLowerCase())
+                  )
+                : [];
+        }
 
         setImportResult(combined);
         setStep(4);
@@ -711,7 +777,10 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
 
     if (!isOpen) return null;
 
-    const validCount = csvData.length - validationErrors.length;
+    // Distinct rows carrying at least one error — an error count is per field,
+    // so subtracting raw errors would undercount valid rows.
+    const rowsWithErrors = new Set(validationErrors.map((error) => error.row));
+    const validCount = csvData.length - rowsWithErrors.size;
     const duplicateMappings = step === 2 ? getDuplicateMappings() : [];
     const hasDuplicateMappings = duplicateMappings.length > 0;
     const importPct = importing && uploadProgress && uploadProgress.total > 0
@@ -745,6 +814,7 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
                     </div>
                     <button
                         onClick={handleClose}
+                        aria-label="Close"
                         className="p-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                     >
                         <X className="h-5 w-5" />
@@ -1257,7 +1327,7 @@ const ImportTestCasesModal: React.FC<ImportTestCasesModalProps> = ({
                                         )}
                                     </>
                                 ) : (
-                                    <>{validCount} valid, {validationErrors.length} errors</>
+                                    <>{validCount} valid{rowsWithErrors.size > 0 && `, ${rowsWithErrors.size} row(s) with errors will be skipped`}</>
                                 )}
                             </span>
                         )}

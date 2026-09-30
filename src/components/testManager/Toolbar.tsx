@@ -1,6 +1,6 @@
 import React from 'react';
-import { Plus, Filter, Download, Upload, Layers, Trash2, X, Check, Eye, RefreshCw } from 'lucide-react';
-import { ViewMode } from '../../types/testManager';
+import { Plus, Filter, Download, Upload, Layers, Trash2, X, Check, Eye, RefreshCw, Tags } from 'lucide-react';
+import { ViewMode, Status } from '../../types/testManager';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { useProjectWriteAccess } from '../../utils/projectPermissions';
 import DownloadTemplateButton from './DownloadTemplateButton';
@@ -22,6 +22,8 @@ interface ToolbarProps {
     onToggleSelectionMode?: () => void;
     selectedCount?: number;
     onDelete?: () => void;
+    /** Applied to every selected test case when picked from the status menu. */
+    onChangeStatus?: (status: Status) => void;
     // Export prop
     onDownload?: () => void;
     // Import prop
@@ -44,6 +46,7 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
         onToggleSelectionMode,
         selectedCount = 0,
         onDelete,
+        onChangeStatus,
         onDownload,
         onUpload,
         onRefresh,
@@ -71,6 +74,9 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
 
     const { toggleFilterModal, filters } = useTestManagerStore();
     const hasActiveFilters = filters.status.length > 0 || filters.priority.length > 0 || !!filters.dateRange.start || !!filters.dateRange.end;
+
+    // Bulk "set status" dropdown shown while rows are selected
+    const [statusMenuOpen, setStatusMenuOpen] = React.useState(false);
 
     // Helper to determine button text
     const getNewButtonText = () => {
@@ -123,6 +129,48 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
                 {/* Selection Mode Toggle (replaces Edit toggle for Cases view) */}
                 {showEditToggle && (
                     <>
+                        {isSelectionMode && selectedCount > 0 && onChangeStatus && (
+                            <div className="relative">
+                                <button
+                                    onClick={() => setStatusMenuOpen((open) => !open)}
+                                    disabled={isReadOnly}
+                                    aria-haspopup="menu"
+                                    aria-expanded={statusMenuOpen}
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-md transition-colors text-sm font-medium bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    <Tags className="h-4 w-4" />
+                                    <span className="hidden sm:inline">Set status ({selectedCount})</span>
+                                    <span className="sm:hidden">({selectedCount})</span>
+                                </button>
+                                {statusMenuOpen && (
+                                    <>
+                                        <div
+                                            className="fixed inset-0 z-30"
+                                            onClick={() => setStatusMenuOpen(false)}
+                                        />
+                                        <div
+                                            role="menu"
+                                            className="absolute right-0 z-40 mt-1 w-40 py-1 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
+                                        >
+                                            {Object.values(Status).map((status) => (
+                                                <button
+                                                    key={status}
+                                                    role="menuitem"
+                                                    onClick={() => {
+                                                        setStatusMenuOpen(false);
+                                                        onChangeStatus(status);
+                                                    }}
+                                                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                                >
+                                                    {status}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
+
                         {isSelectionMode && selectedCount > 0 && (
                             <button
                                 onClick={onDelete}
@@ -161,6 +209,7 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
                 {viewMode === 'cases' && (
                     <button
                         onClick={() => toggleFilterModal(true)}
+                        aria-label="Filter test cases"
                         className={`p-1 rounded-md transition-colors ${hasActiveFilters ? 'text-blue-500 bg-blue-500/10 dark:bg-blue-500/20 hover:bg-blue-500/20 dark:hover:bg-blue-500/30' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                     >
                         <Filter className="h-4 w-4" strokeWidth={1.5} />
@@ -174,6 +223,7 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
                             disabled={isReadOnly}
                             className="p-1 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             title={isReadOnly ? 'You have read-only access to this project' : 'Upload test cases from CSV or XLSX'}
+                            aria-label="Upload test cases"
                         >
                             <Upload className="h-4 w-4" strokeWidth={1.5} />
                         </button>
@@ -197,7 +247,8 @@ const Toolbar: React.FC<ToolbarProps> = (props) => {
                     <button
                         onClick={onDownload}
                         className="p-1 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                        title="Export test cases to CSV"
+                        title="Export test cases (CSV or XLSX)"
+                        aria-label="Export test cases (CSV or XLSX)"
                     >
                         <Download className="h-4 w-4" strokeWidth={1.5} />
                     </button>

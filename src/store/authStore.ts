@@ -127,7 +127,9 @@ export const useAuthStore = create<AuthStoreState>((set) => ({
 	checkAuth: async (): Promise<void> => {
 		set({ isCheckingAuth: true, error: null });
 		try {
-			const response = await axios.get<{ user: User }>(`${API_URL}/auth/check-auth`);
+			// Boot-time probe: every outcome here is handled in this catch block,
+			// so the global error toast would just be noise on app start.
+			const response = await axios.get<{ user: User }>(`${API_URL}/auth/check-auth`, { silentError: true });
 			set({ user: response.data.user, isAuthenticated: true, isCheckingAuth: false });
 		} catch {
 			set({ error: null, isCheckingAuth: false, isAuthenticated: false });

@@ -883,6 +883,7 @@ const DiscussionPanel: React.FC<DiscussionPanelProps> = React.memo(function Disc
                                     )}
                                     <button
                                         onClick={() => removePendingAttachment(idx)}
+                                        aria-label="Remove attachment"
                                         className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                                     >
                                         <X className="w-2.5 h-2.5 text-white" />
@@ -894,6 +895,7 @@ const DiscussionPanel: React.FC<DiscussionPanelProps> = React.memo(function Disc
                                     <img src={pastedImagePreview} alt="Pasted" className="w-12 h-12 rounded object-cover border border-blue-300 dark:border-blue-600" />
                                     <button
                                         onClick={clearPastedImage}
+                                        aria-label="Remove pasted image"
                                         className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                                     >
                                         <X className="w-2.5 h-2.5 text-white" />

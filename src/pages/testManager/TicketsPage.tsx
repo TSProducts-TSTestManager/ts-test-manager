@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import IdDisplay from '../../components/testManager/IdDisplay';
 import { exportTicketsToXLSX } from '../../utils/exportTickets';
+import { isGloballyHandledError } from '../../utils/api';
 import { CreateTicketRequest, UpdateTicketRequest, TicketListResponse } from '../../types/api/testManager.api';
 import { useProjectWriteAccess } from '../../utils/projectPermissions';
 import { ticketApi, TicketListParams } from '../../services/ticketApi';
@@ -811,6 +812,9 @@ const TicketsPage: React.FC = () => {
             setActiveTicket(mappedTicket);
         } catch (error) {
             console.error('Failed to load ticket detail:', error);
+            if (!isGloballyHandledError(error)) {
+                toast.error((error as Error)?.message || 'Failed to load ticket details');
+            }
         }
     }, [setActiveTicket, setTicketDetailViewOpen]);
 
