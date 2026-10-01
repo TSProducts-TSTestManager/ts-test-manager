@@ -5,6 +5,7 @@ import * as testManagerApi from '../services/testManagerApi';
 import * as ticketApi from '../services/ticketApi';
 import { useAuthStore } from './authStore';
 import { canWriteProject } from '../utils/projectRoles';
+import { subtreeSuiteIds } from '../utils/suiteTree';
 import {
     ProjectResponse,
     TestSuiteResponse,
@@ -13,6 +14,7 @@ import {
     UpdateProjectRequest,
     CreateTestSuiteRequest,
     UpdateTestSuiteRequest,
+    MoveTestSuiteRequest,
     CreateTestCaseRequest,
     UpdateTestCaseRequest,
     TicketListResponse,
@@ -152,11 +154,16 @@ export const mapTestCaseResponse = (tc: TestCaseResponse): TestCase => ({
 
 const mapTestSuiteResponse = (s: TestSuiteResponse): TestSuite => ({
     id: s.id,
+    displayId: s.displayId,
     name: s.name,
     description: s.description,
     tags: s.tags || [],
     projectId: s.projectId,
     caseCount: s.caseCount,
+    totalCaseCount: s.totalCaseCount ?? s.caseCount,
+    parentId: s.parentId ?? null,
+    depth: s.depth ?? 0,
+    isFolder: s.isFolder === true,
     archived: s.archived === true,
     archivedAt: s.archivedAt ?? null,
     createdAt: s.createdAt,
@@ -307,6 +314,7 @@ interface TestManagerStore {
     fetchTestSuites: (projectId: string, scope?: ArchiveScope) => Promise<void>;
     createTestSuite: (projectId: string, data: CreateTestSuiteRequest) => Promise<TestSuite>;
     updateTestSuite: (id: string, data: UpdateTestSuiteRequest) => Promise<TestSuite>;
+    moveTestSuite: (id: string, data: MoveTestSuiteRequest) => Promise<TestSuite>;
     deleteTestSuite: (id: string) => Promise<void>;
     archiveTestSuite: (id: string) => Promise<void>;
     restoreTestSuite: (id: string) => Promise<void>;
@@ -785,6 +793,13 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
                     description: data.description,
                     tags: data.tags || [],
                     projectId,
+                    parentId: data.parentId ?? null,
+                    // The server owns the real depth; a temp row only needs to
+                    // land in the right place in the tree while it is in flight.
+                    depth: 0,
+                    isFolder: data.isFolder === true,
+                    caseCount: 0,
+                    totalCaseCount: 0,
                     createdAt: nowIso,
                     updatedAt: nowIso,
                     archived: false,
@@ -846,16 +861,44 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
                 }
             },
 
+            moveTestSuite: async (id: string, data: MoveTestSuiteRequest) => {
+                assertCanWriteSuite(id);
+                set({ isLoading: true, error: null });
+                const previousSuites = get().testSuites;
+                try {
+                    const response = await testManagerApi.moveTestSuite(id, data);
+                    const suite = mapTestSuiteResponse(response);
+                    // A move re-bases every depth below the node, so the whole
+                    // list is refreshed by the caller; the node itself is
+                    // updated here so the tree does not wait for that round trip.
+                    set((state) => ({
+                        testSuites: state.testSuites.map((s) => (s.id === id ? suite : s)),
+                        isLoading: false,
+                    }));
+                    return suite;
+                } catch (error: unknown) {
+                    set({
+                        testSuites: previousSuites,
+                        error: (error as Error).message,
+                        isLoading: false,
+                    });
+                    throw error;
+                }
+            },
+
             deleteTestSuite: async (id: string) => {
                 assertCanWriteSuite(id);
                 set({ isLoading: true, error: null });
                 const previousSuites = get().testSuites;
                 const previousTestCases = get().testCases;
+                // Deleting a folder deletes every folder beneath it, so the
+                // optimistic removal has to cover the whole subtree.
+                const doomed = new Set(subtreeSuiteIds(previousSuites, id));
                 set((state) => ({
-                    testSuites: state.testSuites.filter((s) => s.id !== id),
-                    testCases: state.testCases.filter((tc) => tc.suiteId !== id),
-                    activeSuiteId: state.activeSuiteId === id ? null : state.activeSuiteId,
-                    activeSuite: state.activeSuiteId === id ? null : state.activeSuite,
+                    testSuites: state.testSuites.filter((s) => !doomed.has(s.id)),
+                    testCases: state.testCases.filter((tc) => !tc.suiteId || !doomed.has(tc.suiteId)),
+                    activeSuiteId: state.activeSuiteId && doomed.has(state.activeSuiteId) ? null : state.activeSuiteId,
+                    activeSuite: state.activeSuiteId && doomed.has(state.activeSuiteId) ? null : state.activeSuite,
                 }));
 
                 try {
@@ -878,13 +921,14 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
                 const previousSuites = get().testSuites;
                 const previousTestCases = get().testCases;
 
-                // Archiving a suite archives its cases too, so both lists drop
-                // them optimistically. A failure rolls both back.
+                // Archiving a folder archives its sub-folders and every case
+                // below it, so both lists drop the whole subtree optimistically.
+                const doomed = new Set(subtreeSuiteIds(previousSuites, id));
                 set((state) => ({
-                    testSuites: state.testSuites.filter((s) => s.id !== id),
-                    testCases: state.testCases.filter((tc) => tc.suiteId !== id),
-                    activeSuiteId: state.activeSuiteId === id ? null : state.activeSuiteId,
-                    activeSuite: state.activeSuiteId === id ? null : state.activeSuite,
+                    testSuites: state.testSuites.filter((s) => !doomed.has(s.id)),
+                    testCases: state.testCases.filter((tc) => !tc.suiteId || !doomed.has(tc.suiteId)),
+                    activeSuiteId: state.activeSuiteId && doomed.has(state.activeSuiteId) ? null : state.activeSuiteId,
+                    activeSuite: state.activeSuiteId && doomed.has(state.activeSuiteId) ? null : state.activeSuite,
                     isLoading: false,
                 }));
 

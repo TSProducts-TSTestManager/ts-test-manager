@@ -4,6 +4,7 @@ import { ChevronRight, ChevronDown, Folder, Layers, Check, Home, Map, Grid2x2, T
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { getAreasByProject, getAreasBySuite } from '../../services/testManagerApi';
 import { useProjectOptions } from '../../hooks/useProjectOptions';
+import { suitePathLabel } from '../../utils/suiteTree';
 
 interface ContextBreadcrumbProps {
     showSuiteSelector?: boolean;
@@ -62,8 +63,19 @@ const ContextBreadcrumb: React.FC<ContextBreadcrumbProps> = ({ showSuiteSelector
     } = useProjectOptions(activeProject);
 
     const currentProject = projectOptions.find(p => p.id === activeProject);
-    const currentSuite = testSuites.find(s => s.id === activeSuiteId);
+    // "Owner / Login" so a nested suite is never ambiguous in the crumb.
+    const currentSuiteLabel = activeSuiteId
+        ? suitePathLabel(testSuites, activeSuiteId) || activeSuite || 'All Suites'
+        : 'All Suites';
     const suiteOptions = filteredSuites ?? testSuites;
+    // Folder path order, so nested suites sit under their parent.
+    const orderedSuiteOptions = useMemo(
+        () =>
+            [...suiteOptions].sort((a, b) =>
+                suitePathLabel(testSuites, a.id).localeCompare(suitePathLabel(testSuites, b.id))
+            ),
+        [suiteOptions, testSuites]
+    );
 
     // Close dropdowns when clicking outside
     useEffect(() => {
@@ -296,15 +308,15 @@ const ContextBreadcrumb: React.FC<ContextBreadcrumbProps> = ({ showSuiteSelector
                     <div className="relative" ref={suiteRef}>
                         <button
                             onClick={() => setIsSuiteOpen(!isSuiteOpen)}
-                            title={currentSuite?.name || activeSuite || 'All Suites'}
+                            title={currentSuiteLabel}
                             className={`flex items-center gap-1 px-2 py-0.5 text-sm font-medium rounded-md transition-all ${activeSuiteId
                                 ? 'text-gray-700 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-700 hover:shadow-sm dark:hover:shadow-md'
                                 : 'text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-white dark:hover:bg-gray-700 hover:shadow-sm dark:hover:shadow-md'
                                 }`}
                         >
                             <Layers size={14} className={activeSuiteId ? 'text-purple-500 dark:text-purple-400 flex-shrink-0' : 'text-gray-400 dark:text-gray-500 flex-shrink-0'} />
-                            <span className="max-w-[80px] sm:max-w-[120px] truncate">
-                                {currentSuite?.name || activeSuite || 'All Suites'}
+                            <span className="max-w-[80px] sm:max-w-[180px] truncate">
+                                {currentSuiteLabel}
                             </span>
                             <ChevronDown size={14} className={`text-gray-400 dark:text-gray-400 transition-transform flex-shrink-0 ${isSuiteOpen ? 'rotate-180' : ''}`} />
                         </button>
@@ -328,18 +340,23 @@ const ContextBreadcrumb: React.FC<ContextBreadcrumbProps> = ({ showSuiteSelector
                                 <div className="h-px bg-gray-100 dark:bg-gray-700 my-1" />
 
                                 <div className="max-h-64 overflow-y-auto">
-                                    {suiteOptions.map(suite => (
+                                    {orderedSuiteOptions.map(suite => {
+                                        const label = suitePathLabel(testSuites, suite.id) || suite.name;
+                                        const indent = Math.max(0, label.split(' / ').length - 1) * 12;
+                                        return (
                                         <button
                                             key={suite.id}
                                             onClick={() => handleSuiteChange(suite.id, suite.name)}
-                                            title={suite.name}
-                                            className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${activeSuiteId === suite.id ? 'text-blue-500 dark:text-blue-400 bg-blue-500/10 dark:bg-blue-400/20' : 'text-gray-700 dark:text-gray-300'}`}
+                                            title={label}
+                                            style={{ paddingLeft: `${12 + indent}px` }}
+                                            className={`w-full text-left pr-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${activeSuiteId === suite.id ? 'text-blue-500 dark:text-blue-400 bg-blue-500/10 dark:bg-blue-400/20' : 'text-gray-700 dark:text-gray-300'}`}
                                         >
-                                            <Layers size={14} className={activeSuiteId === suite.id ? 'text-purple-500 dark:text-purple-400' : 'text-gray-400 dark:text-gray-500'} />
-                                            <span className="truncate flex-1">{suite.name}</span>
+                                            <Layers size={14} className={activeSuiteId === suite.id ? 'text-purple-500 dark:text-purple-400 flex-shrink-0' : 'text-gray-400 dark:text-gray-500 flex-shrink-0'} />
+                                            <span className="truncate flex-1">{label}</span>
                                             {activeSuiteId === suite.id && <Check size={14} />}
                                         </button>
-                                    ))}
+                                        );
+                                    })}
                                     {suiteOptions.length === 0 && (
                                         <div className="px-3 py-4 text-sm text-gray-400 dark:text-gray-500 text-center">
                                             {filteredSuites && testSuites.length > 0

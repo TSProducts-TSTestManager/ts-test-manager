@@ -105,12 +105,20 @@ export interface ProjectResponse {
 // Test Suite API Response
 export interface TestSuiteResponse {
   id: string;
+  displayId?: string;
   name: string;
   description?: string;
   tags?: string[];
   projectId: string;
   createdBy: string;
+  /** Cases directly in this node. */
   caseCount: number;
+  /** Cases in this node plus every descendant folder. */
+  totalCaseCount: number;
+  parentId: string | null;
+  /** 0 = root; folders may nest up to 3 levels. */
+  depth: number;
+  isFolder: boolean;
   archived: boolean;
   archivedAt?: string | null;
   createdAt: string;
@@ -185,12 +193,23 @@ export interface CreateTestSuiteRequest {
   name: string;
   description?: string;
   tags?: string[];
+  /** Parent folder id; omit or null for a root-level node. */
+  parentId?: string | null;
+  /** Create the node as a folder (it may still hold test cases). */
+  isFolder?: boolean;
 }
 
 export interface UpdateTestSuiteRequest {
   name?: string;
   description?: string;
   tags?: string[];
+  /** Re-parent the node; null moves it to the root level. */
+  parentId?: string | null;
+  isFolder?: boolean;
+}
+
+export interface MoveTestSuiteRequest {
+  parentId?: string | null;
 }
 
 export interface CreateTestCaseRequest {

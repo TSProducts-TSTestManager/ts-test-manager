@@ -20,6 +20,7 @@ import {
   ProjectMemberCandidate,
   CreateTestSuiteRequest,
   UpdateTestSuiteRequest,
+  MoveTestSuiteRequest,
   CreateTestCaseRequest,
   UpdateTestCaseRequest,
   Status,
@@ -408,7 +409,29 @@ export const updateTestSuite = async (
 };
 
 /**
- * Delete a test suite
+ * Move a suite/folder under a new parent (`null` = root level).
+ */
+export const moveTestSuite = async (
+  id: string,
+  data: MoveTestSuiteRequest
+): Promise<TestSuiteResponse> => {
+  try {
+    const response = await axios.put<ApiResponse<TestSuiteResponse>>(
+      `${API_URL}/suites/${id}/move`,
+      data
+    );
+    if (!response.data.data) {
+      throw new Error("No data returned from server");
+    }
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * Delete a test suite. Deleting a folder also deletes every folder beneath it
+ * and all of their test cases.
  */
 export const deleteTestSuite = async (id: string): Promise<void> => {
   try {
@@ -519,6 +542,13 @@ export interface CaseListQuery {
   /** Empty string means "test type not set", matching the UI's Not set option. */
   testType?: string[];
   area?: string;
+  /** Narrow the list to one suite/folder. */
+  suiteId?: string;
+  /**
+   * With `suiteId`, widen the list to the whole folder tree
+   * (`subtree`) or keep it to the node's own cases (`direct`, default).
+   */
+  suiteScope?: 'direct' | 'subtree';
   lastModifiedStart?: string | null;
   lastModifiedEnd?: string | null;
   createdStart?: string | null;
@@ -541,6 +571,10 @@ const toCaseQueryParams = (query: CaseListQuery): Record<string, string | number
   if (query.priority?.length) params.priority = query.priority.join(',');
   if (query.testType?.length) params.testType = query.testType.join(',');
   if (query.area?.trim()) params.area = query.area.trim();
+  if (query.suiteId) {
+    params.suiteId = query.suiteId;
+    if (query.suiteScope) params.suiteScope = query.suiteScope;
+  }
   if (query.lastModifiedStart) params.lastModifiedStart = query.lastModifiedStart;
   if (query.lastModifiedEnd) params.lastModifiedEnd = query.lastModifiedEnd;
   if (query.createdStart) params.createdStart = query.createdStart;
@@ -946,6 +980,7 @@ export const testManagerApi = {
   getTestSuites,
   getTestSuite,
   updateTestSuite,
+  moveTestSuite,
   deleteTestSuite,
   archiveTestSuite,
   restoreTestSuite,

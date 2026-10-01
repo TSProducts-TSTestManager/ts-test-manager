@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import TestSuitesPage from '../pages/testManager/TestSuitesPage';
 import { Priority, Status, type Project, type TestCase, type TestSuite, type Tester } from '../types/testManager';
@@ -44,9 +44,12 @@ vi.mock('../components/testManager/TestSuiteList', () => ({
         <div>
             <div data-testid="suite-count">{testSuites.length}</div>
             <div data-testid="allow-derived">{String(allowDerivedFallback)}</div>
-            {testSuites.map((suite) => (
-                <div key={suite.id}>{suite.name}</div>
-            ))}
+            {/* Scoped so suite names rendered by the folder tree do not collide. */}
+            <div data-testid="suite-list">
+                {testSuites.map((suite) => (
+                    <div key={suite.id}>{suite.name}</div>
+                ))}
+            </div>
             {emptyState && (
                 <div>
                     <h2>{emptyState.title}</h2>
@@ -55,6 +58,10 @@ vi.mock('../components/testManager/TestSuiteList', () => ({
             )}
         </div>
     ),
+}));
+
+vi.mock('../components/testManager/SuiteMoveModal', () => ({
+    default: () => null,
 }));
 
 vi.mock('../components/testManager/TestSuiteCreateModal', () => ({
@@ -198,7 +205,9 @@ describe('TestSuitesPage', () => {
         expect(screen.getByTestId('allow-derived')).toHaveTextContent('false');
         expect(screen.getByText('No Test Suites Found')).toBeInTheDocument();
         expect(screen.getByText('No test suites match your search or filters.')).toBeInTheDocument();
-        expect(screen.queryByText('Authentication')).not.toBeInTheDocument();
+        // The folder tree honours the same filters, so nothing is left behind.
+        expect(within(screen.getByTestId('suite-list')).queryByText('Authentication')).toBeNull();
+        expect(screen.queryByText('Authentication')).toBeNull();
     });
 
     it('derives suites from project test cases before filtering when suite data is unavailable', async () => {
@@ -216,7 +225,9 @@ describe('TestSuitesPage', () => {
 
         await waitFor(() => expect(screen.getByTestId('suite-count')).toHaveTextContent('1'));
         expect(screen.getByTestId('allow-derived')).toHaveTextContent('false');
-        expect(screen.getByText('Authentication')).toBeInTheDocument();
+        expect(
+            within(screen.getByTestId('suite-list')).getByText('Authentication')
+        ).toBeInTheDocument();
         expect(screen.queryByText('No Test Suites Found')).not.toBeInTheDocument();
     });
 });

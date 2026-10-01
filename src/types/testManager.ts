@@ -337,7 +337,16 @@ export interface TestSuite {
     name: string;
     description?: string;
     tags?: string[];
+    /** Cases directly in this node. */
     caseCount?: number;
+    /** Cases in this node plus every folder beneath it. */
+    totalCaseCount?: number;
+    /** Parent folder id. null = root level. */
+    parentId?: string | null;
+    /** 0 = root, 1 = child, 2 = grandchild (max 3 folder levels). */
+    depth?: number;
+    /** Display intent: created as a folder (still allowed to hold cases). */
+    isFolder?: boolean;
     /** Soft-deleted. Hidden unless the Archived view is selected. */
     archived?: boolean;
     archivedAt?: string | null;

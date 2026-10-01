@@ -160,6 +160,12 @@ const TestCasesPage: React.FC = () => {
         [testCases]
     );
 
+    // A folder row shows every case beneath it, not just its own.
+    const activeSuiteHasChildren = useMemo(
+        () => (activeSuiteId ? testSuites.some((suite) => suite.parentId === activeSuiteId) : false),
+        [testSuites, activeSuiteId]
+    );
+
     const location = useLocation();
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -192,6 +198,10 @@ const TestCasesPage: React.FC = () => {
             priority: filters.priority.length > 0 ? filters.priority : undefined,
             testType: filters.testType.length > 0 ? filters.testType : undefined,
             area: activeArea || undefined,
+            // Folder rows widen the request to the whole subtree; a plain suite
+            // keeps the default direct scope.
+            suiteId: activeSuiteId || undefined,
+            suiteScope: activeSuiteId && activeSuiteHasChildren ? 'subtree' : 'direct',
             lastModifiedStart: filters.dateRange.start,
             lastModifiedEnd: filters.dateRange.end,
             createdStart: filters.createdAtRange?.start,
@@ -208,6 +218,8 @@ const TestCasesPage: React.FC = () => {
         return query;
     }, [
         activeArea,
+        activeSuiteHasChildren,
+        activeSuiteId,
         caseScope,
         debouncedSearch,
         filters.createdAtRange?.end,
@@ -1372,8 +1384,10 @@ const tableColumnOrder = useMemo(
                     isEditMode={isListEditMode}
                     onUpdate={handleInlineUpdate}
                     onStatusChange={handleStatusChange}
-                    enableReorder={!!activeSuiteId}
-                    onReorder={activeSuiteId ? handleReorder : undefined}
+                    // Drag-to-reorder is per suite; a folder view spans the
+                    // subtree, so ordering is only offered inside one node.
+                    enableReorder={!!activeSuiteId && !activeSuiteHasChildren}
+                    onReorder={activeSuiteId && !activeSuiteHasChildren ? handleReorder : undefined}
                     // Selection props
                     isSelectionMode={isSelectionMode}
                     selectedIds={selectedTestCaseIds}

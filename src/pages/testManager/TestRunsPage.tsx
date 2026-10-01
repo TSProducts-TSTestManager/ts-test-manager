@@ -1454,7 +1454,7 @@ const TestRunsPage: React.FC = () => {
                 }}
                 onSubmit={handleCreateRun}
                 testCases={testCases}
-                testSuites={testSuites.map(s => ({ id: s.id, name: s.name }))}
+                testSuites={testSuites}
                 testRunGroups={testRunGroups}
                 tagSuggestions={tagSuggestions}
                 initialTitle={createModalInitialTitle}
@@ -1500,7 +1500,7 @@ const TestRunsPage: React.FC = () => {
                 testRun={editingRun}
                 testRunGroups={testRunGroups}
                 testCases={testCases}
-                testSuites={testSuites.map((suite) => ({ id: suite.id, name: suite.name }))}
+                testSuites={testSuites}
                 onSubmit={handleUpdateRun}
                 tagSuggestions={tagSuggestions}
             />
