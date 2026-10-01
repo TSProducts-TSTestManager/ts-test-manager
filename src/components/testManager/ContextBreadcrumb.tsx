@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { ChevronRight, ChevronDown, Folder, Layers, Check, Home, Map, Grid2x2, Table, Loader2, Search } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, Layers, Check, Home, Map, Loader2, Search } from 'lucide-react';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { getAreasByProject, getAreasBySuite } from '../../services/testManagerApi';
 import { useProjectOptions } from '../../hooks/useProjectOptions';
@@ -9,17 +9,13 @@ import { suitePathLabel } from '../../utils/suiteTree';
 interface ContextBreadcrumbProps {
     showSuiteSelector?: boolean;
     filteredSuites?: Array<{ id: string; name: string }>;
-    viewToggle?: {
-        mode: 'card' | 'table';
-        onToggle: () => void;
-    };
     rightContent?: React.ReactNode;
-    /** Content rendered between breadcrumbs and view-toggle (e.g. tag filter) */
+    /** Content rendered after the breadcrumbs, before any trailing content. */
     beforeToggle?: React.ReactNode;
     className?: string;
 }
 
-const ContextBreadcrumb: React.FC<ContextBreadcrumbProps> = ({ showSuiteSelector = true, filteredSuites, viewToggle, rightContent, beforeToggle, className = '' }) => {
+const ContextBreadcrumb: React.FC<ContextBreadcrumbProps> = ({ showSuiteSelector = true, filteredSuites, rightContent, beforeToggle, className = '' }) => {
     const {
         testSuites,
         activeProject,
@@ -446,18 +442,6 @@ const ContextBreadcrumb: React.FC<ContextBreadcrumbProps> = ({ showSuiteSelector
 
             {/* Tag filter or other before-toggle content */}
             {beforeToggle}
-
-            {/* View Toggle Button - shows when provided */}
-            {viewToggle && (
-                <button
-                    onClick={viewToggle.onToggle}
-                    className="ml-auto flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 hover:text-gray-900 dark:hover:text-gray-200 transition-colors shadow-sm dark:shadow-none"
-                    title={viewToggle.mode === 'card' ? 'Switch to table view' : 'Switch to card view'}
-                >
-                    {viewToggle.mode === 'card' ? <Table size={14} /> : <Grid2x2 size={14} />}
-                    <span className="hidden sm:inline">{viewToggle.mode === 'card' ? 'Table' : 'Card'}</span>
-                </button>
-            )}
             </div>
             
             {/* Right content (e.g., presence indicator) */}

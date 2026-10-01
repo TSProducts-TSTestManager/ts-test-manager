@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import TestSuitesPage from '../pages/testManager/TestSuitesPage';
 import { Priority, Status, type Project, type TestCase, type TestSuite, type Tester } from '../types/testManager';
+import type { SuiteTreeNode as SuiteFolderTreeNode } from '../utils/suiteTree';
 
 const mockStore = vi.hoisted(() => ({
     current: null as ReturnType<typeof createStoreState> | null,
@@ -31,33 +32,42 @@ vi.mock('../components/testManager/EmptyProjectState', () => ({
     ),
 }));
 
-vi.mock('../components/testManager/TestSuiteList', () => ({
+vi.mock('../components/testManager/SuiteFolderTable', () => ({
     default: ({
-        testSuites,
-        allowDerivedFallback,
+        nodes,
+        expandedIds,
         emptyState,
     }: {
-        testSuites: TestSuite[];
-        allowDerivedFallback?: boolean;
+        nodes: SuiteFolderTreeNode<TestSuite>[];
+        expandedIds: Set<string>;
         emptyState?: { title: string; description: string };
-    }) => (
-        <div>
-            <div data-testid="suite-count">{testSuites.length}</div>
-            <div data-testid="allow-derived">{String(allowDerivedFallback)}</div>
-            {/* Scoped so suite names rendered by the folder tree do not collide. */}
-            <div data-testid="suite-list">
-                {testSuites.map((suite) => (
-                    <div key={suite.id}>{suite.name}</div>
-                ))}
-            </div>
-            {emptyState && (
-                <div>
-                    <h2>{emptyState.title}</h2>
-                    <p>{emptyState.description}</p>
+    }) => {
+        // Renders like the real tree — children only when expanded — so the
+        // page's expansion behaviour is observable, and echoes the names so
+        // the page's own filtering can be asserted.
+        const flat = (items: SuiteFolderTreeNode<TestSuite>[]): SuiteFolderTreeNode<TestSuite>[] =>
+            items.flatMap((node) => [
+                node,
+                ...(expandedIds.has(node.suite.id) ? flat(node.children) : []),
+            ]);
+        const all = flat(nodes);
+        return (
+            <div>
+                <div data-testid="suite-count">{all.length}</div>
+                <div data-testid="suite-list">
+                    {all.map((node) => (
+                        <div key={node.suite.id}>{node.suite.name}</div>
+                    ))}
                 </div>
-            )}
-        </div>
-    ),
+                {emptyState && (
+                    <div>
+                        <h2>{emptyState.title}</h2>
+                        <p>{emptyState.description}</p>
+                    </div>
+                )}
+            </div>
+        );
+    },
 }));
 
 vi.mock('../components/testManager/SuiteMoveModal', () => ({
@@ -202,7 +212,6 @@ describe('TestSuitesPage', () => {
         );
 
         await waitFor(() => expect(screen.getByTestId('suite-count')).toHaveTextContent('0'));
-        expect(screen.getByTestId('allow-derived')).toHaveTextContent('false');
         expect(screen.getByText('No Test Suites Found')).toBeInTheDocument();
         expect(screen.getByText('No test suites match your search or filters.')).toBeInTheDocument();
         // The folder tree honours the same filters, so nothing is left behind.
@@ -224,10 +233,54 @@ describe('TestSuitesPage', () => {
         );
 
         await waitFor(() => expect(screen.getByTestId('suite-count')).toHaveTextContent('1'));
-        expect(screen.getByTestId('allow-derived')).toHaveTextContent('false');
         expect(
             within(screen.getByTestId('suite-list')).getByText('Authentication')
         ).toBeInTheDocument();
         expect(screen.queryByText('No Test Suites Found')).not.toBeInTheDocument();
+    });
+
+    it('opens the root folders once the real suites arrive, not the derived placeholders', async () => {
+        // The store hands the page a *derived* tree first — suite names taken
+        // from the loaded cases, because testSuites is still empty. Expansion
+        // must follow the real folders when they land, or the screen opens on a
+        // fully collapsed tree.
+        const owner = createTestSuite({ id: 'owner', name: 'Owner', isFolder: true, caseCount: 0, totalCaseCount: 3 });
+        const login = createTestSuite({
+            id: 'owner-login',
+            name: 'Login',
+            parentId: 'owner',
+            depth: 1,
+            isFolder: true,
+            caseCount: 3,
+            totalCaseCount: 3,
+        });
+
+        mockStore.current = createStoreState({
+            testSuites: [],
+            testCases: [createTestCase({ suite: 'Authentication' })],
+        });
+        const { rerender } = render(
+            <MemoryRouter initialEntries={['/test-manager/suites']}>
+                <TestSuitesPage />
+            </MemoryRouter>
+        );
+        // The derived placeholder is what the first expansion sees.
+        await waitFor(() =>
+            expect(within(screen.getByTestId('suite-list')).getByText('Authentication')).toBeInTheDocument()
+        );
+
+        // The real suites replace it.
+        mockStore.current = createStoreState({
+            testSuites: [owner, login, createTestSuite({ id: 'driver', name: 'Driver', isFolder: true })],
+        });
+        rerender(
+            <MemoryRouter initialEntries={['/test-manager/suites']}>
+                <TestSuitesPage />
+            </MemoryRouter>
+        );
+
+        await waitFor(() => expect(screen.getByTestId('suite-count')).toHaveTextContent('3'));
+        // Roots are open, so the nested folder is on screen.
+        expect(within(screen.getByTestId('suite-list')).getByText('Login')).toBeInTheDocument();
     });
 });

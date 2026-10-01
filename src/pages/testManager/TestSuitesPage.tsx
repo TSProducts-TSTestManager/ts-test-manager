@@ -5,21 +5,20 @@ import toast from 'react-hot-toast';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { useRealtimeTestCases } from '../../hooks/useRealtimeTestCases';
 import EmptyProjectState from '../../components/testManager/EmptyProjectState';
-import TestSuiteList from '../../components/testManager/TestSuiteList';
+import SuiteFolderTable from '../../components/testManager/SuiteFolderTable';
 import TestSuiteCreateModal from '../../components/testManager/TestSuiteCreateModal';
 import TestSuiteEditModal from '../../components/testManager/TestSuiteEditModal';
 import SuiteMoveModal from '../../components/testManager/SuiteMoveModal';
-import SuiteTree, { SuiteTreeActionButton } from '../../components/testManager/SuiteTree';
 import ConfirmationModal from '../../components/testManager/ConfirmationModal';
 import ContextBreadcrumb from '../../components/testManager/ContextBreadcrumb';
 import ProjectPresenceIndicator from '../../components/testManager/ProjectPresenceIndicator';
 import TagInput from '../../components/testManager/TagInput';
 import { getTagColor } from '../../utils/tagColors';
-import { buildSuiteTree, subtreeSuiteIds, suitePathLabel } from '../../utils/suiteTree';
+import { buildSuiteTree, flattenSuiteTree } from '../../utils/suiteTree';
 import { TestSuite, ArchiveScope } from '../../types/testManager';
 import { useProjectPresence } from '../../hooks/useProjectPresence';
 import { useProjectWriteAccess } from '../../utils/projectPermissions';
-import { Tag, X, ChevronDown, Check, FolderPlus, FolderInput, Pencil, Trash2, Archive as ArchiveIcon } from 'lucide-react';
+import { Tag, X, ChevronDown, Check } from 'lucide-react';
 
 const getSuiteTagFilterStorageKey = (projectId: string) => `testSuitesTagFilter:${projectId}`;
 
@@ -147,20 +146,6 @@ const TestSuitesPage: React.FC = () => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [tagFilterOpen]);
 
-    const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('suiteViewMode');
-            return saved === 'table' ? 'table' : 'card';
-        }
-        return 'card';
-    });
-
-    const handleViewModeToggle = () => {
-        const newMode = viewMode === 'card' ? 'table' : 'card';
-        setViewMode(newMode);
-        localStorage.setItem('suiteViewMode', newMode);
-    };
-
     // Ensure projects are loaded when this page is visited directly (only if not already loaded)
     useEffect(() => {
         if (projects.length === 0) {
@@ -271,28 +256,12 @@ const TestSuitesPage: React.FC = () => {
     });
 
     // Folder tree (left pane) and the subtree the list on the right shows.
-    const [treeSelectedId, setTreeSelectedId] = useState<string | null>(null);
     const [expandedTreeIds, setExpandedTreeIds] = useState<Set<string>>(new Set());
 
     // The tree honours the same search/tag filters as the list, so a suite that
     // is filtered out of the results is not still visible in the navigation.
     // A child whose parent is filtered out is shown as a root node instead.
     const suiteTree = useMemo(() => buildSuiteTree(filteredTestSuites), [filteredTestSuites]);
-
-    // Selecting a folder scopes the right-hand list to that node and everything
-    // beneath it, matching how the case list behaves for the same folder.
-    const scopedSuiteIds = useMemo(
-        () => (treeSelectedId ? new Set(subtreeSuiteIds(testSuites, treeSelectedId)) : null),
-        [testSuites, treeSelectedId]
-    );
-
-    const visibleTestSuites = useMemo(
-        () =>
-            scopedSuiteIds
-                ? filteredTestSuites.filter((suite) => scopedSuiteIds.has(suite.id))
-                : filteredTestSuites,
-        [filteredTestSuites, scopedSuiteIds]
-    );
 
     const toggleTreeExpand = (suiteId: string) => {
         setExpandedTreeIds((prev) => {
@@ -303,17 +272,32 @@ const TestSuitesPage: React.FC = () => {
         });
     };
 
+    const expandAllFolders = () =>
+        setExpandedTreeIds(new Set(flattenSuiteTree(suiteTree).map((node) => node.suite.id)));
+
+    const collapseAllFolders = () => setExpandedTreeIds(new Set());
+
+    // Open the roots so the shape of the project is visible without hunting.
+    // Deeper levels stay closed until asked for.
+    //
+    // Keyed on the root id signature, not a one-shot flag: the store can hand
+    // over a derived placeholder tree (suite names taken from the loaded cases)
+    // before the real suites arrive, and a one-shot flag would spend itself on
+    // those ids and leave the real folders collapsed. A manual collapse after
+    // that is still respected, because the signature has not changed.
+    const rootIdsSignature = suiteTree.map((node) => node.suite.id).join('|');
+    const seededSignatureRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (rootIdsSignature === '' || seededSignatureRef.current === rootIdsSignature) return;
+        seededSignatureRef.current = rootIdsSignature;
+        setExpandedTreeIds(new Set(suiteTree.map((node) => node.suite.id)));
+    }, [rootIdsSignature, suiteTree]);
+
     const handleCreateInside = (parentId: string | null) => {
         if (!canWrite) { readOnlyToast(); return; }
         setCreateParentId(parentId);
         setIsCreateOpen(true);
     };
-
-    // Open the selected node so the list below the tree is visible.
-    useEffect(() => {
-        if (!treeSelectedId) return;
-        setExpandedTreeIds((prev) => new Set(prev).add(treeSelectedId));
-    }, [treeSelectedId]);
 
     // Gather all distinct tags from all suites in this project
     const allTags = Array.from(
@@ -456,11 +440,6 @@ const TestSuitesPage: React.FC = () => {
         );
     };
 
-    const handleCreateSuite = () => {
-        if (!canWrite) { readOnlyToast(); return; }
-        setIsCreateOpen(true);
-    };
-
     const handleEditSuite = (suite: TestSuite) => {
         if (!canWrite) { readOnlyToast(); return; }
         setSuiteToEdit(suite);
@@ -577,10 +556,7 @@ const TestSuitesPage: React.FC = () => {
         return (
             <div className="flex flex-col h-auto sm:h-full bg-white dark:bg-gray-900">
                 <div className="bg-white dark:bg-gray-900 sm:sticky sm:top-0 sm:z-20">
-                    <ContextBreadcrumb
-                        showSuiteSelector={false}
-                        viewToggle={{ mode: viewMode, onToggle: handleViewModeToggle }}
-                    />
+                    <ContextBreadcrumb showSuiteSelector={false} />
                 </div>
                 <div className="flex-1 flex items-center justify-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
@@ -595,7 +571,6 @@ const TestSuitesPage: React.FC = () => {
             <div className="bg-white dark:bg-gray-900 sm:sticky sm:top-0 sm:z-20">
                 <ContextBreadcrumb
                     showSuiteSelector={false}
-                    viewToggle={{ mode: viewMode, onToggle: handleViewModeToggle }}
                     rightContent={activeProject ? <ProjectPresenceIndicator users={projectUsers} maxDisplay={4} /> : undefined}
                     beforeToggle={(
                         <>
@@ -805,126 +780,29 @@ const TestSuitesPage: React.FC = () => {
                     isLoading={isArchiving}
                 />
 
-                <div className="flex-1 flex overflow-hidden min-h-0">
-                    {/* Folder tree */}
-                    {/*
-                      Hidden on narrow screens: the tree plus the app sidebar
-                      would leave the suite list with almost no width. The
-                      breadcrumb dropdown still lists every folder by path.
-                    */}
-                    <aside className="hidden lg:flex w-72 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex-col">
-                        <div className="px-3 pt-3 pb-2 flex items-center justify-between">
-                            <h3 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                                Folders
-                            </h3>
-                            <SuiteTreeActionButton
-                                label="New top-level folder"
-                                onClick={() => handleCreateInside(null)}
-                            >
-                                <FolderPlus className="w-4 h-4" />
-                            </SuiteTreeActionButton>
-                        </div>
-                        <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
-                            <button
-                                onClick={() => setTreeSelectedId(null)}
-                                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                                    treeSelectedId === null
-                                        ? 'bg-white dark:bg-gray-800 font-medium text-gray-900 dark:text-gray-100 shadow-sm'
-                                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
-                                }`}
-                            >
-                                All folders
-                            </button>
-                            {suiteTree.length > 0 ? (
-                                <SuiteTree
-                                    nodes={suiteTree}
-                                    activeSuiteId={treeSelectedId}
-                                    onSelect={setTreeSelectedId}
-                                    expandedIds={expandedTreeIds}
-                                    onToggleExpand={toggleTreeExpand}
-                                    renderActions={(node) => (
-                                        <>
-                                            <SuiteTreeActionButton
-                                                label={`New folder inside ${node.suite.name}`}
-                                                onClick={() => handleCreateInside(node.suite.id)}
-                                            >
-                                                <FolderPlus className="w-3.5 h-3.5" />
-                                            </SuiteTreeActionButton>
-                                            <SuiteTreeActionButton
-                                                label={`Move ${node.suite.name}`}
-                                                onClick={() => {
-                                                    if (!canWrite) { readOnlyToast(); return; }
-                                                    setSuiteToMove(node.suite);
-                                                }}
-                                            >
-                                                <FolderInput className="w-3.5 h-3.5" />
-                                            </SuiteTreeActionButton>
-                                            <SuiteTreeActionButton
-                                                label={`Rename ${node.suite.name}`}
-                                                onClick={() => {
-                                                    if (!canWrite) { readOnlyToast(); return; }
-                                                    setSuiteToEdit(node.suite);
-                                                }}
-                                            >
-                                                <Pencil className="w-3.5 h-3.5" />
-                                            </SuiteTreeActionButton>
-                                            <SuiteTreeActionButton
-                                                label={`Archive ${node.suite.name}`}
-                                                onClick={() => {
-                                                    if (!canWrite) { readOnlyToast(); return; }
-                                                    setSuiteToArchive(node.suite);
-                                                }}
-                                            >
-                                                <ArchiveIcon className="w-3.5 h-3.5" />
-                                            </SuiteTreeActionButton>
-                                            <SuiteTreeActionButton
-                                                label={`Delete ${node.suite.name}`}
-                                                danger
-                                                onClick={() => {
-                                                    if (!canWrite) { readOnlyToast(); return; }
-                                                    setSuiteToDelete(node.suite);
-                                                }}
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </SuiteTreeActionButton>
-                                        </>
-                                    )}
-                                />
-                            ) : (
-                                <p className="px-3 py-4 text-center text-xs text-gray-400 dark:text-gray-500">
-                                    No folders yet
-                                </p>
-                            )}
-                        </div>
-                        {treeSelectedId && (
-                            <div className="px-3 py-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 truncate">
-                                Showing {visibleTestSuites.length} of {filteredTestSuites.length} in{' '}
-                                {suitePathLabel(testSuites, treeSelectedId)}
-                            </div>
-                        )}
-                    </aside>
-
-                    {/* Suite list */}
-                    <div className="flex-1 overflow-auto">
-                        <TestSuiteList
-                            testCases={projectTestCases}
-                            testSuites={visibleTestSuites}
-                            onSuiteClick={handleSuiteClick}
-                            onCreate={handleCreateSuite}
-                            onEdit={handleEditSuite}
-                            onDelete={handleDeleteSuite}
-                            onArchive={handleArchiveSuite}
-                            onRestore={handleRestoreSuite}
-                            viewMode={viewMode}
-                            onViewModeToggle={handleViewModeToggle}
-                            selectedSuiteIds={selectedSuiteIds}
-                            onToggleSuiteSelection={toggleSuiteSelection}
-                            onSelectAllSuites={handleSelectAllVisibleSuites}
-                            allowDerivedFallback={false}
-                            emptyState={suiteListEmptyState}
-                        />
-                    </div>
-                </div>
+                <SuiteFolderTable
+                    nodes={suiteTree}
+                    allSuites={filteredTestSuites}
+                    expandedIds={expandedTreeIds}
+                    onToggleExpand={toggleTreeExpand}
+                    onExpandAll={expandAllFolders}
+                    onCollapseAll={collapseAllFolders}
+                    onOpen={(suite) => handleSuiteClick(suite.name, suite.id)}
+                    onCreateInside={handleCreateInside}
+                    onEdit={handleEditSuite}
+                    onMove={(suite) => {
+                        if (!canWrite) { readOnlyToast(); return; }
+                        setSuiteToMove(suite);
+                    }}
+                    onArchive={handleArchiveSuite}
+                    onRestore={handleRestoreSuite}
+                    onDelete={handleDeleteSuite}
+                    archivedScope={suiteScope === 'archived'}
+                    selectedIds={selectedSuiteIds}
+                    onToggleSelect={toggleSuiteSelection}
+                    onSelectAll={handleSelectAllVisibleSuites}
+                    emptyState={suiteListEmptyState}
+                />
             </div>
         </div>
     );
