@@ -7,8 +7,9 @@ import {
     Layers,
 } from 'lucide-react';
 import { SuiteNodeSource, SuiteTreeNode } from '../../utils/suiteTree';
+import { checkboxState, SuiteSelectionState } from '../../utils/suiteSelection';
 
-export type SuiteSelectionState = 'none' | 'all' | 'partial';
+export type { SuiteSelectionState };
 
 export interface SuiteTreeProps<T extends SuiteNodeSource = SuiteNodeSource> {
     nodes: SuiteTreeNode<T>[];
@@ -51,21 +52,18 @@ function SuiteTree<T extends SuiteNodeSource = SuiteNodeSource>({
     renderActions,
     isMobile = false,
 }: SuiteTreeProps<T>) {
-    const selectionState = (node: SuiteTreeNode<T>): SuiteSelectionState => {
-        if (!selectedCaseIds || !casesUnder) return 'none';
-        const caseIds = casesUnder(node);
-        if (caseIds.length === 0) return 'none';
-        const selected = caseIds.filter((id) => selectedCaseIds.has(id)).length;
-        if (selected === 0) return 'none';
-        return selected === caseIds.length ? 'all' : 'partial';
-    };
-
     const renderNodes = (items: SuiteTreeNode<T>[]) =>
         items.map((node) => {
             const hasChildren = node.children.length > 0;
             const isExpanded = expandedIds.has(node.suite.id);
             const isActive = activeSuiteId === node.suite.id;
-            const state = selectionState(node);
+            // One `casesUnder` call per node, reused for both the checkbox state
+            // and whether the row has anything selectable at all.
+            const caseIdsUnderNode = selectable && casesUnder ? casesUnder(node) : [];
+            const state =
+                selectable && selectedCaseIds
+                    ? checkboxState(caseIdsUnderNode, selectedCaseIds)
+                    : 'none';
             const total = node.totalCaseCount;
 
             return (
@@ -89,7 +87,7 @@ function SuiteTree<T extends SuiteNodeSource = SuiteNodeSource>({
                                     if (el) el.indeterminate = state === 'partial';
                                 }}
                                 onChange={(e) => onToggleSelect?.(node, e.target.checked)}
-                                disabled={state === 'none' && (casesUnder?.(node).length ?? 0) === 0}
+                                disabled={caseIdsUnderNode.length === 0}
                                 className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
                             />
                         )}

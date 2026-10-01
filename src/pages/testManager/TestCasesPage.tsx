@@ -728,7 +728,11 @@ const tableColumnOrder = useMemo(
         // The table's Test Type cell sends '' to clear, which the API reads as
         // "unset" rather than "leave unchanged".
         const payload = field === 'testType' ? { testType: value as TestType | '' } : { [field]: value };
-        updateTestCase(caseId, payload as UpdateTestCaseRequest);
+        // Awaited with a catch: a 4xx here used to reject silently, leaving the
+        // optimistic value on screen until it reverted with no explanation.
+        updateTestCase(caseId, payload as UpdateTestCaseRequest).catch((error: unknown) => {
+            toast.error((error as Error)?.message || 'Could not update the test case');
+        });
     }, [canWrite, updateTestCase]);
 
     const handleStatusChange = useCallback((caseId: string, status: Status) => {
@@ -736,7 +740,9 @@ const tableColumnOrder = useMemo(
             toast.error('You have read-only access to this project');
             return;
         }
-        updateTestCase(caseId, { status: status });
+        updateTestCase(caseId, { status: status }).catch((error: unknown) => {
+            toast.error((error as Error)?.message || 'Could not change the status');
+        });
     }, [canWrite, updateTestCase]);
 
     /** Reload the current scope after a write so counts and the list agree. */

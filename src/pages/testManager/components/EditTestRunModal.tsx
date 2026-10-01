@@ -57,13 +57,36 @@ interface CaseRow {
 
 const NO_FOLDER_ID = '__no_folder__';
 
-/** Cases in a folder and everything under it. */
-const countSubtree = (
-    node: SuiteTreeNode<SuiteNodeSource>,
+/**
+ * Per-node case totals and ids for a whole folder tree, in one pass.
+ *
+ * The renderer needs, for each folder, how many cases sit in its subtree and
+ * which ones — so a folder button can act on the whole branch. Computing that
+ * per node by re-walking its subtree was O(folders^2) on every render.
+ */
+const folderAggregates = (
+    roots: SuiteTreeNode<SuiteNodeSource>[],
     byFolder: Map<string, CaseRow[]>
-): number =>
-    (byFolder.get(node.suite.id)?.length ?? 0) +
-    node.children.reduce((sum, child) => sum + countSubtree(child, byFolder), 0);
+) => {
+    const totals = new Map<string, number>();
+    const ids = new Map<string, string[]>();
+
+    const walk = (node: SuiteTreeNode<SuiteNodeSource>): void => {
+        const own = byFolder.get(node.suite.id) ?? [];
+        let total = own.length;
+        const ownIds = own.map((row) => row.testCase.id);
+        for (const child of node.children) {
+            walk(child);
+            total += totals.get(child.suite.id) ?? 0;
+            ownIds.push(...(ids.get(child.suite.id) ?? []));
+        }
+        totals.set(node.suite.id, total);
+        ids.set(node.suite.id, ownIds);
+    };
+
+    roots.forEach(walk);
+    return { totals, ids };
+};
 
 const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
     isOpen,
@@ -114,30 +137,47 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
     }, [testRun]);
 
     useEffect(() => {
+        // Without this guard, opening run A and quickly switching to run B lets
+        // A's slower response land last and overwrite B's baseline. That would
+        // put B's whole case list in the "Available" column and re-add the run
+        // on save. A failure would reset the baseline to empty, with the same
+        // outcome on "Assign all".
+        let cancelled = false;
+
         const loadRunDetails = async () => {
             if (!isOpen || !testRun) return;
 
             setIsLoadingRunDetails(true);
             try {
                 const fullRun = await testRunApi.getTestRun(testRun.id);
-                setSavedCaseIds(fullRun.items.map((item) => item.caseId));
+                if (!cancelled) {
+                    setSavedCaseIds(fullRun.items.map((item) => item.caseId));
+                }
             } catch (error: unknown) {
+                if (cancelled) return;
                 toast.error((error as Error).message || 'Failed to load run details');
                 setSavedCaseIds([]);
             } finally {
-                setIsLoadingRunDetails(false);
+                if (!cancelled) setIsLoadingRunDetails(false);
             }
         };
 
         loadRunDetails();
+        return () => {
+            cancelled = true;
+        };
     }, [isOpen, testRun]);
+
+    // Set lookup so the per-case check below stays O(1) rather than scanning
+    // the whole run for every case in the project.
+    const savedCaseIdSet = useMemo(() => new Set(savedCaseIds), [savedCaseIds]);
 
     // A case is in the run if it was saved there, unless this dialog unassigned
     // it; and it is out unless this dialog assigned it.
     const isAssigned = (caseId: string) => {
         if (toUnassign.has(caseId)) return false;
         if (toAssign.has(caseId)) return true;
-        return savedCaseIds.includes(caseId);
+        return savedCaseIdSet.has(caseId);
     };
 
     const matchesSearch = (testCase: TestCase) => {
@@ -164,6 +204,20 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
 
     const suiteTree = useMemo(() => buildSuiteTree(testSuites), [testSuites]);
 
+    /**
+     * folderId -> "Owner / Login", built once per suite change.
+     *
+     * suitePathLabel walks the ancestors and rebuilds two Maps on every call, so
+     * calling it per case turned row building into O(cases x suites).
+     */
+    const folderPathById = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const suite of testSuites) {
+            map.set(suite.id, suitePathLabel(testSuites, suite.id));
+        }
+        return map;
+    }, [testSuites]);
+
     /** Split a list of cases into rows, indexed by the folder that holds them. */
     const rowsByFolder = (cases: TestCase[], pending: Set<string>) => {
         const map = new Map<string, CaseRow[]>();
@@ -172,7 +226,7 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
             const row: CaseRow = {
                 testCase,
                 folderPath: testCase.suiteId
-                    ? suitePathLabel(testSuites, testCase.suiteId) || testCase.suite || 'No folder'
+                    ? folderPathById.get(testCase.suiteId) || testCase.suite || 'No folder'
                     : 'No folder',
                 pending: pending.has(testCase.id),
             };
@@ -186,18 +240,34 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
     const availableRowsByFolder = useMemo(
         () => rowsByFolder(availableCases, toAssign),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [availableCases, testSuites, toAssign]
+        [availableCases, folderPathById, toAssign]
     );
 
     const assignedRowsByFolder = useMemo(
         () => rowsByFolder(assignedCases, toUnassign),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [assignedCases, testSuites, toUnassign]
+        [assignedCases, folderPathById, toUnassign]
+    );
+
+    /**
+     * Case ids per folder node, for the whole tree at once.
+     *
+     * The renderer needs, per node, how many cases sit in its subtree and
+     * which ones; computing that per node by re-walking its subtree was
+     * O(folders^2) on every render.
+     */
+    const availableAggregates = useMemo(
+        () => folderAggregates(suiteTree, availableRowsByFolder),
+        [suiteTree, availableRowsByFolder]
+    );
+    const assignedAggregates = useMemo(
+        () => folderAggregates(suiteTree, assignedRowsByFolder),
+        [suiteTree, assignedRowsByFolder]
     );
 
     const totalAvailableCount = useMemo(
-        () => suiteTree.reduce((sum, root) => sum + countSubtree(root, availableRowsByFolder), 0),
-        [suiteTree, availableRowsByFolder]
+        () => suiteTree.reduce((sum, root) => sum + (availableAggregates.totals.get(root.suite.id) ?? 0), 0),
+        [suiteTree, availableAggregates]
     );
 
     if (!isOpen || !testRun) return null;
@@ -351,23 +421,19 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
         depth: number,
         tone: 'assign' | 'unassign',
         collapsed: Set<string>,
-        setCollapsed: (updater: (prev: Set<string>) => Set<string>) => void
+        setCollapsed: (updater: (prev: Set<string>) => Set<string>) => void,
+        aggregates: { totals: Map<string, number>; ids: Map<string, string[]> }
     ): React.ReactNode => {
-        const total = countSubtree(node, byFolder);
+        const total = aggregates.totals.get(node.suite.id) ?? 0;
         if (total === 0) return null;
 
         const ownRows = byFolder.get(node.suite.id) ?? [];
         const isCollapsed = collapsed.has(node.suite.id);
-        const path = suitePathLabel(testSuites, node.suite.id) || node.suite.name;
+        const path = folderPathById.get(node.suite.id) || node.suite.name;
         const action = tone === 'assign' ? assign : unassign;
-
-        // Every id in this branch, so the folder button acts on the whole subtree.
-        const branchIds: string[] = [];
-        const collect = (current: SuiteTreeNode<SuiteNodeSource>) => {
-            for (const row of byFolder.get(current.suite.id) ?? []) branchIds.push(row.testCase.id);
-            current.children.forEach(collect);
-        };
-        collect(node);
+        // Ids for this whole branch, precomputed so a folder button can act on
+        // the subtree without re-walking it on every render.
+        const branchIds = aggregates.ids.get(node.suite.id) ?? [];
 
         return (
             <div key={node.suite.id}>
@@ -418,7 +484,7 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
                     <>
                         {ownRows.map((row) => renderCaseRow(row, tone, depth + 1))}
                         {node.children.map((child) =>
-                            renderFolderBranch(child, byFolder, depth + 1, tone, collapsed, setCollapsed)
+                            renderFolderBranch(child, byFolder, depth + 1, tone, collapsed, setCollapsed, aggregates)
                         )}
                     </>
                 )}
@@ -430,11 +496,12 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
         byFolder: Map<string, CaseRow[]>,
         tone: 'assign' | 'unassign',
         collapsed: Set<string>,
-        setCollapsed: (updater: (prev: Set<string>) => Set<string>) => void
+        setCollapsed: (updater: (prev: Set<string>) => Set<string>) => void,
+        aggregates: { totals: Map<string, number>; ids: Map<string, string[]> }
     ) => (
         <>
             {suiteTree.map((root) =>
-                renderFolderBranch(root, byFolder, 0, tone, collapsed, setCollapsed)
+                renderFolderBranch(root, byFolder, 0, tone, collapsed, setCollapsed, aggregates)
             )}
             {(() => {
                 const orphans = byFolder.get(NO_FOLDER_ID);
@@ -627,7 +694,8 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
                                             availableRowsByFolder,
                                             'assign',
                                             collapsedAvailable,
-                                            setCollapsedAvailable
+                                            setCollapsedAvailable,
+                                            availableAggregates
                                         )
                                     )}
                                 </div>
@@ -672,7 +740,8 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
                                             assignedRowsByFolder,
                                             'unassign',
                                             collapsedAssigned,
-                                            setCollapsedAssigned
+                                            setCollapsedAssigned,
+                                            assignedAggregates
                                         )
                                     )}
                                 </div>

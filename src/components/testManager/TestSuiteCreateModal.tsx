@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { X, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTestManagerStore } from '../../store/testManagerStore';
@@ -28,6 +28,20 @@ const TestSuiteCreateModal: React.FC<Props> = ({
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // The tree's "New folder inside X" sets defaultParentId right before
+    // opening, and the component stays mounted while closed, so useState alone
+    // would keep the previous value and create the folder at the root instead.
+    useEffect(() => {
+        if (isOpen) {
+            setName('');
+            setDescription('');
+            setTags([]);
+            setParentId(defaultParentId);
+            setIsFolder(true);
+            setError(null);
+        }
+    }, [isOpen, defaultParentId]);
+
     const tagSuggestions = Array.from(
         new Set(testSuites.flatMap(s => s.tags || []))
     ).sort();
@@ -42,10 +56,11 @@ const TestSuiteCreateModal: React.FC<Props> = ({
         [testSuites]
     );
 
-    // One level is consumed by the node being created, so a folder cannot be
-    // placed under a folder that already sits at the deepest level.
+    // `depth` is 0 for a root node and the server rejects a child on depth 3 or
+    // deeper, so the parent has to be at depth <= MAX_FOLDER_DEPTH - 2 for the
+    // new node to be accepted.
     const parentDepth = parentId ? testSuites.find((s) => s.id === parentId)?.depth ?? 0 : -1;
-    const depthExhausted = parentDepth + 1 >= MAX_FOLDER_DEPTH - 1;
+    const depthExhausted = parentDepth + 1 >= MAX_FOLDER_DEPTH;
 
     if (!isOpen) return null;
 
@@ -140,11 +155,20 @@ const TestSuiteCreateModal: React.FC<Props> = ({
                             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                         >
                             <option value="">None (top level)</option>
-                            {parentOptions.map((option) => (
-                                <option key={option.id} value={option.id}>
-                                    {option.label}
-                                </option>
-                            ))}
+                            {parentOptions.map((option) => {
+                                // A parent already at the last allowed level
+                                // cannot take a child, so say so rather than
+                                // letting the save fail.
+                                const atMaxDepth =
+                                    (testSuites.find((s) => s.id === option.id)?.depth ?? 0) + 1 >=
+                                    MAX_FOLDER_DEPTH - 1;
+                                return (
+                                    <option key={option.id} value={option.id} disabled={atMaxDepth}>
+                                        {option.label}
+                                        {atMaxDepth ? ' (max depth reached)' : ''}
+                                    </option>
+                                );
+                            })}
                         </select>
                         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                             Folders can nest up to {MAX_FOLDER_DEPTH} levels. A folder can hold
