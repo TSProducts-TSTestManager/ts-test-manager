@@ -421,7 +421,10 @@ export interface UpdateTestRunRequest {
   tags?: string[];
   status?: TestRunStatus;
   groupId?: string | null; // null to remove from group
+  /** Cases to append to the run. Ids already in the run are ignored. */
   additionalTestCaseIds?: string[];
+  /** Cases to take out of the run, applied after the additions above. */
+  removedTestCaseIds?: string[];
 }
 
 export interface UpdateRunItemRequest {

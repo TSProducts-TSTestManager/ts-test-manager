@@ -753,7 +753,7 @@ const TestRunsPage: React.FC = () => {
         }
     };
 
-    const handleUpdateRun = async (runId: string, data: { title: string; groupId: string | null; tags: string[]; environment?: string; team?: string; buildVersion?: string; additionalTestCaseIds?: string[] }) => {
+    const handleUpdateRun = async (runId: string, data: { title: string; groupId: string | null; tags: string[]; environment?: string; team?: string; buildVersion?: string; additionalTestCaseIds?: string[]; removedTestCaseIds?: string[] }) => {
         if (!canWrite) { readOnlyToast(); throw new Error('You have read-only access to this project'); }
         try {
             await testRunApi.updateTestRun(runId, {
@@ -764,22 +764,12 @@ const TestRunsPage: React.FC = () => {
                 team: data.team,
                 buildVersion: data.buildVersion,
                 additionalTestCaseIds: data.additionalTestCaseIds,
+                removedTestCaseIds: data.removedTestCaseIds,
             });
+            // The item count changed when cases were assigned or unassigned, so
+            // re-read the list instead of patching only the fields we know about.
+            await fetchRuns(true, 0);
             toast.success('Test run updated');
-            setTestRuns((previous) => previous.map((run) => (
-                run.id === runId
-                    ? {
-                        ...run,
-                        title: data.title,
-                        groupId: data.groupId || undefined,
-                        tags: data.tags,
-                        environment: data.environment,
-                        team: data.team,
-                        buildVersion: data.buildVersion,
-                        updatedAt: new Date().toISOString(),
-                    }
-                    : run
-            )));
             fetchTags();
         } catch (error: unknown) {
             toast.error((error as Error).message || 'Failed to update test run');
