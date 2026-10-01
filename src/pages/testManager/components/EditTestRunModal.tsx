@@ -6,7 +6,6 @@ import { getIndentedGroupOptions } from './testRunUtils';
 import { testRunApi } from '../../../services/testRunApi';
 import {
     buildSuiteTree,
-    flattenSuiteTree,
     suitePathLabel,
     SuiteNodeSource,
     SuiteTreeNode,
@@ -50,21 +49,21 @@ export interface EditTestRunModalProps {
 /** A case row in either column. */
 interface CaseRow {
     testCase: TestCase;
+    /** `Owner / Login` — the folder branch the case sits in. */
+    folderPath: string;
     /** Set when this dialog changes the case state, i.e. it is a pending edit. */
     pending?: boolean;
 }
 
-/** Cases of one folder, ready to render. */
-interface FolderGroup {
-    id: string;
-    name: string;
-    /** `Owner / Login` — used for the row's accessible name. */
-    path: string;
-    depth: number;
-    rows: CaseRow[];
-}
-
 const NO_FOLDER_ID = '__no_folder__';
+
+/** Cases in a folder and everything under it. */
+const countSubtree = (
+    node: SuiteTreeNode<SuiteNodeSource>,
+    byFolder: Map<string, CaseRow[]>
+): number =>
+    (byFolder.get(node.suite.id)?.length ?? 0) +
+    node.children.reduce((sum, child) => sum + countSubtree(child, byFolder), 0);
 
 const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
     isOpen,
@@ -86,8 +85,12 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const [search, setSearch] = useState('');
-    /** Folder ids the user collapsed in the Available column. */
-    const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(new Set());
+    /**
+     * Folder ids the user collapsed, per column. Separate so collapsing
+     * "Support Staff" on the left does not also collapse it on the right.
+     */
+    const [collapsedAvailable, setCollapsedAvailable] = useState<Set<string>>(new Set());
+    const [collapsedAssigned, setCollapsedAssigned] = useState<Set<string>>(new Set());
 
     /** Ids currently in the run, and the ones this dialog is adding/removing. */
     const [savedCaseIds, setSavedCaseIds] = useState<string[]>([]);
@@ -103,7 +106,8 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
             setTeam(testRun.team || '');
             setBuildVersion(testRun.buildVersion || '');
             setSearch('');
-            setCollapsedFolderIds(new Set());
+            setCollapsedAvailable(new Set());
+            setCollapsedAssigned(new Set());
             setToAssign(new Set());
             setToUnassign(new Set());
         }
@@ -158,54 +162,43 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
         [testCases, savedCaseIds, toAssign, toUnassign, search]
     );
 
-    /**
-     * Available cases grouped by folder, in tree order, with a folder that has
-     * nothing left to assign left out entirely.
-     */
-    const availableGroups = useMemo<FolderGroup[]>(() => {
-        const byFolder = new Map<string, CaseRow[]>();
-        for (const testCase of availableCases) {
+    const suiteTree = useMemo(() => buildSuiteTree(testSuites), [testSuites]);
+
+    /** Split a list of cases into rows, indexed by the folder that holds them. */
+    const rowsByFolder = (cases: TestCase[], pending: Set<string>) => {
+        const map = new Map<string, CaseRow[]>();
+        for (const testCase of cases) {
             const key = testCase.suiteId || NO_FOLDER_ID;
             const row: CaseRow = {
                 testCase,
-                pending: toAssign.has(testCase.id),
+                folderPath: testCase.suiteId
+                    ? suitePathLabel(testSuites, testCase.suiteId) || testCase.suite || 'No folder'
+                    : 'No folder',
+                pending: pending.has(testCase.id),
             };
-            const bucket = byFolder.get(key);
+            const bucket = map.get(key);
             if (bucket) bucket.push(row);
-            else byFolder.set(key, [row]);
+            else map.set(key, [row]);
         }
+        return map;
+    };
 
-        const groups: FolderGroup[] = [];
-        const seen = new Set<string>();
-        for (const node of flattenSuiteTree(buildSuiteTree(testSuites)) as SuiteTreeNode<SuiteNodeSource>[]) {
-            const rows = byFolder.get(node.suite.id);
-            if (!rows || rows.length === 0) continue;
-            seen.add(node.suite.id);
-            groups.push({
-                id: node.suite.id,
-                name: node.suite.name,
-                path: suitePathLabel(testSuites, node.suite.id),
-                depth: node.depth,
-                rows,
-            });
-        }
+    const availableRowsByFolder = useMemo(
+        () => rowsByFolder(availableCases, toAssign),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [availableCases, testSuites, toAssign]
+    );
 
-        // A case whose folder is not in the list (archived, or filtered out of
-        // the project) still has to be reachable, so it gets its own group.
-        const orphans = byFolder.get(NO_FOLDER_ID);
-        if (orphans && orphans.length > 0) {
-            groups.push({
-                id: NO_FOLDER_ID,
-                name: 'No folder',
-                path: 'No folder',
-                depth: 0,
-                rows: orphans,
-            });
-        }
-        return groups;
-    }, [availableCases, testSuites, toAssign]);
+    const assignedRowsByFolder = useMemo(
+        () => rowsByFolder(assignedCases, toUnassign),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [assignedCases, testSuites, toUnassign]
+    );
 
-    const totalAvailableCount = availableGroups.reduce((sum, group) => sum + group.rows.length, 0);
+    const totalAvailableCount = useMemo(
+        () => suiteTree.reduce((sum, root) => sum + countSubtree(root, availableRowsByFolder), 0),
+        [suiteTree, availableRowsByFolder]
+    );
 
     if (!isOpen || !testRun) return null;
 
@@ -250,8 +243,11 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
         });
     };
 
-    const toggleFolder = (folderId: string) => {
-        setCollapsedFolderIds((prev) => {
+    const toggleFolder = (
+        folderId: string,
+        setCollapsed: (updater: (prev: Set<string>) => Set<string>) => void
+    ) => {
+        setCollapsed((prev) => {
             const next = new Set(prev);
             if (next.has(folderId)) next.delete(folderId);
             else next.add(folderId);
@@ -313,26 +309,152 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
         </button>
     );
 
-    const renderCaseRow = (row: CaseRow, tone: 'assign' | 'unassign') => (
-        <div
-            key={row.testCase.id}
-            className={`flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0 transition-colors hover:bg-gray-100 dark:hover:bg-gray-700/40 ${
-                row.pending ? 'bg-blue-50/60 dark:bg-blue-900/20' : ''
-            }`}
-        >
-            <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                    {row.testCase.title}
+    const renderCaseRow = (row: CaseRow, tone: 'assign' | 'unassign', depth: number) => {
+        // The leaf folder name is often repeated as the area, so only show the
+        // area when it adds something ("Owner / Login" alone reads better).
+        const leafFolder = row.folderPath.split(' / ').pop() ?? row.folderPath;
+        const showArea = !!row.testCase.area && row.testCase.area !== leafFolder;
+        return (
+            <div
+                key={row.testCase.id}
+                className={`flex items-center gap-2 pr-3 py-2 border-b border-gray-100 dark:border-gray-700 transition-colors hover:bg-gray-100 dark:hover:bg-gray-700/40 ${
+                    row.pending ? 'bg-blue-50/60 dark:bg-blue-900/20' : ''
+                }`}
+                style={{ paddingLeft: `${10 + depth * 14}px` }}
+            >
+                <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                        {row.testCase.title}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {row.folderPath}
+                        {showArea ? ` • ${row.testCase.area}` : ''}
+                    </div>
                 </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                    {row.testCase.suite}
-                    {row.testCase.area ? ` • ${row.testCase.area}` : ''}
-                </div>
+                {caseRowButton(row.testCase, tone, () =>
+                    tone === 'assign' ? assign([row.testCase.id]) : unassign([row.testCase.id])
+                )}
             </div>
-            {caseRowButton(row.testCase, tone, () =>
-                tone === 'assign' ? assign([row.testCase.id]) : unassign([row.testCase.id])
+        );
+    };
+
+    /**
+     * Render one folder and everything under it, mirroring the folder tree in
+     * the cases sidebar: a parent folder stays visible even when it holds no
+     * cases of its own, so "Login" is always seen as "Support Staff / Login".
+     *
+     * A folder with nothing in its whole subtree renders nothing at all.
+     */
+    const renderFolderBranch = (
+        node: SuiteTreeNode<SuiteNodeSource>,
+        byFolder: Map<string, CaseRow[]>,
+        depth: number,
+        tone: 'assign' | 'unassign',
+        collapsed: Set<string>,
+        setCollapsed: (updater: (prev: Set<string>) => Set<string>) => void
+    ): React.ReactNode => {
+        const total = countSubtree(node, byFolder);
+        if (total === 0) return null;
+
+        const ownRows = byFolder.get(node.suite.id) ?? [];
+        const isCollapsed = collapsed.has(node.suite.id);
+        const path = suitePathLabel(testSuites, node.suite.id) || node.suite.name;
+        const action = tone === 'assign' ? assign : unassign;
+
+        // Every id in this branch, so the folder button acts on the whole subtree.
+        const branchIds: string[] = [];
+        const collect = (current: SuiteTreeNode<SuiteNodeSource>) => {
+            for (const row of byFolder.get(current.suite.id) ?? []) branchIds.push(row.testCase.id);
+            current.children.forEach(collect);
+        };
+        collect(node);
+
+        return (
+            <div key={node.suite.id}>
+                <div
+                    className="flex items-center gap-1.5 pr-2 py-1.5 bg-gray-100/70 dark:bg-gray-700/40 border-y border-gray-200 dark:border-gray-700 sticky top-0 z-10"
+                    style={{ paddingLeft: `${4 + depth * 14}px` }}
+                >
+                    <button
+                        type="button"
+                        onClick={() => toggleFolder(node.suite.id, setCollapsed)}
+                        aria-expanded={!isCollapsed}
+                        aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${path}`}
+                        title={path}
+                        className="p-0.5 -ml-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex-shrink-0"
+                    >
+                        {isCollapsed ? (
+                            <ChevronRight className="w-3.5 h-3.5" />
+                        ) : (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                        )}
+                    </button>
+                    <Folder className="w-3.5 h-3.5 text-blue-400/80 dark:text-blue-500/80 flex-shrink-0" />
+                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-200 truncate">
+                        {node.suite.name}
+                    </span>
+                    <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400 flex-shrink-0">
+                        {total}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => action(branchIds)}
+                        title={
+                            tone === 'assign'
+                                ? `Assign every case under ${path}`
+                                : `Unassign every case under ${path}`
+                        }
+                        className={`ml-auto text-xs font-medium flex-shrink-0 ${
+                            tone === 'assign'
+                                ? 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300'
+                                : 'text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300'
+                        }`}
+                    >
+                        {tone === 'assign' ? 'Assign' : 'Unassign'}
+                    </button>
+                </div>
+
+                {!isCollapsed && (
+                    <>
+                        {ownRows.map((row) => renderCaseRow(row, tone, depth + 1))}
+                        {node.children.map((child) =>
+                            renderFolderBranch(child, byFolder, depth + 1, tone, collapsed, setCollapsed)
+                        )}
+                    </>
+                )}
+            </div>
+        );
+    };
+
+    const renderFolderTree = (
+        byFolder: Map<string, CaseRow[]>,
+        tone: 'assign' | 'unassign',
+        collapsed: Set<string>,
+        setCollapsed: (updater: (prev: Set<string>) => Set<string>) => void
+    ) => (
+        <>
+            {suiteTree.map((root) =>
+                renderFolderBranch(root, byFolder, 0, tone, collapsed, setCollapsed)
             )}
-        </div>
+            {(() => {
+                const orphans = byFolder.get(NO_FOLDER_ID);
+                if (!orphans || orphans.length === 0) return null;
+                return (
+                    <div>
+                        <div className="flex items-center gap-1.5 px-2 py-1.5 bg-gray-100/70 dark:bg-gray-700/40 border-y border-gray-200 dark:border-gray-700">
+                            <Layers className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                            <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                No folder
+                            </span>
+                            <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
+                                {orphans.length}
+                            </span>
+                        </div>
+                        {orphans.map((row) => renderCaseRow(row, tone, 1))}
+                    </div>
+                );
+            })()}
+        </>
     );
 
     return (
@@ -478,9 +600,7 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
                                     </div>
                                     <button
                                         type="button"
-                                        onClick={() =>
-                                            assign(availableGroups.flatMap((g) => g.rows.map((r) => r.testCase.id)))
-                                        }
+                                        onClick={() => assign(availableCases.map((c) => c.id))}
                                         disabled={totalAvailableCount === 0}
                                         className="text-xs font-medium px-2 py-1 rounded-md text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
                                     >
@@ -493,7 +613,7 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
                                         <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
                                             Loading run cases…
                                         </div>
-                                    ) : availableGroups.length === 0 ? (
+                                    ) : totalAvailableCount === 0 ? (
                                         <div className="h-full flex flex-col items-center justify-center gap-1 p-4 text-center">
                                             <Inbox className="w-5 h-5 text-gray-300 dark:text-gray-600" />
                                             <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -503,55 +623,17 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
                                             </p>
                                         </div>
                                     ) : (
-                                        availableGroups.map((group) => {
-                                            const isCollapsed = collapsedFolderIds.has(group.id);
-                                            return (
-                                                <div key={group.id}>
-                                                    <div className="flex items-center gap-1.5 px-2 py-1.5 bg-gray-100/70 dark:bg-gray-700/40 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => toggleFolder(group.id)}
-                                                            aria-expanded={!isCollapsed}
-                                                            aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${group.path}`}
-                                                            className="p-0.5 -ml-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex-shrink-0"
-                                                        >
-                                                            {isCollapsed ? (
-                                                                <ChevronRight className="w-3.5 h-3.5" />
-                                                            ) : (
-                                                                <ChevronDown className="w-3.5 h-3.5" />
-                                                            )}
-                                                        </button>
-                                                        <Folder className="w-3.5 h-3.5 text-blue-400/80 dark:text-blue-500/80 flex-shrink-0" />
-                                                        <span
-                                                            title={group.path}
-                                                            className="text-xs font-semibold text-gray-700 dark:text-gray-200 truncate"
-                                                            style={{ paddingLeft: `${group.depth * 12}px` }}
-                                                        >
-                                                            {group.name}
-                                                        </span>
-                                                        <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400 flex-shrink-0">
-                                                            {group.rows.length}
-                                                        </span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                assign(group.rows.map((r) => r.testCase.id))
-                                                            }
-                                                            className="ml-auto text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex-shrink-0"
-                                                        >
-                                                            Assign
-                                                        </button>
-                                                    </div>
-                                                    {!isCollapsed &&
-                                                        group.rows.map((row) => renderCaseRow(row, 'assign'))}
-                                                </div>
-                                            );
-                                        })
+                                        renderFolderTree(
+                                            availableRowsByFolder,
+                                            'assign',
+                                            collapsedAvailable,
+                                            setCollapsedAvailable
+                                        )
                                     )}
                                 </div>
                             </div>
 
-                            {/* Assigned to this run — flat, with unassign */}
+                            {/* Assigned to this run */}
                             <div className="flex flex-col min-w-0">
                                 <div className="flex items-center justify-between gap-2 mb-2">
                                     <div className="flex items-center gap-1.5 min-w-0">
@@ -586,14 +668,11 @@ const EditTestRunModal: React.FC<EditTestRunModalProps> = ({
                                             </p>
                                         </div>
                                     ) : (
-                                        assignedCases.map((testCase) =>
-                                            renderCaseRow(
-                                                {
-                                                    testCase,
-                                                    pending: toUnassign.has(testCase.id),
-                                                },
-                                                'unassign'
-                                            )
+                                        renderFolderTree(
+                                            assignedRowsByFolder,
+                                            'unassign',
+                                            collapsedAssigned,
+                                            setCollapsedAssigned
                                         )
                                     )}
                                 </div>

@@ -6,12 +6,11 @@ import type { TestCase, TestRunListItem } from '../types/testManager';
 import type { SuiteNodeSource } from '../utils/suiteTree';
 
 const getTestRun = vi.hoisted(() => vi.fn());
-const updateTestRun = vi.hoisted(() => vi.fn());
 
 vi.mock('../services/testRunApi', () => ({
     testRunApi: {
         getTestRun,
-        updateTestRun,
+        updateTestRun: vi.fn(),
     },
 }));
 
@@ -20,25 +19,29 @@ vi.mock('../components/testManager/TagInput', () => ({
 }));
 
 /**
- *   Owner
- *   └── Login          <- tc-login
+ *   Owner                  (no cases of its own)
+ *   └── Login              <- tc-login, tc-login-2
  *   Manager
- *   └── Login          <- tc-manager-login
+ *   └── Login              <- tc-manager-login
+ *   Driver
+ *   └── Login              <- tc-driver-login
  */
 const suites: SuiteNodeSource[] = [
     { id: 'owner', name: 'Owner', parentId: null, depth: 0, isFolder: true },
     { id: 'owner-login', name: 'Login', parentId: 'owner', depth: 1, isFolder: true },
     { id: 'manager', name: 'Manager', parentId: null, depth: 0, isFolder: true },
     { id: 'manager-login', name: 'Login', parentId: 'manager', depth: 1, isFolder: true },
+    { id: 'driver', name: 'Driver', parentId: null, depth: 0, isFolder: true },
+    { id: 'driver-login', name: 'Login', parentId: 'driver', depth: 1, isFolder: true },
 ];
 
-const makeCase = (id: string, title: string, suiteId: string, suite: string): TestCase =>
+const makeCase = (id: string, title: string, suiteId: string, suite: string, area = 'Login'): TestCase =>
     ({
         id,
         title,
         suiteId,
         suite,
-        area: 'Login',
+        area,
         priority: 'High',
         status: 'Ready',
         testType: 'Positive',
@@ -54,7 +57,7 @@ const testCases: TestCase[] = [
     makeCase('tc-login', 'Owner login works', 'owner-login', 'Login'),
     makeCase('tc-login-2', 'Owner login fails', 'owner-login', 'Login'),
     makeCase('tc-manager-login', 'Manager login works', 'manager-login', 'Login'),
-    makeCase('tc-loose', 'Loose case', 'owner', 'Owner'),
+    makeCase('tc-driver-login', 'Driver login works', 'driver-login', 'Login'),
 ];
 
 const run = {
@@ -98,59 +101,120 @@ const assignedColumn = () =>
 describe('EditTestRunModal test case assignment', () => {
     beforeEach(() => {
         getTestRun.mockReset();
-        updateTestRun.mockReset();
         setRunCases(['tc-login']);
     });
 
-    it('groups available cases under their folder and keeps assigned cases out', async () => {
+    it('keeps parent folders visible so a nested folder is never orphaned', async () => {
+        renderModal();
+
+        await waitFor(() =>
+            expect(within(availableColumn()).getByText('Manager login works')).toBeInTheDocument()
+        );
+
+        // "Owner" holds no cases itself but is still shown, so its "Login"
+        // child reads as Owner / Login rather than a bare "Login".
+        const available = availableColumn();
+        expect(within(available).getByText('Owner')).toBeInTheDocument();
+        expect(within(available).getByText('Manager')).toBeInTheDocument();
+        expect(within(available).getByText('Driver')).toBeInTheDocument();
+    });
+
+    it('labels every folder row by its full path', async () => {
+        renderModal();
+
+        await waitFor(() =>
+            expect(within(availableColumn()).getByLabelText('Collapse Owner')).toBeInTheDocument()
+        );
+        // Three folders are all called "Login"; the accessible name disambiguates.
+        expect(within(availableColumn()).getByLabelText('Collapse Owner / Login')).toBeInTheDocument();
+        expect(within(availableColumn()).getByLabelText('Collapse Manager / Login')).toBeInTheDocument();
+        expect(within(availableColumn()).getByLabelText('Collapse Driver / Login')).toBeInTheDocument();
+    });
+
+    it('shows the folder path under a case, without repeating the area', async () => {
         renderModal();
 
         await waitFor(() => {
-            expect(within(availableColumn()).getByText('Loose case')).toBeInTheDocument();
+            const available = availableColumn();
+            const row = within(available).getByText('Manager login works').closest('div.flex') as HTMLElement;
+            // "Login • Login" told the user nothing; the path does.
+            expect(within(row).getByText('Manager / Login')).toBeInTheDocument();
         });
-
-        // Two groups with work left: Owner (its own case) and Manager / Login.
-        expect(within(availableColumn()).getByText('Manager login works')).toBeInTheDocument();
-        // The saved case is in the run, so it is not offered as available.
-        expect(within(availableColumn()).queryByText('Owner login works')).toBeNull();
-        expect(within(assignedColumn()).getByText('Owner login works')).toBeInTheDocument();
     });
 
-    it('hides the folder dropdown entirely', async () => {
+    it('keeps the area in the row when it differs from the folder name', async () => {
+        setRunCases([]);
+        render(
+            <EditTestRunModal
+                isOpen
+                onClose={() => undefined}
+                testRun={run}
+                testRunGroups={[]}
+                testCases={[
+                    makeCase('tc-x', 'Odd case', 'owner-login', 'Login', 'Password Reset'),
+                ]}
+                testSuites={suites}
+                onSubmit={vi.fn().mockResolvedValue(undefined)}
+                tagSuggestions={[]}
+            />
+        );
+
+        await waitFor(() => {
+            const row = screen.getByText('Odd case').closest('div.flex') as HTMLElement;
+            expect(within(row).getByText('Owner / Login • Password Reset')).toBeInTheDocument();
+        });
+    });
+
+    it('hides a folder whose whole subtree is empty', async () => {
+        setRunCases(testCases.map((c) => c.id).concat());
         renderModal();
-        await waitFor(() => expect(availableColumn()).toBeInTheDocument());
 
-        expect(screen.queryByText('Folder')).toBeNull();
-        expect(screen.queryByText('All folders')).toBeNull();
+        await waitFor(() => {
+            expect(within(availableColumn()).getByText('Every test case is already assigned')).toBeInTheDocument();
+        });
+        // The assigned column still shows its branch; the available one is empty.
+        expect(within(availableColumn()).queryByText('Owner')).toBeNull();
+        expect(within(assignedColumn()).getByText('Owner')).toBeInTheDocument();
     });
 
-    it('collapses and expands a folder without changing the selection', async () => {
+    it('collapses a branch without changing the staged changes', async () => {
         const onSubmit = renderModal();
 
-        await waitFor(() => screen.getByLabelText('Collapse Owner / Login'));
-        await userEvent.click(screen.getByLabelText('Collapse Owner / Login'));
+        await waitFor(() => within(availableColumn()).getByLabelText('Collapse Manager'));
+        await userEvent.click(within(availableColumn()).getByLabelText('Collapse Manager'));
 
-        // Folder is collapsed, so its cases are hidden but still counted.
-        expect(screen.getByLabelText('Expand Owner / Login')).toBeInTheDocument();
-        expect(screen.queryByText('Owner login fails')).toBeNull();
+        expect(within(availableColumn()).queryByText('Manager login works')).toBeNull();
+        // The child folder header goes with it.
+        expect(within(availableColumn()).queryByLabelText('Collapse Manager / Login')).toBeNull();
 
         await userEvent.click(screen.getByText('Save Changes'));
         await waitFor(() => expect(onSubmit).toHaveBeenCalled());
-        // Collapsing is a view action only: nothing was assigned or unassigned.
         expect(onSubmit.mock.calls[0][1].additionalTestCaseIds).toEqual([]);
         expect(onSubmit.mock.calls[0][1].removedTestCaseIds).toEqual([]);
     });
 
-    it('assigns every case of one folder from the folder header', async () => {
+    it('collapsing one column leaves the other column alone', async () => {
+        renderModal();
+
+        await waitFor(() =>
+            expect(within(availableColumn()).getByLabelText('Collapse Owner / Login')).toBeInTheDocument()
+        );
+        // The same case is assigned, so the right column shows the same branch.
+        expect(within(assignedColumn()).getByLabelText('Collapse Owner / Login')).toBeInTheDocument();
+
+        await userEvent.click(within(availableColumn()).getByLabelText('Collapse Owner / Login'));
+        // Left collapsed…
+        expect(within(availableColumn()).queryByLabelText('Collapse Owner / Login')).toBeNull();
+        // …right untouched.
+        expect(within(assignedColumn()).getByLabelText('Collapse Owner / Login')).toBeInTheDocument();
+    });
+
+    it('assigns a whole branch from a parent folder header', async () => {
         const onSubmit = renderModal();
 
-        await waitFor(() => {
-            // "Manager / Login" group header, next to its single case.
-            expect(within(availableColumn()).getByText('Manager login works')).toBeInTheDocument();
-        });
-
-        const managerGroup = screen.getByLabelText('Collapse Manager / Login').closest('div.flex') as HTMLElement;
-        await userEvent.click(within(managerGroup).getByText('Assign'));
+        await waitFor(() => within(availableColumn()).getByLabelText('Collapse Manager'));
+        const managerHeader = within(availableColumn()).getByLabelText('Collapse Manager').closest('div.flex') as HTMLElement;
+        await userEvent.click(within(managerHeader).getByText('Assign'));
         await userEvent.click(screen.getByText('Save Changes'));
 
         await waitFor(() => expect(onSubmit).toHaveBeenCalled());
@@ -160,12 +224,12 @@ describe('EditTestRunModal test case assignment', () => {
     it('assigns a single case with the per-row button', async () => {
         const onSubmit = renderModal();
 
-        await waitFor(() => screen.getByLabelText('Assign Loose case'));
-        await userEvent.click(screen.getByLabelText('Assign Loose case'));
+        await waitFor(() => screen.getByLabelText('Assign Manager login works'));
+        await userEvent.click(screen.getByLabelText('Assign Manager login works'));
         await userEvent.click(screen.getByText('Save Changes'));
 
         await waitFor(() => expect(onSubmit).toHaveBeenCalled());
-        expect(onSubmit.mock.calls[0][1].additionalTestCaseIds).toEqual(['tc-loose']);
+        expect(onSubmit.mock.calls[0][1].additionalTestCaseIds).toEqual(['tc-manager-login']);
     });
 
     it('unassigns a single case with the per-row button', async () => {
@@ -180,19 +244,38 @@ describe('EditTestRunModal test case assignment', () => {
         expect(onSubmit.mock.calls[0][1].additionalTestCaseIds).toEqual([]);
     });
 
+    it('unassigns a whole branch from a parent folder header', async () => {
+        setRunCases(['tc-login', 'tc-login-2']);
+        const onSubmit = renderModal();
+
+        // Both Owner cases are in the run, so the branch lives in the right column.
+        await waitFor(() =>
+            expect(within(assignedColumn()).getByLabelText('Collapse Owner')).toBeInTheDocument()
+        );
+        const ownerHeader = within(assignedColumn())
+            .getByLabelText('Collapse Owner')
+            .closest('div.flex') as HTMLElement;
+        await userEvent.click(within(ownerHeader).getByText('Unassign'));
+        await userEvent.click(screen.getByText('Save Changes'));
+
+        await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+        expect(onSubmit.mock.calls[0][1].removedTestCaseIds).toEqual(
+            expect.arrayContaining(['tc-login', 'tc-login-2'])
+        );
+    });
+
     it('assigns all and unassigns all from the column headers', async () => {
         const onSubmit = renderModal();
 
         await waitFor(() => screen.getByText('Assign all 3'));
         await userEvent.click(screen.getByText('Assign all 3'));
-        // The three new cases are now assigned, so the run holds four.
         await userEvent.click(screen.getByText('Unassign all 4'));
         await userEvent.click(screen.getByText('Save Changes'));
 
         await waitFor(() => expect(onSubmit).toHaveBeenCalled());
         const payload = onSubmit.mock.calls[0][1];
-        // The three staged additions were undone by the unassign, so only the
-        // case that was genuinely in the run carries a removal id.
+        // The three staged additions were undone; only the case that was
+        // genuinely in the run carries a removal id.
         expect(payload.additionalTestCaseIds).toEqual([]);
         expect(payload.removedTestCaseIds).toEqual(['tc-login']);
     });
@@ -200,10 +283,9 @@ describe('EditTestRunModal test case assignment', () => {
     it('a case staged for assign then unassign is sent as neither', async () => {
         const onSubmit = renderModal();
 
-        await waitFor(() => screen.getByLabelText('Assign Loose case'));
-        await userEvent.click(screen.getByLabelText('Assign Loose case'));
-        // It has moved to the assigned column, so undo that decision.
-        await userEvent.click(screen.getByLabelText('Unassign Loose case'));
+        await waitFor(() => screen.getByLabelText('Assign Manager login works'));
+        await userEvent.click(screen.getByLabelText('Assign Manager login works'));
+        await userEvent.click(screen.getByLabelText('Unassign Manager login works'));
         await userEvent.click(screen.getByText('Save Changes'));
 
         await waitFor(() => expect(onSubmit).toHaveBeenCalled());
@@ -212,26 +294,15 @@ describe('EditTestRunModal test case assignment', () => {
         expect(payload.removedTestCaseIds).toEqual([]);
     });
 
-    it('search hides non-matching cases and empty folders', async () => {
+    it('search hides non-matching cases and the folders left empty', async () => {
         renderModal();
 
         await waitFor(() => screen.getByLabelText(/Search cases/));
-        await userEvent.type(screen.getByLabelText(/Search cases/), 'Loose');
+        await userEvent.type(screen.getByLabelText(/Search cases/), 'Manager');
 
-        expect(within(availableColumn()).getByText('Loose case')).toBeInTheDocument();
-        expect(screen.queryByText('Manager login works')).toBeNull();
-        // A folder with nothing left to assign disappears entirely.
-        expect(screen.queryByLabelText('Collapse Owner / Login')).toBeNull();
-    });
-
-    it('shows a distinct message when everything is already assigned', async () => {
-        setRunCases(testCases.map((testCase) => testCase.id));
-        renderModal();
-
-        await waitFor(() => {
-            expect(
-                within(availableColumn()).getByText('Every test case is already assigned')
-            ).toBeInTheDocument();
-        });
+        const available = availableColumn();
+        expect(within(available).getByText('Manager login works')).toBeInTheDocument();
+        expect(screen.queryByText('Driver')).toBeNull();
+        expect(screen.queryByText('Owner')).toBeNull();
     });
 });
