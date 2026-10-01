@@ -183,20 +183,25 @@ const HELP_SECTIONS: HelpSection[] = [
   {
     id: 'suites',
     icon: Layers,
-    title: 'Test Suites',
+    title: 'Suites & Folders',
     audience: 'client',
     overview:
-      'Suites organise test cases into logical groups — usually a module, feature or user flow. Think of a project as a book and suites as its chapters.',
+      'Suites organise test cases into logical groups and nest as folders up to 3 levels deep — for example Owner › Login › Forgot Password. A folder can hold test cases and sub-folders at the same time, so “Owner” can keep its own cases and still contain “Login”.',
     steps: [
-      'With an active project, open Test Suites and create a suite (name, description, tags).',
-      'Add or move test cases into the suite from the cases area.',
-      'Use the Active / Archived toggle to hide suites you are not currently using — archive is reversible.',
-      'Filter or search to find a suite quickly when the list grows.',
+      'With an active project, open Test Suites and use the + button in the Folders panel to create a folder or suite at the root.',
+      'Use the folder-row buttons to create a folder inside an existing one, rename it, or move it somewhere else with “Move to…” (a folder cannot be moved into itself or one of its own sub-folders).',
+      'Add or move test cases into any folder from the cases area, or with “Move to folder” when editing a case.',
+      'Click a folder in the left tree to scope the list beside it; clicking a folder in the Cases sidebar loads that folder’s cases plus everything under it.',
+      'Use the Active / Archived toggle to hide suites you are not currently using — archive is reversible and takes a folder’s whole subtree with it.',
     ],
     tips: [
       {
         title: 'Keep suites focused',
         text: 'Small, well-named suites (e.g. “Checkout – Guest User”) make reports and run planning far more useful.',
+      },
+      {
+        title: 'Role → feature → detail',
+        text: 'A common shape is one folder per role (Owner, Parent, Driver…), a feature folder inside each (Login, Profile…), and cases in the deepest folder. Each row shows how many cases sit in that folder and everything beneath it.',
       },
     ],
   },
@@ -234,7 +239,9 @@ const HELP_SECTIONS: HelpSection[] = [
     overview:
       'A run is one execution cycle: pick cases, execute them, record results, and close the run so everyone can see the outcome.',
     steps: [
-      'Open Test Runs and create a run — choose a title, description, the suites/cases to include, an optional group, tags, environment, team and build version.',
+      'Open Test Runs and create a run — choose a title, description, an optional group, tags, environment, team and build version.',
+      'Pick the cases: the “By Folder” tab shows the folder tree, and ticking a folder selects every case beneath it; “By Suite”, “By Area” and “Individual Cases” are also available, and the folder/area filters combine.',
+      'Edit the selection later with “Edit” on a run: Available and Assigned to this run sit side by side, grouped by folder, with an Assign or Unassign button on every folder and every case. Nothing is saved until you press Save Changes.',
       'Start the run (Draft → In Progress) and work through the list, marking each item: Not Run, Ready for Testing, In Progress, Passed, Failed, Blocked, Skipped or Out of Scope.',
       'Raise a ticket directly from a failed item so the bug carries the case context with it.',
       'Watch the results summary update live — pass/fail counts and percentage per run and per group.',
@@ -244,6 +251,10 @@ const HELP_SECTIONS: HelpSection[] = [
       {
         title: 'Use groups for parallel testing',
         text: 'Split a run into groups (by team, area or device) so testers only see their slice of the work.',
+      },
+      {
+        title: 'Re-shape a run without recreating it',
+        text: 'Unassigning a case keeps the rest of the run and its recorded results intact — the remaining items are simply re-sequenced.',
       },
       {
         title: 'Clone a run',
