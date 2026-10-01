@@ -5,14 +5,16 @@ import toast from 'react-hot-toast';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { useRealtimeTestCases } from '../../hooks/useRealtimeTestCases';
 import EmptyProjectState from '../../components/testManager/EmptyProjectState';
-import TestSuiteList from '../../components/testManager/TestSuiteList';
+import SuiteFolderTable from '../../components/testManager/SuiteFolderTable';
 import TestSuiteCreateModal from '../../components/testManager/TestSuiteCreateModal';
 import TestSuiteEditModal from '../../components/testManager/TestSuiteEditModal';
+import SuiteMoveModal from '../../components/testManager/SuiteMoveModal';
 import ConfirmationModal from '../../components/testManager/ConfirmationModal';
 import ContextBreadcrumb from '../../components/testManager/ContextBreadcrumb';
 import ProjectPresenceIndicator from '../../components/testManager/ProjectPresenceIndicator';
 import TagInput from '../../components/testManager/TagInput';
 import { getTagColor } from '../../utils/tagColors';
+import { buildSuiteTree, flattenSuiteTree } from '../../utils/suiteTree';
 import { TestSuite, ArchiveScope } from '../../types/testManager';
 import { useProjectPresence } from '../../hooks/useProjectPresence';
 import { useProjectWriteAccess } from '../../utils/projectPermissions';
@@ -70,7 +72,9 @@ const TestSuitesPage: React.FC = () => {
 
     const [isSuitesLoading, setIsSuitesLoading] = useState(true);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
+    const [createParentId, setCreateParentId] = useState<string | null>(null);
     const [suiteToEdit, setSuiteToEdit] = useState<TestSuite | null>(null);
+    const [suiteToMove, setSuiteToMove] = useState<TestSuite | null>(null);
     const [suiteToDelete, setSuiteToDelete] = useState<TestSuite | null>(null);
     const [suiteToArchive, setSuiteToArchive] = useState<TestSuite | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -141,20 +145,6 @@ const TestSuitesPage: React.FC = () => {
         if (tagFilterOpen) document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [tagFilterOpen]);
-
-    const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('suiteViewMode');
-            return saved === 'table' ? 'table' : 'card';
-        }
-        return 'card';
-    });
-
-    const handleViewModeToggle = () => {
-        const newMode = viewMode === 'card' ? 'table' : 'card';
-        setViewMode(newMode);
-        localStorage.setItem('suiteViewMode', newMode);
-    };
 
     // Ensure projects are loaded when this page is visited directly (only if not already loaded)
     useEffect(() => {
@@ -265,11 +255,54 @@ const TestSuitesPage: React.FC = () => {
         return matchesSearch && matchesTags;
     });
 
+    // Folder tree (left pane) and the subtree the list on the right shows.
+    const [expandedTreeIds, setExpandedTreeIds] = useState<Set<string>>(new Set());
+
+    // The tree honours the same search/tag filters as the list, so a suite that
+    // is filtered out of the results is not still visible in the navigation.
+    // A child whose parent is filtered out is shown as a root node instead.
+    const suiteTree = useMemo(() => buildSuiteTree(filteredTestSuites), [filteredTestSuites]);
+
+    const toggleTreeExpand = (suiteId: string) => {
+        setExpandedTreeIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(suiteId)) next.delete(suiteId);
+            else next.add(suiteId);
+            return next;
+        });
+    };
+
+    const expandAllFolders = () =>
+        setExpandedTreeIds(new Set(flattenSuiteTree(suiteTree).map((node) => node.suite.id)));
+
+    const collapseAllFolders = () => setExpandedTreeIds(new Set());
+
+    // Open the roots so the shape of the project is visible without hunting.
+    // Deeper levels stay closed until asked for.
+    //
+    // Keyed on the root id signature, not a one-shot flag: the store can hand
+    // over a derived placeholder tree (suite names taken from the loaded cases)
+    // before the real suites arrive, and a one-shot flag would spend itself on
+    // those ids and leave the real folders collapsed. A manual collapse after
+    // that is still respected, because the signature has not changed.
+    const rootIdsSignature = suiteTree.map((node) => node.suite.id).join('|');
+    const seededSignatureRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (rootIdsSignature === '' || seededSignatureRef.current === rootIdsSignature) return;
+        seededSignatureRef.current = rootIdsSignature;
+        setExpandedTreeIds(new Set(suiteTree.map((node) => node.suite.id)));
+    }, [rootIdsSignature, suiteTree]);
+
+    const handleCreateInside = (parentId: string | null) => {
+        if (!canWrite) { readOnlyToast(); return; }
+        setCreateParentId(parentId);
+        setIsCreateOpen(true);
+    };
+
     // Gather all distinct tags from all suites in this project
     const allTags = Array.from(
         new Set(testSuites.flatMap(s => s.tags || []))
-    ).sort();
-    const hasSuitesWithNoTags = testSuites.some(s => !s.tags || s.tags.length === 0);
+    ).sort();    const hasSuitesWithNoTags = testSuites.some(s => !s.tags || s.tags.length === 0);
     const activeTagFilterCount = selectedTags.length + (includeNoTags ? 1 : 0);
     const hasActiveSuiteFilters = normalizedSearchQuery.length > 0 || activeTagFilterCount > 0;
     const suiteListEmptyState = filteredTestSuites.length === 0 && hasActiveSuiteFilters
@@ -407,11 +440,6 @@ const TestSuitesPage: React.FC = () => {
         );
     };
 
-    const handleCreateSuite = () => {
-        if (!canWrite) { readOnlyToast(); return; }
-        setIsCreateOpen(true);
-    };
-
     const handleEditSuite = (suite: TestSuite) => {
         if (!canWrite) { readOnlyToast(); return; }
         setSuiteToEdit(suite);
@@ -528,10 +556,7 @@ const TestSuitesPage: React.FC = () => {
         return (
             <div className="flex flex-col h-auto sm:h-full bg-white dark:bg-gray-900">
                 <div className="bg-white dark:bg-gray-900 sm:sticky sm:top-0 sm:z-20">
-                    <ContextBreadcrumb
-                        showSuiteSelector={false}
-                        viewToggle={{ mode: viewMode, onToggle: handleViewModeToggle }}
-                    />
+                    <ContextBreadcrumb showSuiteSelector={false} />
                 </div>
                 <div className="flex-1 flex items-center justify-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
@@ -546,7 +571,6 @@ const TestSuitesPage: React.FC = () => {
             <div className="bg-white dark:bg-gray-900 sm:sticky sm:top-0 sm:z-20">
                 <ContextBreadcrumb
                     showSuiteSelector={false}
-                    viewToggle={{ mode: viewMode, onToggle: handleViewModeToggle }}
                     rightContent={activeProject ? <ProjectPresenceIndicator users={projectUsers} maxDisplay={4} /> : undefined}
                     beforeToggle={(
                         <>
@@ -694,12 +718,27 @@ const TestSuitesPage: React.FC = () => {
                     </div>
                 )}
 
-                <TestSuiteCreateModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} projectId={activeProject} />
+                <TestSuiteCreateModal
+                    isOpen={isCreateOpen}
+                    onClose={() => {
+                        setIsCreateOpen(false);
+                        setCreateParentId(null);
+                    }}
+                    projectId={activeProject}
+                    defaultParentId={createParentId}
+                />
 
                 <TestSuiteEditModal
                     isOpen={!!suiteToEdit}
                     onClose={() => setSuiteToEdit(null)}
                     suite={suiteToEdit}
+                    projectId={activeProject}
+                />
+
+                <SuiteMoveModal
+                    isOpen={!!suiteToMove}
+                    onClose={() => setSuiteToMove(null)}
+                    suite={suiteToMove}
                     projectId={activeProject}
                 />
 
@@ -741,21 +780,27 @@ const TestSuitesPage: React.FC = () => {
                     isLoading={isArchiving}
                 />
 
-                <TestSuiteList
-                    testCases={projectTestCases}
-                    testSuites={filteredTestSuites}
-                    onSuiteClick={handleSuiteClick}
-                    onCreate={handleCreateSuite}
+                <SuiteFolderTable
+                    nodes={suiteTree}
+                    allSuites={filteredTestSuites}
+                    expandedIds={expandedTreeIds}
+                    onToggleExpand={toggleTreeExpand}
+                    onExpandAll={expandAllFolders}
+                    onCollapseAll={collapseAllFolders}
+                    onOpen={(suite) => handleSuiteClick(suite.name, suite.id)}
+                    onCreateInside={handleCreateInside}
                     onEdit={handleEditSuite}
-                    onDelete={handleDeleteSuite}
+                    onMove={(suite) => {
+                        if (!canWrite) { readOnlyToast(); return; }
+                        setSuiteToMove(suite);
+                    }}
                     onArchive={handleArchiveSuite}
                     onRestore={handleRestoreSuite}
-                    viewMode={viewMode}
-                    onViewModeToggle={handleViewModeToggle}
-                    selectedSuiteIds={selectedSuiteIds}
-                    onToggleSuiteSelection={toggleSuiteSelection}
-                    onSelectAllSuites={handleSelectAllVisibleSuites}
-                    allowDerivedFallback={false}
+                    onDelete={handleDeleteSuite}
+                    archivedScope={suiteScope === 'archived'}
+                    selectedIds={selectedSuiteIds}
+                    onToggleSelect={toggleSuiteSelection}
+                    onSelectAll={handleSelectAllVisibleSuites}
                     emptyState={suiteListEmptyState}
                 />
             </div>

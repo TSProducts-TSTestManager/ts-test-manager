@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
-import { Users, Pencil, Trash2, X, Settings, Share2 } from 'lucide-react';
+import { Users, Pencil, Trash2, X, Settings, Share2, RotateCcw, Trash } from 'lucide-react';
 import { Project } from '../../types/testManager';
+import { canDeleteProject } from '../../utils/projectRoles';
+import { useAuthStore } from '../../store/authStore';
 
 interface ActionSheetOption {
     label: string;
@@ -16,6 +18,8 @@ interface Props {
     onManageMembers: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    onRestore: () => void;
+    onPurge: () => void;
     onSettings: () => void;
     onShare: () => void;
 }
@@ -27,10 +31,16 @@ const ProjectActionSheet: React.FC<Props> = ({
     onManageMembers, 
     onEdit, 
     onDelete,
+    onRestore,
+    onPurge,
     onSettings,
     onShare
 }) => {
     const sheetRef = useRef<HTMLDivElement>(null);
+    const user = useAuthStore((state) => state.user);
+    // Deleting is a client-admin action, so the action is hidden from owners,
+    // leads, editors and super_admins instead of failing when they tap it.
+    const mayDelete = canDeleteProject(project, user);
 
     // Handle escape key
     useEffect(() => {
@@ -95,7 +105,30 @@ const ProjectActionSheet: React.FC<Props> = ({
 
     if (!isOpen) return null;
 
+    const isDeleted = project.deleted === true;
+
     const options: ActionSheetOption[] = [
+        ...(isDeleted
+            ? [
+                  {
+                      label: 'Restore Project',
+                      icon: <RotateCcw className="h-5 w-5" />,
+                      onClick: () => {
+                          onRestore();
+                          onClose();
+                      },
+                  },
+                  {
+                      label: 'Delete Permanently',
+                      icon: <Trash className="h-5 w-5" />,
+                      onClick: () => {
+                          onPurge();
+                          onClose();
+                      },
+                      variant: 'danger' as const,
+                  },
+              ]
+            : []),
         {
             label: 'Share Project',
             icon: <Share2 className="h-5 w-5" />,
@@ -128,15 +161,19 @@ const ProjectActionSheet: React.FC<Props> = ({
                 onClose();
             },
         },
-        {
-            label: 'Delete Project',
-            icon: <Trash2 className="h-5 w-5" />,
-            onClick: () => {
-                onDelete();
-                onClose();
-            },
-            variant: 'danger',
-        },
+        ...(mayDelete && !isDeleted
+            ? [
+                  {
+                      label: 'Delete Project',
+                      icon: <Trash2 className="h-5 w-5" />,
+                      onClick: () => {
+                          onDelete();
+                          onClose();
+                      },
+                      variant: 'danger' as const,
+                  },
+              ]
+            : []),
     ];
 
     return (
@@ -170,6 +207,11 @@ const ProjectActionSheet: React.FC<Props> = ({
                                 )}
                                 {project.name}
                             </h3>
+                            {isDeleted && (
+                                <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                                    Deleted
+                                </span>
+                            )}
                             <p className="text-xs text-gray-500 dark:text-gray-400">
                                 {project.stats.members} member{project.stats.members !== 1 ? 's' : ''} · {project.stats.suites} suites · {project.stats.cases} cases · {project.stats.bugs ?? 0} bugs
                                 {(project.stats.openBugs ?? 0) > 0 && <span className="text-red-500"> ({project.stats.openBugs} open)</span>}

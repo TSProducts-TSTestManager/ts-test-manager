@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 import { TestCase, TestRunGroup } from '../../../types/testManager';
 import TagInput from '../../../components/testManager/TagInput';
 import { getIndentedGroupOptions } from './testRunUtils';
+import SuiteTree from '../../../components/testManager/SuiteTree';
+import { buildSuiteTree, subtreeSuiteIds, SuiteNodeSource } from '../../../utils/suiteTree';
 import {
     X,
     Search,
@@ -20,7 +22,8 @@ export interface CreateRunModalProps {
     onClose: () => void;
     onSubmit: (title: string, description: string, caseIds: string[], groupId?: string, tags?: string[], environment?: string, team?: string, buildVersion?: string) => Promise<void>;
     testCases: TestCase[];
-    testSuites: { id: string; name: string }[];
+    /** Flat suite list; `parentId` / `isFolder` drive the folder tab. */
+    testSuites: SuiteNodeSource[];
     testRunGroups: TestRunGroup[];
     tagSuggestions: string[];
     initialTitle?: string;
@@ -32,7 +35,7 @@ export interface CreateRunModalProps {
     teamSuggestions?: string[];
 }
 
-type SelectionTab = 'suite' | 'area' | 'individual';
+type SelectionTab = 'folder' | 'suite' | 'area' | 'individual';
 
 const FILTER_CHIP_BASE = 'px-2.5 py-1 text-xs font-medium rounded-full border transition-colors cursor-pointer';
 const FILTER_CHIP_ACTIVE = 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-700';
@@ -89,6 +92,7 @@ const CreateRunModal: React.FC<CreateRunModalProps> = ({
 
     const [expandedSuites, setExpandedSuites] = useState<Set<string>>(new Set());
     const [expandedAreas, setExpandedAreas] = useState<Set<string>>(new Set());
+    const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
     const [showSummaryPopover, setShowSummaryPopover] = useState(false);
     const summaryPopoverRef = useRef<HTMLDivElement>(null);
@@ -184,6 +188,34 @@ const CreateRunModal: React.FC<CreateRunModalProps> = ({
             return { ...suite, cases, selectedCount, totalCount: cases.length, state };
         }).filter(s => s.totalCount > 0),
         [testSuites, testCases, selectedIdsSet]
+    );
+
+    const folderTree = useMemo(() => buildSuiteTree(testSuites), [testSuites]);
+
+    /** Case ids stored in this node and every folder beneath it. */
+    const casesUnderFolder = useCallback(
+        (suiteId: string): string[] => {
+            const ids = new Set(subtreeSuiteIds(testSuites, suiteId));
+            return testCases.filter((tc) => tc.suiteId && ids.has(tc.suiteId)).map((tc) => tc.id);
+        },
+        [testCases, testSuites]
+    );
+
+    /** Ticking a folder ticks its whole subtree; unticking clears it. */
+    const toggleFolderSelection = useCallback(
+        (suiteId: string, select: boolean) => {
+            const caseIds = casesUnderFolder(suiteId);
+            if (caseIds.length === 0) return;
+            setSelectedIds((prev) => {
+                const next = new Set(prev);
+                for (const id of caseIds) {
+                    if (select) next.add(id);
+                    else next.delete(id);
+                }
+                return Array.from(next);
+            });
+        },
+        [casesUnderFolder]
     );
 
     const areasWithSelection = useMemo(() =>
@@ -487,6 +519,37 @@ const CreateRunModal: React.FC<CreateRunModalProps> = ({
         </div>
     );
 
+    /**
+     * Folder tab: the suite tree with tri-state checkboxes. Selecting a folder
+     * selects every case beneath it, which is the "give me this role's Login
+     * tests" gesture the flat suite list cannot express.
+     */
+    const renderFolderTab = () => (
+        <div className="max-h-80 overflow-y-auto">
+            {folderTree.length === 0 ? (
+                <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+                    No test suites available
+                </div>
+            ) : (
+                <SuiteTree
+                    nodes={folderTree}
+                    activeSuiteId={null}
+                    onSelect={() => undefined}
+                    expandedIds={expandedFolders}
+                    onToggleExpand={(id) => setExpandedFolders(prev => {
+                        const next = new Set(prev);
+                        if (next.has(id)) next.delete(id); else next.add(id);
+                        return next;
+                    })}
+                    selectable
+                    selectedCaseIds={selectedIdsSet}
+                    casesUnder={(node) => casesUnderFolder(node.suite.id)}
+                    onToggleSelect={(node, select) => toggleFolderSelection(node.suite.id, select)}
+                />
+            )}
+        </div>
+    );
+
     const renderSuiteTab = () => (
         <div className="space-y-1 max-h-80 overflow-y-auto">
             {suitesWithSelection.length === 0 ? (
@@ -783,6 +846,12 @@ const CreateRunModal: React.FC<CreateRunModalProps> = ({
                     <div>
                         <div className="flex gap-1 mb-3 bg-gray-100 dark:bg-gray-700/50 rounded-lg p-1 overflow-x-auto">
                             <button
+                                onClick={() => setActiveTab('folder')}
+                                className={`${TAB_BASE} ${activeTab === 'folder' ? TAB_ACTIVE : TAB_INACTIVE}`}
+                            >
+                                By Folder
+                            </button>
+                            <button
                                 onClick={() => setActiveTab('suite')}
                                 className={`${TAB_BASE} ${activeTab === 'suite' ? TAB_ACTIVE : TAB_INACTIVE}`}
                             >
@@ -801,6 +870,7 @@ const CreateRunModal: React.FC<CreateRunModalProps> = ({
                                 Individual Cases
                             </button>
                         </div>
+                        {activeTab === 'folder' && renderFolderTab()}
                         {activeTab === 'suite' && renderSuiteTab()}
                         {activeTab === 'area' && renderAreaTab()}
                         {activeTab === 'individual' && renderIndividualTab()}

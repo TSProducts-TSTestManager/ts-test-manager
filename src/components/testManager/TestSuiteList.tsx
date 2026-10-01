@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import toast from 'react-hot-toast';
 import { TestCase, TestSuite, Status } from '../../types/testManager';
@@ -100,24 +100,61 @@ const TestSuiteList: React.FC<TestSuiteListProps> = ({
             } as TestSuite))
             : [];
 
-    const getSuiteStats = (suiteName: string) => {
-        const cases = testCases.filter(c => c.suite === suiteName);
-        const total = cases.length;
+    /**
+     * Per-suite case stats, computed in one pass and memoised.
+     *
+     * Keyed by suiteId, not name: with folders several suites can share a name
+     * (Owner / Login and Manager / Login are both "Login"), and keying by name
+     * added their counts together. The name lookup is a fallback for the
+     * derived-suite path, where only a name is known.
+     */
+    const statsBySuite = useMemo(() => {
+        const map = new Map<string, { total: number; ready: number; inReview: number; draft: number; updated: number; progress: number }>();
+        const byId = new Map<string, typeof testCases>();
+        const byName = new Map<string, typeof testCases>();
 
-        const ready = cases.filter(c => c.status === Status.Ready).length;
-        const inReview = cases.filter(c => c.status === Status.InReview).length;
-        const draft = cases.filter(c => c.status === Status.Draft).length;
-        const updated = cases.filter(c => c.status === Status.Updated).length;
+        for (const testCase of testCases) {
+            if (testCase.suiteId) {
+                const bucket = byId.get(testCase.suiteId);
+                if (bucket) bucket.push(testCase); else byId.set(testCase.suiteId, [testCase]);
+            }
+            const name = testCase.suite;
+            if (name) {
+                const bucket = byName.get(name);
+                if (bucket) bucket.push(testCase); else byName.set(name, [testCase]);
+            }
+        }
 
-        const progress = total === 0 ? 0 : Math.round((ready / total) * 100);
+        const summarise = (cases: typeof testCases) => {
+            const total = cases.length;
+            let ready = 0, inReview = 0, draft = 0, updated = 0;
+            for (const c of cases) {
+                if (c.status === Status.Ready) ready += 1;
+                else if (c.status === Status.InReview) inReview += 1;
+                else if (c.status === Status.Draft) draft += 1;
+                else if (c.status === Status.Updated) updated += 1;
+            }
+            return { total, ready, inReview, draft, updated, progress: total === 0 ? 0 : Math.round((ready / total) * 100) };
+        };
 
-        return { total, ready, inReview, draft, updated, progress };
-    };
+        for (const [id, cases] of byId) map.set(id, summarise(cases));
+        for (const [name, cases] of byName) {
+            if (!map.has(name)) map.set(name, summarise(cases));
+        }
+        return map;
+    }, [testCases]);
+
+    const EMPTY_STATS = { total: 0, ready: 0, inReview: 0, draft: 0, updated: 0, progress: 0 };
+
+    const getSuiteStats = (suite: TestSuite) =>
+        (suite.id ? statsBySuite.get(suite.id) : undefined) ??
+        statsBySuite.get(suite.name) ??
+        EMPTY_STATS;
 
     const getSortedSuites = () => {
         return [...suites].sort((a, b) => {
-            const aStats = getSuiteStats(a.name);
-            const bStats = getSuiteStats(b.name);
+            const aStats = getSuiteStats(a);
+            const bStats = getSuiteStats(b);
             let comparison = 0;
 
             switch (sortField) {
@@ -244,7 +281,7 @@ const TestSuiteList: React.FC<TestSuiteListProps> = ({
                 </div>
 
                 {sortedSuites.map(suite => {
-                    const stats = getSuiteStats(suite.name);
+                    const stats = getSuiteStats(suite);
                     const isSelected = selectedSuiteIds.includes(suite.id);
 
                     return (
@@ -481,7 +518,7 @@ const TestSuiteList: React.FC<TestSuiteListProps> = ({
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                             {sortedSuites.map(suite => {
-                                const stats = getSuiteStats(suite.name);
+                                const stats = getSuiteStats(suite);
                                 const isSelected = selectedSuiteIds.includes(suite.id);
                                 return (
                                     <tr

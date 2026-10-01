@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { READ_ONLY_ERROR, useTestManagerStore } from '../store/testManagerStore';
+import { DELETE_FORBIDDEN_ERROR, READ_ONLY_ERROR, useTestManagerStore } from '../store/testManagerStore';
 import { useAuthStore } from '../store/authStore';
 import * as testManagerApi from '../services/testManagerApi';
 import * as ticketApi from '../services/ticketApi';
@@ -18,6 +18,9 @@ vi.mock('zustand/middleware', async () => {
 vi.mock('../services/testManagerApi', () => ({
   updateProject: vi.fn(),
   deleteProject: vi.fn(),
+  restoreProject: vi.fn(),
+  purgeProject: vi.fn(),
+  getProject: vi.fn(),
   createTestSuite: vi.fn(),
   updateTestSuite: vi.fn(),
   deleteTestSuite: vi.fn(),
@@ -118,7 +121,7 @@ describe('testManagerStore write guards', () => {
     expect(useTestManagerStore.getState().error).toBe(READ_ONLY_ERROR);
   });
 
-  it('blocks a viewer from deleting the project and creating content', async () => {
+  it('blocks a viewer from creating content', async () => {
     useAuthStore.setState({
       user: buildUser({ role: 'member', clientId: 'client-1' }),
     });
@@ -129,16 +132,12 @@ describe('testManagerStore write guards', () => {
     });
 
     await expect(
-      useTestManagerStore.getState().deleteProject('proj-1')
-    ).rejects.toThrow(READ_ONLY_ERROR);
-    await expect(
       useTestManagerStore.getState().createTestSuite('proj-1', { name: 'Auth' })
     ).rejects.toThrow(READ_ONLY_ERROR);
     await expect(
       useTestManagerStore.getState().updateProjectSettings('proj-1', {} as never)
     ).rejects.toThrow(READ_ONLY_ERROR);
 
-    expect(testManagerApi.deleteProject).not.toHaveBeenCalled();
     expect(testManagerApi.createTestSuite).not.toHaveBeenCalled();
     expect(testManagerApi.updateProjectSettings).not.toHaveBeenCalled();
   });
@@ -159,15 +158,92 @@ describe('testManagerStore write guards', () => {
     expect(useTestManagerStore.getState().error).toBeNull();
   });
 
-  it('allows the project owner (lead) to delete the project', async () => {
+  it('no longer lets the project owner delete the project', async () => {
     useAuthStore.setState({
       user: buildUser({ role: 'member', clientId: 'client-1' }),
     });
     useTestManagerStore.setState({ projects: [buildProject({ ownerId: 'user-1' })] });
 
+    // Deleting a project is a client-admin action, so the project owner — who
+    // is a `lead` and can edit everything else in it — is refused.
+    await expect(
+      useTestManagerStore.getState().deleteProject('proj-1')
+    ).rejects.toThrow(DELETE_FORBIDDEN_ERROR);
+
+    expect(testManagerApi.deleteProject).not.toHaveBeenCalled();
+  });
+
+  it('blocks a client_admin of another client from deleting the project', async () => {
+    useAuthStore.setState({
+      user: buildUser({ role: 'client_admin', clientId: 'client-2' }),
+    });
+    useTestManagerStore.setState({ projects: [buildProject()] });
+
+    await expect(
+      useTestManagerStore.getState().deleteProject('proj-1')
+    ).rejects.toThrow(DELETE_FORBIDDEN_ERROR);
+
+    expect(testManagerApi.deleteProject).not.toHaveBeenCalled();
+  });
+
+  it('allows a same-client client_admin to delete the project', async () => {
+    useAuthStore.setState({
+      user: buildUser({ role: 'client_admin', clientId: 'client-1' }),
+    });
+    useTestManagerStore.setState({ projects: [buildProject()] });
+
     await useTestManagerStore.getState().deleteProject('proj-1');
 
-    expect(testManagerApi.deleteProject).toHaveBeenCalledTimes(1);
+    expect(testManagerApi.deleteProject).toHaveBeenCalledWith('proj-1');
+  });
+
+  it('lets a same-client client_admin restore a deleted project back into the list', async () => {
+    useAuthStore.setState({
+      user: buildUser({ role: 'client_admin', clientId: 'client-1' }),
+    });
+    useTestManagerStore.setState({ projects: [buildProject()] });
+    vi.mocked(testManagerApi.restoreProject).mockResolvedValue(undefined as never);
+    vi.mocked(testManagerApi.getProject).mockResolvedValue({
+      ...projectResponse(),
+      deleted: false,
+    } as never);
+
+    const restored = await useTestManagerStore.getState().restoreProject('proj-1');
+
+    expect(testManagerApi.restoreProject).toHaveBeenCalledWith('proj-1');
+    expect(restored.deleted).toBe(false);
+    expect(useTestManagerStore.getState().projects.map((p) => p.id)).toContain('proj-1');
+  });
+
+  it('requires the same client-admin role to restore or permanently delete', async () => {
+    useAuthStore.setState({
+      user: buildUser({ role: 'member', clientId: 'client-1' }),
+    });
+    useTestManagerStore.setState({ projects: [buildProject({ ownerId: 'user-1' })] });
+
+    await expect(
+      useTestManagerStore.getState().restoreProject('proj-1')
+    ).rejects.toThrow(DELETE_FORBIDDEN_ERROR);
+    await expect(
+      useTestManagerStore.getState().purgeProject('proj-1')
+    ).rejects.toThrow(DELETE_FORBIDDEN_ERROR);
+
+    expect(testManagerApi.restoreProject).not.toHaveBeenCalled();
+    expect(testManagerApi.purgeProject).not.toHaveBeenCalled();
+  });
+
+  it('rolls the list back when a permanent delete fails', async () => {
+    useAuthStore.setState({
+      user: buildUser({ role: 'client_admin', clientId: 'client-1' }),
+    });
+    useTestManagerStore.setState({ projects: [buildProject()] });
+    vi.mocked(testManagerApi.purgeProject).mockRejectedValue(new Error('nope') as never);
+
+    await expect(useTestManagerStore.getState().purgeProject('proj-1')).rejects.toThrow('nope');
+
+    // The optimistic removal must not leave the project missing from the list.
+    expect(useTestManagerStore.getState().projects.map((p) => p.id)).toEqual(['proj-1']);
+    expect(useTestManagerStore.getState().error).toBe('nope');
   });
 
   it('allows a same-client client_admin (lead) to create a suite', async () => {

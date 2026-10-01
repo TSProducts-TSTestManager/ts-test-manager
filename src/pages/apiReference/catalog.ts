@@ -299,7 +299,7 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 			title: 'Projects',
 			audience: 'all',
 			overview:
-				'Projects are the container for suites, cases, runs, tickets and reports. Only members of a project can see or change it.',
+				'Projects are the container for suites, cases, runs, tickets and reports. Only members of a project can see or change it, and a deleted project is hidden from every role.',
 			blocks: [
 				{
 					kind: 'endpoints',
@@ -316,7 +316,8 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 						{
 							method: 'GET',
 							path: '/api/projects',
-							description: 'List projects you belong to, paginated. Supports limit, offset, search, sortField, sortDir.',
+							description:
+								'List projects you belong to, paginated. Supports limit, offset, search, sortField, sortDir. Pass deleted=true for your soft-deleted projects instead — that only ever returns rows for a client_admin, and is ignored for every other role.',
 							example: bash(
 								`curl -b cookies.txt "$BASE/api/projects?limit=20&offset=0&search=checkout&sortField=name&sortDir=asc"`,
 							),
@@ -324,7 +325,8 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 						{
 							method: 'GET',
 							path: '/api/projects/:id',
-							description: 'Fetch one project, including its members and settings.',
+							description:
+								'Fetch one project, including its members and settings. A soft-deleted project is hidden from every role, so this 404s once it has been deleted.',
 							example: bash(`curl -b cookies.txt "$BASE/api/projects/<PROJECT_ID>"`),
 						},
 						{
@@ -338,8 +340,25 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 						{
 							method: 'DELETE',
 							path: '/api/projects/:id',
-							description: 'HARD delete — cascades to that project’s suites, cases, runs and tickets. Not restorable.',
+							description:
+								'Soft delete. Only a client_admin of that project\'s own client may call it — project owners, leads, editors and super_admins get 403. The project and everything inside it (suites, cases, runs, run groups, tickets) are flagged, hidden from every role, and restorable with the restore endpoint.',
 							example: bash(`curl -b cookies.txt -X DELETE "$BASE/api/projects/<PROJECT_ID>"`),
+						},
+						{
+							method: 'POST',
+							path: '/api/projects/:id/restore',
+							description:
+								'Restore a soft-deleted project and everything that was cascaded with it. Same permission as the delete. Content that was archived before the project was deleted stays archived.',
+							example: bash(
+								`curl -b cookies.txt -X POST "$BASE/api/projects/<PROJECT_ID>/restore"`,
+							),
+						},
+						{
+							method: 'POST',
+							path: '/api/projects/:id/purge',
+							description:
+								'PERMANENT delete — destroys the project, its suites, cases, runs, run groups, tickets, evidence and project-scoped counters. Not restorable. Same client-admin permission.',
+							example: bash(`curl -b cookies.txt -X POST "$BASE/api/projects/<PROJECT_ID>/purge"`),
 						},
 					],
 				},
@@ -428,10 +447,10 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 		{
 			id: 'suites',
 			icon: Layers,
-			title: 'Test Suites',
+			title: 'Suites & Folders',
 			audience: 'all',
 			overview:
-				'Suites group test cases into logical units (a module, feature or flow). DELETE /api/suites/:id is a HARD delete — archive instead when you want it back later.',
+				'Suites group test cases into logical units (a module, feature or flow) and nest as folders up to 3 levels deep (e.g. Owner > Login > Forgot Password). A folder can hold test cases and sub-folders at the same time. DELETE /api/suites/:id is a HARD delete — archive instead when you want it back later.',
 			blocks: [
 				{
 					kind: 'endpoints',
@@ -439,38 +458,71 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 						{
 							method: 'POST',
 							path: '/api/projects/:projectId/suites',
-							description: 'Create a suite. Body: { name, description?, tags? }.',
+							description:
+								'Create a suite or folder. Body: { name, description?, tags?, parentId?, isFolder? }. Omit parentId (or send null) for a root node. Every response carries parentId, depth (0 = root) and both counts: caseCount (cases in this node) and totalCaseCount (this node plus every folder beneath it).',
 							example: bash(
 								[
+									`# root-level folder`,
 									`curl -b cookies.txt -X POST "$BASE/api/projects/<PROJECT_ID>/suites" \\`,
 									`  -H "Content-Type: application/json" \\`,
-									`  -d '{"name":"Checkout","description":"Happy + unhappy paths","tags":["regression"]}'`,
+									`  -d '{"name":"Owner","isFolder":true}'`,
+									``,
+									`# folder inside it`,
+									`curl -b cookies.txt -X POST "$BASE/api/projects/<PROJECT_ID>/suites" \\`,
+									`  -H "Content-Type: application/json" \\`,
+									`  -d '{"name":"Login","parentId":"<OWNER_SUITE_ID>","isFolder":true}'`,
 								].join('\n'),
 							),
 						},
 						{
 							method: 'GET',
 							path: '/api/projects/:projectId/suites',
-							description: 'List suites in a project. Query: archived=false | true | all (default hides archived).',
+							description:
+								'List suites in a project, flat. Query: archived=false | true | all (default hides archived). Build the folder tree from parentId/depth, or use depth and totalCaseCount to show a rollup.',
 							example: bash(`curl -b cookies.txt "$BASE/api/projects/<PROJECT_ID>/suites?archived=all"`),
 						},
-						{ method: 'GET', path: '/api/suites/:id', description: 'Fetch one suite.' },
-						{ method: 'PUT', path: '/api/suites/:id', description: 'Update name, description or tags.' },
+						{ method: 'GET', path: '/api/suites/:id', description: 'Fetch one suite or folder.' },
+						{
+							method: 'PUT',
+							path: '/api/suites/:id',
+							description:
+								'Update name, description, tags, isFolder, or re-parent with parentId (null moves it to the root).',
+						},
+						{
+							method: 'PUT',
+							path: '/api/suites/:id/move',
+							description:
+								'Move a folder under a new parent. Body: { parentId } (null = root level). Rejects a move into itself or one of its own sub-folders, into another project, into an archived folder, and any move whose whole subtree would pass 3 levels. Depths below the node are re-based for you.',
+							example: bash(
+								`curl -b cookies.txt -X PUT "$BASE/api/suites/<SUITE_ID>/move" -H "Content-Type: application/json" -d '{"parentId":"<MANAGER_SUITE_ID>"}'`,
+							),
+						},
 						{
 							method: 'DELETE',
 							path: '/api/suites/:id',
-							description: 'HARD delete — removes the suite (cases are deleted with it). Prefer archive.',
+							description:
+								'HARD delete — removes the node. On a folder this takes every sub-folder, every case inside them, and their discussions and run items.',
 							example: bash(`curl -b cookies.txt -X DELETE "$BASE/api/suites/<SUITE_ID>"`),
 						},
-						{ method: 'POST', path: '/api/suites/:id/archive', description: 'Archive the suite — reversible, hides it from default lists.' },
-						{ method: 'POST', path: '/api/suites/:id/restore', description: 'Restore an archived suite.' },
+						{
+							method: 'POST',
+							path: '/api/suites/:id/archive',
+							description:
+								'Archive the node — reversible, hides it from default lists. On a folder this archives the whole subtree and all of its cases.',
+						},
+						{
+							method: 'POST',
+							path: '/api/suites/:id/restore',
+							description:
+								'Restore an archived node, its sub-folders and its cases. Archived ancestors are restored too, so a nested folder does not come back invisible.',
+						},
 					],
 				},
 				{
 					kind: 'note',
 					tone: 'warning',
 					title: 'Archive vs delete',
-					text: 'Archive keeps the suite (and its cases) recoverable; DELETE /api/suites/:id destroys it permanently. Use the archived query flag to list either side.',
+					text: 'Archive keeps the node (and its cases) recoverable; DELETE /api/suites/:id destroys it permanently. Use the archived query flag to list either side. Both act on the whole folder subtree.',
 				},
 			],
 		},
@@ -622,9 +674,15 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 						{
 							method: 'PUT',
 							path: '/api/cases/:id',
-							description: 'Full update — same body shape as create (title still required).',
+							description:
+								'Full update — same body shape as create (title still required). Send suiteId alone to move the case into another suite or folder: it must be in the same project (404 otherwise), the case lands at the end of the new order, and the move is recorded in the case history.',
 							example: bash(
-								`curl -b cookies.txt -X PUT "$BASE/api/cases/<CASE_ID>" -H "Content-Type: application/json" -d '{"title":"Login with valid credentials","status":"Ready"}'`,
+								[
+									`# move a case into another folder`,
+									`curl -b cookies.txt -X PUT "$BASE/api/cases/<CASE_ID>" \\`,
+									`  -H "Content-Type: application/json" \\`,
+									`  -d '{"suiteId":"<MANAGER_LOGIN_SUITE_ID>"}'`,
+								].join('\n'),
 							),
 						},
 						{
@@ -684,9 +742,12 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 							method: 'GET',
 							path: '/api/projects/:projectId/cases',
 							description:
-								'Project-wide case list with pagination (limit, offset) and filters (suite, status, priority, area, search, archived, tags). Returns meta { total, limit, offset, hasMore }.',
+								'Project-wide case list with pagination (limit, offset) and filters (suiteId + suiteScope, status, priority, testType, area, search, archived). Returns meta { total, limit, offset, hasMore }. suiteScope=subtree widens suiteId from that one folder to the folder and everything under it (default is direct, i.e. only that node’s own cases).',
 							example: bash(
-								`curl -b cookies.txt "$BASE/api/projects/<PROJECT_ID>/cases?limit=50&offset=0&search=login&status=Ready"`,
+								[
+									`# every case under Owner and its sub-folders`,
+									`curl -b cookies.txt "$BASE/api/projects/<PROJECT_ID>/cases?limit=50&offset=0&suiteId=<OWNER_SUITE_ID>&suiteScope=subtree"`,
+								].join('\n'),
 							),
 						},
 					],
@@ -695,7 +756,7 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 					kind: 'note',
 					tone: 'warning',
 					title: 'Delete semantics differ by resource',
-					text: 'DELETE /api/cases/:id and DELETE /api/suites/:id are HARD deletes; DELETE /api/tickets/:id only archives; DELETE /api/projects/:id hard-cascades to everything inside the project.',
+					text: 'DELETE /api/cases/:id and DELETE /api/suites/:id are HARD deletes; DELETE /api/tickets/:id only archives; DELETE /api/projects/:id is a SOFT delete restricted to a client_admin of that project\'s client, and POST /api/projects/:id/purge is the irreversible one.',
 				},
 			],
 		},
@@ -740,9 +801,13 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 							method: 'PUT',
 							path: '/api/runs/:id',
 							description:
-								'Update run metadata. Status enum: Draft | In Progress | Completed | Abandoned.',
+								'Update run metadata and its case selection. Status enum: Draft | In Progress | Completed | Abandoned. additionalTestCaseIds appends cases (ids already in the run are ignored); removedTestCaseIds takes cases back out and is applied after the additions, so an id in both lists ends up removed. Remaining items are re-sequenced 0..n-1 and the results summary recalculated.',
 							example: bash(
-								`curl -b cookies.txt -X PUT "$BASE/api/runs/<RUN_ID>" -H "Content-Type: application/json" -d '{"status":"In Progress"}'`,
+								[
+									`# add two cases, drop one`,
+									`curl -b cookies.txt -X PUT "$BASE/api/runs/<RUN_ID>" -H "Content-Type: application/json" \\`,
+									`  -d '{"additionalTestCaseIds":["<CASE_ID_1>","<CASE_ID_2>"],"removedTestCaseIds":["<CASE_ID_3>"]}'`,
+								].join('\n'),
 							),
 						},
 						{
