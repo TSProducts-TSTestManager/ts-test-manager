@@ -167,12 +167,16 @@ const HELP_SECTIONS: HelpSection[] = [
       'Select a project to make it active; the sidebar’s Active Project card confirms your choice.',
       'Open Project Settings to manage members and their roles (Lead / Editor / Viewer) and define custom fields for test cases.',
       'Tune display preferences such as hidden default fields/columns so each team sees only what matters to them.',
-      'Archive a project you no longer need — archived projects are hidden from normal lists but can be restored.',
+      'Delete a project you no longer need. Deleting is a client-admin action and is reversible: the project and everything in it is hidden from every role, and the same client admin can restore it from “Show deleted projects”.',
     ],
     tips: [
       {
         title: 'Members control access',
-        text: 'Only members of a project see and edit it. Add teammates from Project Settings and give viewers read-only access.',
+        text: 'Only members of a project see and edit it. Add teammates from Project Settings and give viewers read-only access. A deleted project is hidden from everyone, including its members.',
+      },
+      {
+        title: 'Who can delete a project',
+        text: 'Only a client admin of that project’s own client can delete, restore or permanently remove a project. Project owners, leads and editors cannot, and the Delete action is not shown to them.',
       },
       {
         title: 'Custom fields',

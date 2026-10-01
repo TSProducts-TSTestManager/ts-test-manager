@@ -95,6 +95,10 @@ export interface ProjectResponse {
   description?: string;
   color: string;
   ownerId: string;
+  /** Soft-deleted projects are hidden from every read path but the client's
+   *  deleted-project view. */
+  deleted?: boolean;
+  deletedAt?: string | null;
   members: ProjectMember[];
   stats: ProjectStats;
   jira?: ProjectJira;

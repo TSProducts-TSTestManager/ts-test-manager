@@ -36,3 +36,22 @@ export const canWriteProject = (project: Project | undefined, user: PermissionUs
     const role = getProjectRole(project, user);
     return role !== null && role !== 'viewer';
 };
+
+/**
+ * Can this user delete / restore / permanently delete the project?
+ *
+ * The business rule is narrower than `canWriteProject`: only a `client_admin` of
+ * the project's *own* client may remove a project for that client. Owners,
+ * leads, editors and super_admins cannot, so the Delete action has to be hidden
+ * for them rather than left to fail on the server.
+ *
+ * A project with no `clientId` cannot be tied to a client admin, so it is not
+ * deletable through this rule — same answer the backend gives.
+ */
+export const canDeleteProject = (project: Project | undefined, user: PermissionUser): boolean => {
+    if (!project || !user) return false;
+    if (user.role !== 'client_admin') return false;
+    if (!project.clientId || !user.clientId) return false;
+    return String(project.clientId) === String(user.clientId);
+};
+

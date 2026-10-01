@@ -2,8 +2,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { Project } from '../../types/testManager';
-import { FolderGit2, MoreHorizontal, Users, Layers, Calendar, Plus, FileText, Pencil, Trash2, Settings, Share2, Bug, AlertTriangle, Search, Table, Grid2x2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { FolderGit2, MoreHorizontal, Users, Layers, Calendar, Plus, FileText, Pencil, Trash2, Settings, Share2, Bug, AlertTriangle, Search, Table, Grid2x2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown, RotateCcw } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { canDeleteProject } from '../../utils/projectRoles';
 import ProjectMembersModal from './ProjectMembersModal';
 import ProjectActionSheet from './ProjectActionSheet';
 
@@ -17,6 +18,10 @@ interface ProjectListProps {
     onEdit?: (project: Project) => void;
     onSettings?: (project: Project) => void;
     onDelete?: (project: Project) => void;
+    /** Restore a soft-deleted project (client admins only). */
+    onRestore?: (project: Project) => void;
+    /** Irreversibly delete a project and its content (client admins only). */
+    onPurge?: (project: Project) => void;
     viewMode?: 'card' | 'table';
     onViewModeToggle?: () => void;
     searchQuery?: string;
@@ -43,7 +48,7 @@ type ProjectSortField =
 
 const PROJECT_NUMERIC_SORT_FIELDS: ProjectSortField[] = ['suites', 'cases', 'bugs', 'openBugs', 'members'];
 
-const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList({ projects, isLoading = false, onProjectClick, onCreate, onEdit, onSettings, onDelete, viewMode = 'card', onViewModeToggle, searchQuery = '', onSearchChange }) {
+const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList({ projects, isLoading = false, onProjectClick, onCreate, onEdit, onSettings, onDelete, onRestore, onPurge, viewMode = 'card', onViewModeToggle, searchQuery = '', onSearchChange }) {
     const { user } = useAuthStore();
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const [showMembersModal, setShowMembersModal] = useState(false);
@@ -134,6 +139,20 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
         setDropdownPosition(null);
         if (selectedProject && onDelete) {
             onDelete(selectedProject);
+        }
+    };
+    const handleRestore = () => {
+        setDropdownPosition(null);
+        setShowActionSheet(false);
+        if (selectedProject && onRestore) {
+            onRestore(selectedProject);
+        }
+    };
+    const handlePurge = () => {
+        setDropdownPosition(null);
+        setShowActionSheet(false);
+        if (selectedProject && onPurge) {
+            onPurge(selectedProject);
         }
     };
 
@@ -319,6 +338,11 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
                                                                 <FolderGit2 className="h-3.5 w-3.5" />
                                                             </div>
                                                             <span className="font-medium text-gray-900 dark:text-white truncate max-w-[180px]">{project.name}</span>
+                                                            {project.deleted && (
+                                                                <span className="shrink-0 text-[11px] bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 px-1.5 py-0.5 rounded-full font-medium">
+                                                                    Deleted
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-3 align-middle max-w-[200px] truncate text-gray-500 dark:text-gray-400" title={project.description}>
@@ -429,6 +453,11 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
                                             </span>
                                         )}
                                         {renderJiraBadge(project)}
+                                        {project.deleted && (
+                                            <span className="text-xs bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 px-2 py-0.5 rounded-full font-medium">
+                                                Deleted
+                                            </span>
+                                        )}
                                     </div>
 
                                     <h3 className="font-semibold text-gray-900 dark:text-white text-xl tracking-tight mb-2">{project.name}</h3>
@@ -488,6 +517,35 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
                         right: dropdownPosition.right,
                     }}
                 >
+                    {/* A deleted project is only restorable or removable for
+                        good, so the ordinary actions are replaced rather than
+                        shown alongside actions the backend would refuse. */}
+                    {selectedProject!.deleted ? (
+                        canDeleteProject(selectedProject!, user) ? (
+                            <>
+                                <button
+                                    onClick={handleRestore}
+                                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                                >
+                                    <RotateCcw className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                                    Restore Project
+                                </button>
+                                <div className="h-px bg-gray-100 dark:bg-gray-700 my-1" />
+                                <button
+                                    onClick={handlePurge}
+                                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                    Delete Permanently
+                                </button>
+                            </>
+                        ) : (
+                            <p className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400">
+                                This project is deleted. Contact a client admin to restore it.
+                            </p>
+                        )
+                    ) : (
+                        <>
                     <button
                         onClick={(e) => handleShareClick(e, selectedProject!.id)}
                         className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
@@ -517,13 +575,19 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
                         Edit Project
                     </button>
                     <div className="h-px bg-gray-100 dark:bg-gray-700 my-1" />
-                    <button
-                        onClick={handleDelete}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                    >
-                        <Trash2 className="h-4 w-4" />
-                        Delete Project
-                    </button>
+                    {/* Delete is a client-admin action; hidden for everyone else
+                        so nobody discovers the rule from a 403. */}
+                    {canDeleteProject(selectedProject!, user) && (
+                        <button
+                            onClick={handleDelete}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                            Delete Project
+                        </button>
+                    )}
+                        </>
+                    )}
                 </div>
             )}
 
@@ -537,6 +601,8 @@ const ProjectList: React.FC<ProjectListProps> = React.memo(function ProjectList(
                     onEdit={handleEdit}
                     onSettings={handleSettings}
                     onDelete={handleDelete}
+                    onRestore={handleRestore}
+                    onPurge={handlePurge}
                     onShare={() => handleShareClick({ stopPropagation: () => {} } as React.MouseEvent, selectedProject.id)}
                 />
             )}

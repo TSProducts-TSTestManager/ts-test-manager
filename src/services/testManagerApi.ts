@@ -106,16 +106,22 @@ export const getProjectsPaginated = async (
     search?: string;
     sortField?: 'name' | 'createdAt';
     sortDir?: 'asc' | 'desc';
+    /**
+     * Ask for soft-deleted projects instead of live ones. Only a client admin
+     * ever gets results here; the backend ignores it for every other role.
+     */
+    deleted?: boolean;
   }
 ): Promise<PaginatedProjectsResult> => {
   try {
-    const query: Record<string, string | number> = {
+    const query: Record<string, string | number | boolean> = {
       limit: params.limit,
       offset: params.offset,
     };
     if (params.search?.trim()) query.search = params.search.trim();
     if (params.sortField) query.sortField = params.sortField;
     if (params.sortDir) query.sortDir = params.sortDir;
+    if (params.deleted) query.deleted = 'true';
 
     const response = await axios.get<ApiResponse<ProjectResponse[]>>(
       `${API_URL}/projects`,
@@ -182,6 +188,30 @@ export const updateProject = async (
 export const deleteProject = async (id: string): Promise<void> => {
   try {
     await axios.delete(`${API_URL}/projects/${id}`);
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * Restore a soft-deleted project. Client admin of the project's own client
+ * only — the same permission the delete required.
+ */
+export const restoreProject = async (id: string): Promise<void> => {
+  try {
+    await axios.post(`${API_URL}/projects/${id}/restore`);
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+};
+
+/**
+ * Irreversibly delete a project and everything in it. Separate from
+ * `deleteProject`, which is a recoverable soft delete.
+ */
+export const purgeProject = async (id: string): Promise<void> => {
+  try {
+    await axios.post(`${API_URL}/projects/${id}/purge`);
   } catch (error) {
     throw new Error(getErrorMessage(error));
   }
@@ -971,6 +1001,8 @@ export const testManagerApi = {
   getProject,
   updateProject,
   deleteProject,
+  restoreProject,
+  purgeProject,
   listMemberCandidates,
   assignProjectMembers,
   updateProjectMemberRole,

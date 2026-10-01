@@ -4,7 +4,7 @@ import { ViewMode, TestCase, Project, TestSuite, Priority, Status, TestType, Tes
 import * as testManagerApi from '../services/testManagerApi';
 import * as ticketApi from '../services/ticketApi';
 import { useAuthStore } from './authStore';
-import { canWriteProject } from '../utils/projectRoles';
+import { canWriteProject, canDeleteProject } from '../utils/projectRoles';
 import { subtreeSuiteIds } from '../utils/suiteTree';
 import {
     ProjectResponse,
@@ -58,8 +58,26 @@ const assertCanWriteProject = (projectId?: string | null): void => {
     }
 };
 
-const assertCanWriteSuite = (suiteId?: string | null): void => {
-    assertCanWriteProject(
+const DELETE_FORBIDDEN_ERROR =
+    'Only a client admin of this project can delete it';
+
+export { DELETE_FORBIDDEN_ERROR };
+
+/**
+ * Project delete / restore / purge is a client-admin action, not a write.
+ * Checked here as well as in the UI so no caller can reach the endpoint and
+ * discover the rule from a 403.
+ */
+const assertCanDeleteProject = (projectId: string): void => {
+    const project = useTestManagerStore.getState().projects.find((p) => p.id === projectId);
+    if (!project) return;
+    if (!canDeleteProject(project, useAuthStore.getState().user)) {
+        useTestManagerStore.setState({ error: DELETE_FORBIDDEN_ERROR });
+        throw new Error(DELETE_FORBIDDEN_ERROR);
+    }
+};
+
+const assertCanWriteSuite = (suiteId?: string | null): void => {    assertCanWriteProject(
         useTestManagerStore.getState().testSuites.find((s) => s.id === suiteId)?.projectId
     );
 };
@@ -114,6 +132,8 @@ export const mapProjectResponse = (p: ProjectResponse): Project => ({
     description: p.description || '',
     color: p.color,
     ownerId: p.ownerId,
+    deleted: p.deleted === true,
+    deletedAt: p.deletedAt ?? null,
     members: p.members,
     stats: p.stats,
     jira: p.jira,
@@ -292,6 +312,12 @@ interface TestManagerStore {
      */
     projectsSearch: string;
     setProjectsSearch: (search: string) => void;
+    /**
+     * Show soft-deleted projects instead of live ones. Only a client admin ever
+     * gets rows back; for any other role the backend ignores the flag.
+     */
+    projectsShowDeleted: boolean;
+    setProjectsShowDeleted: (show: boolean) => void;
 
     // Project actions
     fetchProjects: () => Promise<void>;
@@ -300,7 +326,12 @@ interface TestManagerStore {
     ensureProjectLoaded: (projectId: string) => Promise<void>;
     createProject: (data: CreateProjectRequest) => Promise<Project>;
     updateProject: (id: string, data: UpdateProjectRequest) => Promise<Project>;
+    /** Soft-delete a project. Client admin of the project's client only. */
     deleteProject: (id: string) => Promise<void>;
+    /** Bring a soft-deleted project back. Client admin of its client only. */
+    restoreProject: (id: string) => Promise<Project>;
+    /** Irreversibly remove a project and its content. Client admin only. */
+    purgeProject: (id: string) => Promise<void>;
     addProjectMember: (projectId: string, userIds: string[], role?: ProjectMemberRole) => Promise<Project>;
     removeProjectMember: (projectId: string, memberId: string) => Promise<Project>;
     updateMemberRole: (projectId: string, memberId: string, role: ProjectMemberRole) => Promise<Project>;
@@ -400,6 +431,8 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
     isProjectsLoadingMore: false,
     projectsSearch: '',
     setProjectsSearch: (search: string) => set({ projectsSearch: search }),
+    projectsShowDeleted: false,
+    setProjectsShowDeleted: (show: boolean) => set({ projectsShowDeleted: show }),
             testSuites: [] as TestSuite[],
             isLoading: false,
             error: null as string | null,
@@ -495,13 +528,15 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             // =========================================================================
             fetchProjects: async () => {
                 const search = get().projectsSearch.trim();
+                const deleted = get().projectsShowDeleted;
                 try {
-                    const result = await deduplicateRequest(`projects:${search}`, async () => {
+                    const result = await deduplicateRequest(`projects:${deleted ? 'deleted' : 'live'}:${search}`, async () => {
                         set({ isLoading: true, error: null });
                         const response = await testManagerApi.getProjectsPaginated({
                             limit: PROJECTS_PAGE_SIZE,
                             offset: 0,
                             search: search || undefined,
+                            deleted,
                         });
                         return {
                             items: response.items.map(mapProjectResponse),
@@ -521,7 +556,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
             },
 
             fetchMoreProjects: async () => {
-                const { projectsHasMore, isProjectsLoadingMore, projectsOffset, projectsSearch } = get();
+                const { projectsHasMore, isProjectsLoadingMore, projectsOffset, projectsSearch, projectsShowDeleted } = get();
                 if (!projectsHasMore || isProjectsLoadingMore) return;
 
                 const search = projectsSearch.trim();
@@ -531,6 +566,7 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
                         limit: PROJECTS_PAGE_SIZE,
                         offset: projectsOffset,
                         search: search || undefined,
+                        deleted: projectsShowDeleted,
                     });
                     const mapped = response.items.map(mapProjectResponse);
 
@@ -641,21 +677,88 @@ export const useTestManagerStore = createWithEqualityFn<TestManagerStore>()(
                 }
             },
 
+            /**
+             * Soft-delete a project (client admin of its client only).
+             *
+             * The project leaves the live list because the backend now hides it
+             * from everyone, not because the data is gone — a client admin can
+             * restore it from the Deleted view.
+             */
             deleteProject: async (id) => {
-                assertCanWriteProject(id);
+                assertCanDeleteProject(id);
                 set({ isLoading: true, error: null });
                 const previousState = get();
+                const wasActive = previousState.activeProject === id;
                 set((state) => ({
                     projects: state.projects.filter((p) => p.id !== id),
-                    activeProject: state.activeProject === id ? null : state.activeProject,
-                    activeSuite: state.activeProject === id ? null : state.activeSuite,
-                    activeSuiteId: state.activeProject === id ? null : state.activeSuiteId,
-                    testSuites: state.activeProject === id ? [] : state.testSuites,
-                    testCases: state.activeProject === id ? [] : state.testCases,
+                    activeProject: wasActive ? null : state.activeProject,
+                    activeSuite: wasActive ? null : state.activeSuite,
+                    activeSuiteId: wasActive ? null : state.activeSuiteId,
+                    testSuites: wasActive ? [] : state.testSuites,
+                    testCases: wasActive ? [] : state.testCases,
                 }));
 
                 try {
                     await testManagerApi.deleteProject(id);
+                    set({ isLoading: false });
+                } catch (error: unknown) {
+                    set({
+                        projects: previousState.projects,
+                        activeProject: previousState.activeProject,
+                        activeSuite: previousState.activeSuite,
+                        activeSuiteId: previousState.activeSuiteId,
+                        testSuites: previousState.testSuites,
+                        testCases: previousState.testCases,
+                        error: (error as Error).message,
+                        isLoading: false,
+                    });
+                    throw error;
+                }
+            },
+
+            /**
+             * Restore a soft-deleted project, putting the whole project back
+             * live. The project is not in `projects` (it was hidden), so the row
+             * is fetched again rather than patched from the deleted copy.
+             */
+            restoreProject: async (id) => {
+                assertCanDeleteProject(id);
+                set({ isLoading: true, error: null });
+                try {
+                    await testManagerApi.restoreProject(id);
+                    const response = await testManagerApi.getProject(id);
+                    const project = mapProjectResponse(response);
+                    set((state) => ({
+                        projects: [project, ...state.projects.filter((p) => p.id !== id)],
+                        isLoading: false,
+                    }));
+                    return project;
+                } catch (error: unknown) {
+                    set({ error: (error as Error).message, isLoading: false });
+                    throw error;
+                }
+            },
+
+            /**
+             * Irreversibly remove a project and its content. Kept apart from
+             * `deleteProject` so the destructive path is always explicit.
+             */
+            purgeProject: async (id) => {
+                assertCanDeleteProject(id);
+                set({ isLoading: true, error: null });
+                const previousState = get();
+                const wasActive = previousState.activeProject === id;
+                set((state) => ({
+                    projects: state.projects.filter((p) => p.id !== id),
+                    activeProject: wasActive ? null : state.activeProject,
+                    activeSuite: wasActive ? null : state.activeSuite,
+                    activeSuiteId: wasActive ? null : state.activeSuiteId,
+                    testSuites: wasActive ? [] : state.testSuites,
+                    testCases: wasActive ? [] : state.testCases,
+                }));
+
+                try {
+                    await testManagerApi.purgeProject(id);
                     set({ isLoading: false });
                 } catch (error: unknown) {
                     set({

@@ -299,7 +299,7 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 			title: 'Projects',
 			audience: 'all',
 			overview:
-				'Projects are the container for suites, cases, runs, tickets and reports. Only members of a project can see or change it.',
+				'Projects are the container for suites, cases, runs, tickets and reports. Only members of a project can see or change it, and a deleted project is hidden from every role.',
 			blocks: [
 				{
 					kind: 'endpoints',
@@ -316,7 +316,8 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 						{
 							method: 'GET',
 							path: '/api/projects',
-							description: 'List projects you belong to, paginated. Supports limit, offset, search, sortField, sortDir.',
+							description:
+								'List projects you belong to, paginated. Supports limit, offset, search, sortField, sortDir. Pass deleted=true for your soft-deleted projects instead — that only ever returns rows for a client_admin, and is ignored for every other role.',
 							example: bash(
 								`curl -b cookies.txt "$BASE/api/projects?limit=20&offset=0&search=checkout&sortField=name&sortDir=asc"`,
 							),
@@ -324,7 +325,8 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 						{
 							method: 'GET',
 							path: '/api/projects/:id',
-							description: 'Fetch one project, including its members and settings.',
+							description:
+								'Fetch one project, including its members and settings. A soft-deleted project is hidden from every role, so this 404s once it has been deleted.',
 							example: bash(`curl -b cookies.txt "$BASE/api/projects/<PROJECT_ID>"`),
 						},
 						{
@@ -338,8 +340,25 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 						{
 							method: 'DELETE',
 							path: '/api/projects/:id',
-							description: 'HARD delete — cascades to that project’s suites, cases, runs and tickets. Not restorable.',
+							description:
+								'Soft delete. Only a client_admin of that project\'s own client may call it — project owners, leads, editors and super_admins get 403. The project and everything inside it (suites, cases, runs, run groups, tickets) are flagged, hidden from every role, and restorable with the restore endpoint.',
 							example: bash(`curl -b cookies.txt -X DELETE "$BASE/api/projects/<PROJECT_ID>"`),
+						},
+						{
+							method: 'POST',
+							path: '/api/projects/:id/restore',
+							description:
+								'Restore a soft-deleted project and everything that was cascaded with it. Same permission as the delete. Content that was archived before the project was deleted stays archived.',
+							example: bash(
+								`curl -b cookies.txt -X POST "$BASE/api/projects/<PROJECT_ID>/restore"`,
+							),
+						},
+						{
+							method: 'POST',
+							path: '/api/projects/:id/purge',
+							description:
+								'PERMANENT delete — destroys the project, its suites, cases, runs, run groups, tickets, evidence and project-scoped counters. Not restorable. Same client-admin permission.',
+							example: bash(`curl -b cookies.txt -X POST "$BASE/api/projects/<PROJECT_ID>/purge"`),
 						},
 					],
 				},
@@ -737,7 +756,7 @@ export const createApiCatalog = ({ apiUrl, email }: CatalogContext): ApiSection[
 					kind: 'note',
 					tone: 'warning',
 					title: 'Delete semantics differ by resource',
-					text: 'DELETE /api/cases/:id and DELETE /api/suites/:id are HARD deletes; DELETE /api/tickets/:id only archives; DELETE /api/projects/:id hard-cascades to everything inside the project.',
+					text: 'DELETE /api/cases/:id and DELETE /api/suites/:id are HARD deletes; DELETE /api/tickets/:id only archives; DELETE /api/projects/:id is a SOFT delete restricted to a client_admin of that project\'s client, and POST /api/projects/:id/purge is the irreversible one.',
 				},
 			],
 		},

@@ -311,6 +311,9 @@ export interface Project {
     description: string;
     color: string;
     ownerId: string;
+    /** Soft-deleted project — only a client admin of its client can see it. */
+    deleted?: boolean;
+    deletedAt?: string | null;
     members: ProjectMember[];
     stats: {
         suites: number;
