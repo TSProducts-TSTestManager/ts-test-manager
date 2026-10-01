@@ -263,7 +263,7 @@ const TestManagerLayout: React.FC = () => {
                             <TestSuiteSidebarToggle
                                 isOpen={isSuiteSidebarOpen}
                                 onToggle={() => setIsSuiteSidebarOpen(prev => !prev)}
-                                openOffsetClass="translate-x-56"
+                                openOffsetClass="translate-x-64"
                                 size="sm"
                                 visible={isSuiteSidebarOpen ? isToggleVisible : true}
                                 onReveal={() => setIsToggleVisible(true)}

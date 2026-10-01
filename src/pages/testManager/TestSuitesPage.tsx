@@ -807,7 +807,12 @@ const TestSuitesPage: React.FC = () => {
 
                 <div className="flex-1 flex overflow-hidden min-h-0">
                     {/* Folder tree */}
-                    <aside className="w-64 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex flex-col">
+                    {/*
+                      Hidden on narrow screens: the tree plus the app sidebar
+                      would leave the suite list with almost no width. The
+                      breadcrumb dropdown still lists every folder by path.
+                    */}
+                    <aside className="hidden lg:flex w-72 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex-col">
                         <div className="px-3 pt-3 pb-2 flex items-center justify-between">
                             <h3 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
                                 Folders

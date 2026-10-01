@@ -35,8 +35,8 @@ export interface SuiteTreeProps<T extends SuiteNodeSource = SuiteNodeSource> {
 }
 
 /** Indent per level, matching the run-groups sidebar. */
-const INDENT_BASE = 8;
-const INDENT_STEP = 16;
+const INDENT_BASE = 6;
+const INDENT_STEP = 14;
 
 function SuiteTree<T extends SuiteNodeSource = SuiteNodeSource>({
     nodes,
@@ -71,7 +71,9 @@ function SuiteTree<T extends SuiteNodeSource = SuiteNodeSource>({
             return (
                 <div key={node.suite.id}>
                     <div
-                        className={`group flex items-center gap-1.5 pr-2 rounded-lg transition-colors ${
+                        className={`group relative flex items-center gap-1.5 pr-2 rounded-lg transition-colors ${
+                            renderActions && !isMobile ? 'group-hover:pr-28 focus-within:pr-28' : ''
+                        } ${
                             isActive
                                 ? 'bg-white dark:bg-gray-800 shadow-sm ring-1 ring-gray-100 dark:ring-gray-700'
                                 : 'hover:bg-gray-100 dark:hover:bg-gray-800'
@@ -142,9 +144,15 @@ function SuiteTree<T extends SuiteNodeSource = SuiteNodeSource>({
                             </span>
                         )}
 
+                        {/*
+                          Row actions float over the row instead of sitting in
+                          the flex flow: keeping them in flow reserved their
+                          width on every row, which truncated folder names to
+                          a few characters even in a wide sidebar.
+                        */}
                         {renderActions && (
                             <div
-                                className={`flex items-center gap-1 flex-shrink-0 ${
+                                className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-md bg-inherit ${
                                     isMobile
                                         ? 'opacity-100'
                                         : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'

@@ -64,7 +64,7 @@ const TestSuiteSidebar: React.FC<TestSuiteSidebarProps> = ({
 
     return (
         <div
-            className={`${isMobile ? 'w-full h-full' : 'w-56 flex-shrink-0'} bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 h-full flex flex-col select-none`}
+            className={`${isMobile ? 'w-full h-full' : 'w-64 flex-shrink-0'} bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 h-full flex flex-col select-none`}
         >
             {/* Header */}
             <div className="px-4 pt-4 pb-2 flex items-center justify-between gap-2">
