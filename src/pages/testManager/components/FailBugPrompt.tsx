@@ -10,6 +10,7 @@ import {
     getFailureTypeColor,
 } from '../../../utils/ticketColors';
 import { mapCasePriorityToTicketDefaults } from './testRunUtils';
+import { escapeHtml, sanitizeHtml } from '../../../utils/sanitize';
 
 export interface FailBugPromptData {
     title: string;
@@ -89,12 +90,29 @@ const FailBugPrompt: React.FC<FailBugPromptProps> = ({
     );
 
     const seededDescription = useMemo(() => {
-        if (hasTextContent(initialDescription)) {
-            return initialDescription;
+        const parts: string[] = [];
+
+        const testDescription = caseSnapshot.testDescription?.trim();
+        if (testDescription) {
+            parts.push(`<p><strong>Description:</strong></p><p>${escapeHtml(testDescription)}</p>`);
         }
+
+        const steps = caseSnapshot.stepsContent?.trim();
+        if (steps) {
+            parts.push(`<p><strong>Steps:</strong></p>${sanitizeHtml(steps)}`);
+        }
+
         const expected = caseSnapshot.expectedResult?.trim();
-        return `<p><strong>Expected:</strong> ${expected || ''}</p><p><strong>Actual:</strong> </p>`;
-    }, [initialDescription, caseSnapshot.expectedResult]);
+        parts.push(`<p><strong>Expected:</strong> ${escapeHtml(expected || '')}</p>`);
+
+        if (hasTextContent(initialDescription)) {
+            parts.push(`<p><strong>Actual:</strong></p>${sanitizeHtml(initialDescription)}`);
+        } else {
+            parts.push('<p><strong>Actual:</strong> </p>');
+        }
+
+        return parts.join('');
+    }, [initialDescription, caseSnapshot.testDescription, caseSnapshot.stepsContent, caseSnapshot.expectedResult]);
 
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
@@ -268,6 +286,7 @@ const FailBugPrompt: React.FC<FailBugPromptProps> = ({
                         content={description}
                         onChange={setDescription}
                         placeholder="Describe what went wrong. Steps to reproduce, expected vs actual, screenshots, etc."
+                        showTextActions
                     />
                 </div>
 

@@ -4,10 +4,10 @@ import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
-import { Bold, Italic, List, ListOrdered, Strikethrough, Heading1, Heading2, Quote, ImagePlus, Link as LinkIcon, Loader2, X } from 'lucide-react';
+import { Bold, Italic, List, ListOrdered, Strikethrough, Heading1, Heading2, Quote, ImagePlus, Link as LinkIcon, Loader2, X, Copy, ClipboardPaste, Eraser, SquareDashedMousePointer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { uploadImage, validateImageFile } from '../../utils/imageUpload';
-import { sanitizeHtml } from '../../utils/sanitize';
+import { sanitizeHtml, escapeHtml } from '../../utils/sanitize';
 import LinkModal from './LinkModal';
 
 interface RichTextEditorProps {
@@ -16,9 +16,14 @@ interface RichTextEditorProps {
     onBlur?: () => void;
     placeholder?: string;
     editable?: boolean;
+    /** Shows Select all / Copy / Paste / Clear actions for the editor content. */
+    showTextActions?: boolean;
 }
 
-const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, onBlur, placeholder = 'Write something...', editable = true }) => {
+/** Converts plain clipboard text into paragraph HTML the editor accepts. */
+const plainTextToHtml = (text: string): string => `<p>${text.split(/\r?\n/).map((line) => escapeHtml(line)).join('</p><p>')}</p>`;
+
+const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, onBlur, placeholder = 'Write something...', editable = true, showTextActions = false }) => {
     const [isUploading, setIsUploading] = useState(false);
     const [zoomedImage, setZoomedImage] = useState<string | null>(null);
     const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
@@ -177,23 +182,94 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, onBl
         }
     };
 
+    const handleSelectAll = () => {
+        editor?.chain().focus().selectAll().run();
+    };
+
+    const handleCopyAll = async () => {
+        if (!editor) return;
+        const html = editor.getHTML();
+        const text = editor.getText({ blockSeparator: '\n' });
+        try {
+            if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        'text/html': new Blob([html], { type: 'text/html' }),
+                        'text/plain': new Blob([text], { type: 'text/plain' }),
+                    }),
+                ]);
+            } else {
+                await navigator.clipboard.writeText(text);
+            }
+            toast.success('Copied to clipboard');
+        } catch {
+            try {
+                await navigator.clipboard.writeText(text);
+                toast.success('Copied to clipboard');
+            } catch {
+                toast.error('Unable to copy to clipboard');
+            }
+        }
+    };
+
+    const handlePasteFromClipboard = async () => {
+        if (!editor) return;
+        try {
+            const clipboard = navigator.clipboard;
+            if (!clipboard) throw new Error('Clipboard unavailable');
+            const readFn = (clipboard as Clipboard & { read?: () => Promise<ClipboardItem[]> }).read;
+            if (typeof readFn === 'function') {
+                const items = await readFn.call(clipboard);
+                const htmlItem = items.find((item) => item.types.includes('text/html'));
+                if (htmlItem) {
+                    const html = sanitizeHtml(await (await htmlItem.getType('text/html')).text());
+                    if (html.trim()) {
+                        editor.chain().focus().insertContent(html).run();
+                        return;
+                    }
+                }
+                const textItem = items.find((item) => item.types.includes('text/plain'));
+                if (textItem) {
+                    const text = await (await textItem.getType('text/plain')).text();
+                    if (text) {
+                        editor.chain().focus().insertContent(plainTextToHtml(text)).run();
+                        return;
+                    }
+                }
+            }
+            const text = await clipboard.readText();
+            if (text) {
+                editor.chain().focus().insertContent(plainTextToHtml(text)).run();
+            }
+        } catch {
+            toast.error('Unable to read clipboard - use Ctrl+V / Cmd+V instead');
+        }
+    };
+
+    const handleClearAll = () => {
+        editor?.chain().focus().clearContent().run();
+    };
+
     if (!editor) return null;
 
     const MenuButton = ({
         isActive,
         onClick,
         icon: Icon,
-        label
+        label,
+        title
     }: {
         isActive: boolean;
         onClick: () => void;
         icon: React.ElementType;
         label: string;
+        title?: string;
     }) => (
         <button
             onClick={onClick}
             onMouseDown={(e) => e.preventDefault()}
             aria-label={label}
+            title={title || label}
             className={`p-1.5 rounded-md transition-colors ${isActive
                 ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400'
                 : 'text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -206,7 +282,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, onBl
     return (
         <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-white dark:bg-gray-800 focus-within:ring-2 focus-within:ring-blue-100 dark:focus-within:ring-blue-900/50 focus-within:border-blue-300 dark:focus-within:border-blue-600 transition-all">
             {editable && (
-                <div className="flex items-center gap-1 px-3 py-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
+                <div className="flex flex-wrap items-center gap-1 px-3 py-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
                     <MenuButton
                         onClick={() => editor.chain().focus().toggleBold().run()}
                         isActive={editor.isActive('bold')}
@@ -286,6 +362,39 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, onBl
                         onChange={handleFileSelect}
                         className="hidden"
                     />
+                    {showTextActions && (
+                        <>
+                            <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1 ml-auto" />
+                            <MenuButton
+                                onClick={handleSelectAll}
+                                isActive={false}
+                                icon={SquareDashedMousePointer}
+                                label="Select all"
+                                title="Select all text"
+                            />
+                            <MenuButton
+                                onClick={handleCopyAll}
+                                isActive={false}
+                                icon={Copy}
+                                label="Copy all"
+                                title="Copy all to clipboard"
+                            />
+                            <MenuButton
+                                onClick={handlePasteFromClipboard}
+                                isActive={false}
+                                icon={ClipboardPaste}
+                                label="Paste"
+                                title="Paste from clipboard"
+                            />
+                            <MenuButton
+                                onClick={handleClearAll}
+                                isActive={false}
+                                icon={Eraser}
+                                label="Clear"
+                                title="Clear all text"
+                            />
+                        </>
+                    )}
                 </div>
             )}
             <div
