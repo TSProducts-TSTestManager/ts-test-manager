@@ -23,6 +23,7 @@ const TestCasesPage = React.lazy(() => import("./pages/testManager/TestCasesPage
 const TestSuitesPage = React.lazy(() => import("./pages/testManager/TestSuitesPage"));
 const TestRunsPage = React.lazy(() => import("./pages/testManager/TestRunsPage"));
 const TicketsPage = React.lazy(() => import("./pages/testManager/TicketsPage"));
+const AutomationStatusPage = React.lazy(() => import("./pages/testManager/AutomationStatusPage"));
 const ClientsPage = React.lazy(() => import("./pages/admin/ClientsPage"));
 const ClientDetailPage = React.lazy(() => import("./pages/admin/ClientDetailPage"));
 const ClientDashboardPage = React.lazy(() => import("./pages/admin/ClientDashboardPage"));
@@ -240,6 +241,7 @@ function App() {
                 <Route path='suites' element={<TestSuitesPage />} />
                 <Route path='runs' element={<TestRunsPage />} />
                 <Route path='tickets' element={<TicketsPage />} />
+                <Route path='automation-status' element={<AutomationStatusPage />} />
               </Route>
 
               {/* Super Admin — Client Management only */}

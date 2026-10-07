@@ -1,6 +1,6 @@
 import { createWithEqualityFn } from 'zustand/traditional';
 import { persist } from 'zustand/middleware';
-import { ViewMode, TestCase, Project, TestSuite, Priority, Status, TestType, Tester, ProjectMemberRole, HistoryEntry, ProjectSettings, Ticket, TicketStatus as TicketStatusEnum, TicketPriority as TicketPriorityEnum, TicketSeverity as TicketSeverityEnum, TicketAttachment, ReturnReason as ReturnReasonEnum, FailureType as FailureTypeEnum, ArchiveScope } from '../types/testManager';
+import { ViewMode, TestCase, Project, TestSuite, Priority, Status, TestType, AutomationStatus, AutomationFixStatus, Tester, ProjectMemberRole, HistoryEntry, ProjectSettings, Ticket, TicketStatus as TicketStatusEnum, TicketPriority as TicketPriorityEnum, TicketSeverity as TicketSeverityEnum, TicketAttachment, ReturnReason as ReturnReasonEnum, FailureType as FailureTypeEnum, ArchiveScope } from '../types/testManager';
 import * as testManagerApi from '../services/testManagerApi';
 import * as ticketApi from '../services/ticketApi';
 import { useAuthStore } from './authStore';
@@ -147,6 +147,10 @@ export const mapTestCaseResponse = (tc: TestCaseResponse): TestCase => ({
     priority: tc.priority as Priority,
     status: tc.status as Status,
     testType: tc.testType as TestType | undefined,
+    automationStatus: tc.automationStatus as AutomationStatus | undefined,
+    automationFixStatus: tc.automationFixStatus as AutomationFixStatus | undefined,
+    lastAutomationUpdateDate: tc.lastAutomationUpdateDate ?? null,
+    lastPassDate: tc.lastPassDate ?? null,
     createdAt: tc.createdAt,
     lastModified: tc.lastModified,
     assignedTester: tc.assignedTester as Tester,

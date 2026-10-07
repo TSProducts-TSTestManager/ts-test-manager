@@ -20,6 +20,7 @@ import {
   LineChart,
   HelpCircle,
   Braces,
+  Bot,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -157,6 +158,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, toggleSidebar }) => {
           icon: <Bug size={18} />,
           label: 'Tickets',
           to: '/test-manager/tickets',
+          subItems: [],
+          requiresProject: true
+        },
+        {
+          icon: <Bot size={18} />,
+          label: 'Automation Status',
+          to: '/test-manager/automation-status',
           subItems: [],
           requiresProject: true
         },
