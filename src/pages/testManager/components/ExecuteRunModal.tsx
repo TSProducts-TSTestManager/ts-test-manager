@@ -14,11 +14,51 @@ import {
     Layers,
     MapPin,
 } from 'lucide-react';
-import { TestRun, RunItem, RunItemStatus, TestCase, TestSuite, CaseSnapshot, CustomFieldDefinition } from '../../../types/testManager';
+import { TestRun, RunItem, RunItemStatus, TestCase, TestSuite, CaseSnapshot, CustomFieldDefinition, TestType, AutomationStatus, AutomationFixStatus } from '../../../types/testManager';
 import { CreateTicketRequest } from '../../../types/api/testManager.api';
+import IdDisplay from '../../../components/testManager/IdDisplay';
+
+const TestTypeBadge: React.FC<{ value?: TestType }> = ({ value }) => {
+    if (!value) return null;
+    return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+            {value}
+        </span>
+    );
+};
+
+const AutomationStatusBadge: React.FC<{ value?: AutomationStatus }> = ({ value = AutomationStatus.NotAutomatable }) => {
+    let colorClasses = "bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700";
+    if (value === AutomationStatus.Automated) {
+        colorClasses = "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800";
+    } else if (value === AutomationStatus.Automatable) {
+        colorClasses = "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800";
+    }
+    return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${colorClasses}`}>
+            {value}
+        </span>
+    );
+};
+
+const AutomationFixStatusBadge: React.FC<{ value?: AutomationFixStatus }> = ({ value }) => {
+    if (!value) return null;
+    let colorClasses = "bg-slate-50 text-slate-700 border-slate-200";
+    if (value === AutomationFixStatus.Fixed) colorClasses = "bg-emerald-100 text-emerald-800 border-emerald-300";
+    else if (value === AutomationFixStatus.Fail) colorClasses = "bg-red-100 text-red-800 border-red-300";
+    else if (value === AutomationFixStatus.InProgress) colorClasses = "bg-amber-100 text-amber-800 border-amber-300";
+    else if (value === AutomationFixStatus.ReadyForExecute) colorClasses = "bg-cyan-100 text-cyan-800 border-cyan-300";
+    
+    return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${colorClasses}`}>
+            {value}
+        </span>
+    );
+};
+
 import RichTextEditor from '../../../components/testManager/RichTextEditor';
 import FailBugPrompt, { FailBugPromptData } from './FailBugPrompt';
-import { getItemStatusColor } from './testRunUtils';
+import { getItemStatusColor, getRunItemStatusBadgeColor } from './testRunUtils';
 import { sanitizeHtml, stripHtml } from '../../../utils/sanitize';
 import { useAuthStore } from '../../../store/authStore';
 import { useProjectSettings } from '../../../hooks/useTestManagerSelectors';
@@ -450,7 +490,7 @@ const ExecuteRunModal: React.FC<ExecuteRunModalProps> = ({
                             <span className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                                 Case {currentIndex + 1} of {totalItems}
                             </span>
-                            <span className={`px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs font-medium rounded ${getItemStatusColor(currentItem.status)} text-white`}>
+                            <span className={`px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs font-medium rounded border ${getRunItemStatusBadgeColor(currentItem.status)}`}>
                                 {currentItem.status}
                             </span>
                         </div>
@@ -493,9 +533,23 @@ const ExecuteRunModal: React.FC<ExecuteRunModalProps> = ({
                     </div>
 
                     <div className="mb-3 flex items-start justify-between gap-3 sm:mb-4">
-                        <h3 className="min-w-0 flex-1 text-base font-semibold text-gray-900 dark:text-gray-100 sm:text-lg">
-                            {currentItem.caseSnapshot.title}
-                        </h3>
+                        <div className="min-w-0 flex-1">
+                            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 sm:text-lg mb-1 flex items-center gap-2">
+                                <IdDisplay id={availableTestCases.find(tc => tc.id === currentItem.caseId)?.displayId || currentItem.caseId} className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded" />
+                                {currentItem.caseSnapshot.title}
+                            </h3>
+                            {(() => {
+                                const tCase = availableTestCases.find(tc => tc.id === currentItem.caseId);
+                                if (!tCase) return null;
+                                return (
+                                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                                        <TestTypeBadge value={tCase.testType} />
+                                        <AutomationStatusBadge value={tCase.automationStatus} />
+                                        <AutomationFixStatusBadge value={tCase.automationFixStatus} />
+                                    </div>
+                                );
+                            })()}
+                        </div>
                         {caseDivergence && hasDiverged && (
                             <button
                                 onClick={() => setShowDivergence((v) => !v)}

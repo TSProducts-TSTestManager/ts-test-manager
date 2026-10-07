@@ -42,6 +42,7 @@ import {
     Search,
     X,
     Ticket,
+    MoreHorizontal,
 } from 'lucide-react';
 import IdDisplay from '../../components/testManager/IdDisplay';
 import CreateGroupModal from './components/CreateGroupModal';
@@ -171,6 +172,15 @@ const TestRunsPage: React.FC = () => {
     const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
     const [hasTicketsFilter, setHasTicketsFilter] = useState<'all' | 'yes' | 'no'>('all');
     const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [openActionRunId, setOpenActionRunId] = useState<string | null>(null);
+
+    // Close actions dropdown when clicking outside
+    useEffect(() => {
+        if (!openActionRunId) return;
+        const handleClick = () => setOpenActionRunId(null);
+        document.addEventListener('click', handleClick);
+        return () => document.removeEventListener('click', handleClick);
+    }, [openActionRunId]);
 
     // Debounce search query from store
     useEffect(() => {
@@ -1233,48 +1243,90 @@ const TestRunsPage: React.FC = () => {
                                                             <CheckCircle className="w-3.5 h-3.5" />
                                                             {computedPassRate}% Pass Rate
                                                         </span>
+                                                        <span className="flex items-center gap-1 border-l border-gray-300 dark:border-gray-600 pl-3 ml-1">
+                                                            <span className="font-medium text-gray-700 dark:text-gray-300">
+                                                                {run.resultsSummary?.automatedCount ?? 0}
+                                                            </span> Automated
+                                                        </span>
+                                                        <span className="flex items-center gap-1">
+                                                            <span className="font-medium text-gray-700 dark:text-gray-300">
+                                                                {run.resultsSummary?.manualCount ?? (run.itemCount - (run.resultsSummary?.automatedCount ?? 0))}
+                                                            </span> Manual
+                                                        </span>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
-                                                    <button
-                                                        onClick={(e) => handleShareRun(e, run.id)}
-                                                        className="p-1.5 sm:p-2 text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                                                        title="Copy link to Test Run"
-                                                        aria-label="Copy link to test run"
-                                                    >
-                                                        <Share2 className="w-4 h-4" />
-                                                    </button>
+                                                <div className="relative inline-block text-left flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            handleEditRun(run);
+                                                            setOpenActionRunId(openActionRunId === run.id ? null : run.id);
                                                         }}
-                                                        className="p-1.5 sm:p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30"
-                                                        title="Edit Run"
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-sm"
+                                                        title="Actions"
                                                     >
-                                                        <Edit2 className="w-4 h-4" />
+                                                        Action <MoreHorizontal className="h-3.5 w-3.5" />
                                                     </button>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleCloneRun(run.id);
-                                                        }}
-                                                        className="p-1.5 sm:p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30"
-                                                        title="Clone Run"
-                                                    >
-                                                        <Copy className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDeleteRun(run.id);
-                                                        }}
-                                                        className="p-1.5 sm:p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-full hover:bg-red-50 dark:hover:bg-red-900/30"
-                                                        title="Delete Run"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                    <ChevronRight className="hidden sm:block w-5 h-5 text-gray-300 dark:text-gray-600" />
+                                                    {openActionRunId === run.id && (
+                                                        <div className="absolute right-0 z-10 mt-1 w-36 origin-top-right rounded-md bg-white dark:bg-gray-800 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+                                                            <div className="py-1">
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setOpenActionRunId(null);
+                                                                        handleExecuteRun(run.id);
+                                                                    }}
+                                                                    className="flex w-full items-center gap-2 px-4 py-2 text-sm text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20"
+                                                                >
+                                                                    <Play className="h-4 w-4" />
+                                                                    Execute
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setOpenActionRunId(null);
+                                                                        handleEditRun(run);
+                                                                    }}
+                                                                    className="flex w-full items-center gap-2 px-4 py-2 text-sm text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                                                                >
+                                                                    <Edit2 className="h-4 w-4" />
+                                                                    Edit
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setOpenActionRunId(null);
+                                                                        handleCloneRun(run.id);
+                                                                    }}
+                                                                    className="flex w-full items-center gap-2 px-4 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                                                >
+                                                                    <Copy className="h-4 w-4" />
+                                                                    Clone
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setOpenActionRunId(null);
+                                                                        handleShareRun(e, run.id);
+                                                                    }}
+                                                                    className="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                                                >
+                                                                    <Share2 className="h-4 w-4" />
+                                                                    Share
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setOpenActionRunId(null);
+                                                                        handleDeleteRun(run.id);
+                                                                    }}
+                                                                    className="flex w-full items-center gap-2 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                    Delete
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
 
@@ -1359,7 +1411,13 @@ const TestRunsPage: React.FC = () => {
                                                     <td className="py-3 px-4 text-sm text-gray-900 dark:text-gray-100 font-mono">
                                                         <IdDisplay id={run.displayId || run.id} className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 px-1.5 py-0.5 rounded-md" />
                                                     </td>
-                                                    <td className="py-3 px-4 text-sm font-medium text-gray-900 dark:text-gray-100 truncate max-w-xs">{run.title}</td>
+                                                    <td className="py-3 px-4 text-sm font-medium text-gray-900 dark:text-gray-100 truncate max-w-xs">
+                                                        <div className="truncate">{run.title}</div>
+                                                        <div className="text-xs text-gray-500 font-normal mt-0.5 flex gap-2">
+                                                            <span><span className="font-medium">{run.resultsSummary?.automatedCount ?? 0}</span> Auto</span>
+                                                            <span><span className="font-medium">{run.resultsSummary?.manualCount ?? (run.itemCount - (run.resultsSummary?.automatedCount ?? 0))}</span> Manual</span>
+                                                        </div>
+                                                    </td>
                                                     <td className="py-3 px-4 text-sm">
                                                         <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full border ${getRunStatusColor(run.status)}`}>
                                                             {run.status}
@@ -1384,42 +1442,78 @@ const TestRunsPage: React.FC = () => {
                                                         )}
                                                     </td>
                                                     <td className="py-3 px-4 text-sm">
-                                                        <div className="flex items-center gap-1">
+                                                        <div className="relative inline-block text-left" onClick={(e) => e.stopPropagation()}>
                                                             <button
-                                                                onClick={(e) => { e.stopPropagation(); handleShareRun(e, run.id); }}
-                                                                className="text-blue-600 dark:text-blue-400 hover:underline text-xs font-medium"
-                                                                title="Share"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setOpenActionRunId(openActionRunId === run.id ? null : run.id);
+                                                                }}
+                                                                className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-sm"
+                                                                title="Actions"
                                                             >
-                                                                <Share2 className="w-3.5 h-3.5" />
+                                                                Action <MoreHorizontal className="h-3.5 w-3.5" />
                                                             </button>
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); handleEditRun(run); }}
-                                                                className="text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline text-xs font-medium"
-                                                                title="Edit"
-                                                            >
-                                                                <Edit2 className="w-3.5 h-3.5" />
-                                                            </button>
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); handleCloneRun(run.id); }}
-                                                                className="text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:underline text-xs font-medium"
-                                                                title="Clone"
-                                                            >
-                                                                <Copy className="w-3.5 h-3.5" />
-                                                            </button>
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); handleDeleteRun(run.id); }}
-                                                                className="text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:underline text-xs font-medium"
-                                                                title="Delete"
-                                                            >
-                                                                <Trash2 className="w-3.5 h-3.5" />
-                                                            </button>
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); handleExecuteRun(run.id); }}
-                                                                className="text-green-600 dark:text-green-400 hover:underline text-xs font-medium"
-                                                                title="Execute"
-                                                            >
-                                                                <Play className="w-3.5 h-3.5" />
-                                                            </button>
+                                                            {openActionRunId === run.id && (
+                                                                <div className="absolute right-0 z-10 mt-1 w-32 origin-top-right rounded-md bg-white dark:bg-gray-800 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+                                                                    <div className="py-1">
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setOpenActionRunId(null);
+                                                                                handleExecuteRun(run.id);
+                                                                            }}
+                                                                            className="flex w-full items-center gap-2 px-4 py-2 text-sm text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20"
+                                                                        >
+                                                                            <Play className="h-4 w-4" />
+                                                                            Execute
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setOpenActionRunId(null);
+                                                                                handleEditRun(run);
+                                                                            }}
+                                                                            className="flex w-full items-center gap-2 px-4 py-2 text-sm text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                                                                        >
+                                                                            <Edit2 className="h-4 w-4" />
+                                                                            Edit
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setOpenActionRunId(null);
+                                                                                handleCloneRun(run.id);
+                                                                            }}
+                                                                            className="flex w-full items-center gap-2 px-4 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                                                        >
+                                                                            <Copy className="h-4 w-4" />
+                                                                            Clone
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setOpenActionRunId(null);
+                                                                                handleShareRun(e, run.id);
+                                                                            }}
+                                                                            className="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                                                        >
+                                                                            <Share2 className="h-4 w-4" />
+                                                                            Share
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setOpenActionRunId(null);
+                                                                                handleDeleteRun(run.id);
+                                                                            }}
+                                                                            className="flex w-full items-center gap-2 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                                        >
+                                                                            <Trash2 className="h-4 w-4" />
+                                                                            Delete
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </td>
                                                 </tr>

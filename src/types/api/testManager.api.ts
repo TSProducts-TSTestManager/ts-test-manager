@@ -353,6 +353,8 @@ export interface ResultsSummaryResponse {
   notRun: number;
   passRate: number;
   totalTimeSpent: number;
+  automatedCount?: number;
+  manualCount?: number;
 }
 
 export interface TestRunResponse {
