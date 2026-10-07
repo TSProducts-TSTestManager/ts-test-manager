@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { useCollaborativeEditing } from '../../hooks/useCollaborativeEditing';
-import { TestCase, Priority, Status, TestType, HistoryEntry, CustomFieldDefinition } from '../../types/testManager';
+import { TestCase, Priority, Status, TestType, AutomationStatus, AutomationFixStatus, HistoryEntry, CustomFieldDefinition } from '../../types/testManager';
 import { X, Plus, ChevronDown, ChevronRight, History, Check, Loader2, Cloud } from 'lucide-react';
 import RichTextEditor from './RichTextEditor';
 import IdDisplay from './IdDisplay';
@@ -431,6 +431,87 @@ const TestCaseModal: React.FC<TestCaseModalProps> = ({ testCase, availableAreas,
                                     </select>
                                     <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400 dark:text-gray-500 pointer-events-none opacity-50" />
                                 </div>
+                            </div>
+
+                            {/* Automation Status */}
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Automation Status</label>
+                                <div className="relative">
+                                    <select
+                                        value={localCase.automationStatus || 'Not Automatable'}
+                                        onChange={(e) => {
+                                            const value = e.target.value as AutomationStatus;
+                                            const fixStatus = value === AutomationStatus.NotAutomatable ? AutomationFixStatus.NotApplicable : (localCase.automationFixStatus === AutomationFixStatus.NotApplicable ? AutomationFixStatus.Created : localCase.automationFixStatus);
+                                            setLocalCase(prev => prev ? ({ ...prev, automationStatus: value, automationFixStatus: fixStatus }) : null);
+                                            emitFieldChange('automationStatus', value);
+                                            if (fixStatus) {
+                                                emitFieldChange('automationFixStatus', fixStatus);
+                                            }
+                                        }}
+                                        className="w-full appearance-none rounded-lg py-2 pl-3 pr-8 text-sm font-medium outline-none transition-all cursor-pointer border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 dark:text-gray-100 hover:opacity-80 focus:ring-2 focus:ring-offset-1 focus:ring-blue-100"
+                                    >
+                                        {Object.values(AutomationStatus).map(s => (
+                                            <option key={s} value={s}>{s}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400 dark:text-gray-500 pointer-events-none opacity-50" />
+                                </div>
+                            </div>
+
+                            {/* Automation Fix Status */}
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Automation Fix Status</label>
+                                <div className="relative">
+                                    <select
+                                        value={(localCase.automationStatus || AutomationStatus.NotAutomatable) === AutomationStatus.NotAutomatable ? AutomationFixStatus.NotApplicable : (localCase.automationFixStatus || AutomationFixStatus.Created)}
+                                        disabled={(localCase.automationStatus || AutomationStatus.NotAutomatable) === AutomationStatus.NotAutomatable}
+                                        onChange={(e) => {
+                                            const value = e.target.value as AutomationFixStatus;
+                                            setLocalCase(prev => prev ? ({ ...prev, automationFixStatus: value }) : null);
+                                            emitFieldChange('automationFixStatus', value);
+                                        }}
+                                        className="w-full appearance-none rounded-lg py-2 pl-3 pr-8 text-sm font-medium outline-none transition-all cursor-pointer border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 dark:text-gray-100 hover:opacity-80 focus:ring-2 focus:ring-offset-1 focus:ring-blue-100 disabled:bg-gray-100 dark:disabled:bg-gray-900 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        {(localCase.automationStatus || AutomationStatus.NotAutomatable) === AutomationStatus.NotAutomatable ? (
+                                            <option value={AutomationFixStatus.NotApplicable}>Not Applicable</option>
+                                        ) : (
+                                            Object.values(AutomationFixStatus).filter(s => s !== AutomationFixStatus.NotApplicable).map(s => (
+                                                <option key={s} value={s}>{s}</option>
+                                            ))
+                                        )}
+                                    </select>
+                                    <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400 dark:text-gray-500 pointer-events-none opacity-50" />
+                                </div>
+                            </div>
+
+                            {/* Last Automation Update Date */}
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Last Automation Update Date</label>
+                                <input
+                                    type="date"
+                                    value={localCase.lastAutomationUpdateDate ? new Date(localCase.lastAutomationUpdateDate).toISOString().split('T')[0] : ''}
+                                    onChange={(e) => {
+                                        const val = e.target.value ? new Date(e.target.value).toISOString() : null;
+                                        setLocalCase(prev => prev ? ({ ...prev, lastAutomationUpdateDate: val }) : null);
+                                        emitFieldChange('lastAutomationUpdateDate', val);
+                                    }}
+                                    className="w-full rounded-lg py-2 px-3 text-sm font-medium border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 dark:text-gray-100"
+                                />
+                            </div>
+
+                            {/* Last PASS Date */}
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Last PASS Date</label>
+                                <input
+                                    type="date"
+                                    value={localCase.lastPassDate ? new Date(localCase.lastPassDate).toISOString().split('T')[0] : ''}
+                                    onChange={(e) => {
+                                        const val = e.target.value ? new Date(e.target.value).toISOString() : null;
+                                        setLocalCase(prev => prev ? ({ ...prev, lastPassDate: val }) : null);
+                                        emitFieldChange('lastPassDate', val);
+                                    }}
+                                    className="w-full rounded-lg py-2 px-3 text-sm font-medium border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 dark:text-gray-100"
+                                />
                             </div>
 
                             {/* Priority (Editable) */}

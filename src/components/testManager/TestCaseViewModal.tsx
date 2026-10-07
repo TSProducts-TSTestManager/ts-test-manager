@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { TestCase, Priority, Status, TestType, CustomFieldDefinition } from '../../types/testManager';
+import { TestCase, Priority, Status, TestType, AutomationStatus, AutomationFixStatus, CustomFieldDefinition } from '../../types/testManager';
 import { X, Edit2, ChevronDown, Share2 } from 'lucide-react';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import RichTextEditor from './RichTextEditor';
@@ -123,6 +123,33 @@ const TestCaseViewModal: React.FC<TestCaseViewModalProps> = React.memo(function 
         setLocalCase(updated);
         onUpdate?.(updated);
         emitFieldChange('testType', testType || null);
+    };
+
+    const handleAutomationStatusChange = (automationStatus: AutomationStatus) => {
+        const fixStatus = automationStatus === AutomationStatus.NotAutomatable ? AutomationFixStatus.NotApplicable : (localCase.automationFixStatus === AutomationFixStatus.NotApplicable ? AutomationFixStatus.Created : localCase.automationFixStatus);
+        const updated = {
+            ...localCase,
+            automationStatus,
+            automationFixStatus: fixStatus,
+            lastModified: new Date().toISOString(),
+        };
+        setLocalCase(updated);
+        onUpdate?.(updated);
+        emitFieldChange('automationStatus', automationStatus);
+        if (fixStatus) {
+            emitFieldChange('automationFixStatus', fixStatus);
+        }
+    };
+
+    const handleAutomationFixStatusChange = (automationFixStatus: AutomationFixStatus) => {
+        const updated = {
+            ...localCase,
+            automationFixStatus,
+            lastModified: new Date().toISOString(),
+        };
+        setLocalCase(updated);
+        onUpdate?.(updated);
+        emitFieldChange('automationFixStatus', automationFixStatus);
     };
 
     const getStatusColor = (status: Status) => {
@@ -343,22 +370,99 @@ const TestCaseViewModal: React.FC<TestCaseViewModalProps> = React.memo(function 
                             ) : null;
                         })()}
 
-                        {/* Test Type - sits directly above Page / Area so the
-                            classification is read before the location it covers. */}
-                        <div className="mb-5">
-                            <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Test Type</label>
-                            <div className="relative">
-                                <select
-                                    value={localCase.testType ?? ''}
-                                    onChange={(e) => handleTestTypeChange(e.target.value as TestType | '')}
-                                    className="w-full appearance-none rounded-lg py-2 pl-3 pr-8 text-sm font-medium outline-none transition-all cursor-pointer border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:opacity-80 focus:ring-2 focus:ring-offset-1 focus:ring-blue-100"
-                                >
-                                    <option value="">Not set</option>
-                                    {Object.values(TestType).map(t => (
-                                        <option key={t} value={t}>{t}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400 dark:text-gray-500 pointer-events-none opacity-50" />
+                        {/* Test Type, Automation Status & Fix Status */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Test Type</label>
+                                <div className="relative">
+                                    <select
+                                        value={localCase.testType ?? ''}
+                                        onChange={(e) => handleTestTypeChange(e.target.value as TestType | '')}
+                                        className="w-full appearance-none rounded-lg py-2 pl-3 pr-8 text-sm font-medium outline-none transition-all cursor-pointer border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:opacity-80 focus:ring-2 focus:ring-offset-1 focus:ring-blue-100"
+                                    >
+                                        <option value="">Not set</option>
+                                        {Object.values(TestType).map(t => (
+                                            <option key={t} value={t}>{t}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400 dark:text-gray-500 pointer-events-none opacity-50" />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Automation Status</label>
+                                <div className="relative">
+                                    <select
+                                        value={localCase.automationStatus || AutomationStatus.NotAutomatable}
+                                        onChange={(e) => handleAutomationStatusChange(e.target.value as AutomationStatus)}
+                                        className="w-full appearance-none rounded-lg py-2 pl-3 pr-8 text-sm font-medium outline-none transition-all cursor-pointer border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:opacity-80 focus:ring-2 focus:ring-offset-1 focus:ring-blue-100"
+                                    >
+                                        {Object.values(AutomationStatus).map(s => (
+                                            <option key={s} value={s}>{s}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400 dark:text-gray-500 pointer-events-none opacity-50" />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Automation Fix Status</label>
+                                <div className="relative">
+                                    <select
+                                        value={(localCase.automationStatus || AutomationStatus.NotAutomatable) === AutomationStatus.NotAutomatable ? AutomationFixStatus.NotApplicable : (localCase.automationFixStatus || AutomationFixStatus.Created)}
+                                        disabled={(localCase.automationStatus || AutomationStatus.NotAutomatable) === AutomationStatus.NotAutomatable}
+                                        onChange={(e) => handleAutomationFixStatusChange(e.target.value as AutomationFixStatus)}
+                                        className="w-full appearance-none rounded-lg py-2 pl-3 pr-8 text-sm font-medium outline-none transition-all cursor-pointer border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:opacity-80 focus:ring-2 focus:ring-offset-1 focus:ring-blue-100 disabled:bg-gray-100 dark:disabled:bg-gray-900 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        {(localCase.automationStatus || AutomationStatus.NotAutomatable) === AutomationStatus.NotAutomatable ? (
+                                            <option value={AutomationFixStatus.NotApplicable}>Not Applicable</option>
+                                        ) : (
+                                            Object.values(AutomationFixStatus).filter(s => s !== AutomationFixStatus.NotApplicable).map(s => (
+                                                <option key={s} value={s}>{s}</option>
+                                            ))
+                                        )}
+                                    </select>
+                                    <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400 dark:text-gray-500 pointer-events-none opacity-50" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Automation Date Tracking Fields */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Last Automation Update Date</label>
+                                <div className="text-sm font-medium text-gray-700 dark:text-gray-300 py-2 border-b border-gray-200 dark:border-gray-700/80">
+                                    {localCase.lastAutomationUpdateDate ? (
+                                        (() => {
+                                            const d = new Date(localCase.lastAutomationUpdateDate);
+                                            const day = String(d.getDate()).padStart(2, '0');
+                                            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                                            const month = months[d.getMonth()];
+                                            const year = d.getFullYear();
+                                            return `${day}-${month}-${year}`;
+                                        })()
+                                    ) : (
+                                        <span className="text-gray-400 dark:text-gray-500 italic">Not Available</span>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5">Last PASS Date</label>
+                                <div className="text-sm font-medium text-gray-700 dark:text-gray-300 py-2 border-b border-gray-200 dark:border-gray-700/80">
+                                    {localCase.lastPassDate ? (
+                                        (() => {
+                                            const d = new Date(localCase.lastPassDate);
+                                            const day = String(d.getDate()).padStart(2, '0');
+                                            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                                            const month = months[d.getMonth()];
+                                            const year = d.getFullYear();
+                                            return `${day}-${month}-${year}`;
+                                        })()
+                                    ) : (
+                                        <span className="text-gray-400 dark:text-gray-500 italic">Not Available</span>
+                                    )}
+                                </div>
                             </div>
                         </div>
 

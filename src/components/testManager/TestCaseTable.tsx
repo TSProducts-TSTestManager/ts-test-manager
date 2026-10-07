@@ -18,7 +18,7 @@ import {
     verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { TestCase, Priority, Status, TestType, CustomFieldDefinition, HiddenDefaultColumns, TestCaseTableColumnKey, TEST_CASE_TABLE_COLUMN_LABELS, resolveHiddenTableColumns, resolveTableColumnOrder } from '../../types/testManager';
+import { TestCase, Priority, Status, TestType, AutomationStatus, AutomationFixStatus, CustomFieldDefinition, HiddenDefaultColumns, TestCaseTableColumnKey, TEST_CASE_TABLE_COLUMN_LABELS, resolveHiddenTableColumns, resolveTableColumnOrder } from '../../types/testManager';
 import StatusBadge from './StatusBadge';
 import { Edit, Copy, GripVertical, ArrowUpDown, ArrowUp, ArrowDown, RotateCcw, ChevronRight, Loader2, Archive, ArchiveRestore } from 'lucide-react';
 import IdDisplay from './IdDisplay';
@@ -48,6 +48,35 @@ const TestTypeBadge: React.FC<{ value?: TestType }> = ({ value }) => {
     }
     return (
         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+            {value}
+        </span>
+    );
+};
+
+const AutomationStatusBadge: React.FC<{ value?: AutomationStatus }> = ({ value = AutomationStatus.NotAutomatable }) => {
+    let colorClasses = "bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700";
+    if (value === AutomationStatus.Automated) {
+        colorClasses = "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800";
+    } else if (value === AutomationStatus.Automatable) {
+        colorClasses = "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800";
+    }
+    return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${colorClasses}`}>
+            {value}
+        </span>
+    );
+};
+
+const AutomationFixStatusBadge: React.FC<{ value?: AutomationFixStatus }> = ({ value }) => {
+    if (!value) return null;
+    let colorClasses = "bg-slate-50 text-slate-700 border-slate-200";
+    if (value === AutomationFixStatus.Fixed) colorClasses = "bg-emerald-100 text-emerald-800 border-emerald-300";
+    else if (value === AutomationFixStatus.Fail) colorClasses = "bg-red-100 text-red-800 border-red-300";
+    else if (value === AutomationFixStatus.InProgress) colorClasses = "bg-amber-100 text-amber-800 border-amber-300";
+    else if (value === AutomationFixStatus.ReadyForExecute) colorClasses = "bg-cyan-100 text-cyan-800 border-cyan-300";
+    
+    return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${colorClasses}`}>
             {value}
         </span>
     );
@@ -291,6 +320,39 @@ const SortableRow: React.FC<SortableRowProps> = React.memo(({
                                 ) : (
                                     <StatusBadge type="priority" value={item.priority} />
                                 )}
+                            </td>
+                        );
+
+                    case 'testType':
+                        return (
+                            <td key={column} className="py-2.5 px-4">
+                                <div className="flex flex-col gap-1.5 min-w-[170px]">
+                                    {/* Primary Badge Row */}
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        <TestTypeBadge value={item.testType} />
+                                        <AutomationStatusBadge value={item.automationStatus} />
+                                        <AutomationFixStatusBadge value={item.automationFixStatus} />
+                                    </div>
+                                    {/* Sub-text Date Row */}
+                                    <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 font-medium pt-0.5 border-t border-gray-100 dark:border-gray-800/80">
+                                        <span title="Last Automation Update Date">
+                                            Updated: {item.lastAutomationUpdateDate ? (() => {
+                                                const d = new Date(item.lastAutomationUpdateDate);
+                                                const day = String(d.getDate()).padStart(2, '0');
+                                                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                                                return `${day}-${months[d.getMonth()]}-${d.getFullYear()}`;
+                                            })() : <span className="text-gray-400 dark:text-gray-500 font-normal">N/A</span>}
+                                        </span>
+                                        <span title="Last PASS Date" className="ml-2">
+                                            PASS: {item.lastPassDate ? (() => {
+                                                const d = new Date(item.lastPassDate);
+                                                const day = String(d.getDate()).padStart(2, '0');
+                                                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                                                return `${day}-${months[d.getMonth()]}-${d.getFullYear()}`;
+                                            })() : <span className="text-gray-400 dark:text-gray-500 font-normal">N/A</span>}
+                                        </span>
+                                    </div>
+                                </div>
                             </td>
                         );
 

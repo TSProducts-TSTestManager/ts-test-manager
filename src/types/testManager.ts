@@ -33,6 +33,21 @@ export enum TestType {
     Other = 'Other',
 }
 
+export enum AutomationStatus {
+    NotAutomatable = 'Not Automatable',
+    Automatable = 'Automatable',
+    Automated = 'Automated',
+}
+
+export enum AutomationFixStatus {
+    NotApplicable = 'Not Applicable',
+    Created = 'Created',
+    InProgress = 'In Progress',
+    Fail = 'Fail',
+    Fixed = 'Fixed',
+    ReadyForExecute = 'Ready for Execute',
+}
+
 export enum TestRunStatus {
     Draft = 'Draft',
     InProgress = 'In Progress',
@@ -374,6 +389,10 @@ export interface TestCase {
     status: Status; // Unified status
     /** Optional. Undefined for cases created before the field existed. */
     testType?: TestType;
+    automationStatus?: AutomationStatus;
+    automationFixStatus?: AutomationFixStatus;
+    lastAutomationUpdateDate?: string | null;
+    lastPassDate?: string | null;
     createdAt: string;
     lastModified: string;
     assignedTester: Tester;
