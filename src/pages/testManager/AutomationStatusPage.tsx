@@ -73,10 +73,13 @@ const AutomationStatusPage: React.FC = () => {
     fetchCases();
   }, [activeProject, excludeArchived]);
 
+  const [excludeUi, setExcludeUi] = useState<boolean>(true);
+
   // Active vs Filtered cases computation
   const filteredCases = useMemo(() => {
     return testCases.filter((tc) => {
       if (excludeArchived && tc.archived) return false;
+      if (excludeUi && tc.testType === 'UI') return false;
       if (selectedSuiteFilter !== 'all' && tc.suiteId !== selectedSuiteFilter) return false;
       if (statusFilter !== 'all' && (tc.automationStatus || AutomationStatus.NotAutomatable) !== statusFilter) return false;
       if (fixStatusFilter !== 'all' && (tc.automationFixStatus || AutomationFixStatus.NotApplicable) !== fixStatusFilter) return false;
@@ -89,7 +92,7 @@ const AutomationStatusPage: React.FC = () => {
       }
       return true;
     });
-  }, [testCases, excludeArchived, selectedSuiteFilter, statusFilter, fixStatusFilter, searchTerm]);
+  }, [testCases, excludeArchived, excludeUi, selectedSuiteFilter, statusFilter, fixStatusFilter, searchTerm]);
 
   // Metrics computation
   const metrics = useMemo(() => {
@@ -230,6 +233,16 @@ const AutomationStatusPage: React.FC = () => {
               className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
             />
             <span>Exclude Archived Cases</span>
+          </label>
+
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+            <input
+              type="checkbox"
+              checked={excludeUi}
+              onChange={(e) => setExcludeUi(e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+            />
+            <span>Exclude UI Cases</span>
           </label>
 
           <button
