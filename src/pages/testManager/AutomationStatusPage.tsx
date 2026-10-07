@@ -10,25 +10,23 @@ import {
   PieChart as RechartsPie,
   Pie,
   Cell,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
   Tooltip,
   Legend,
   ResponsiveContainer
 } from 'recharts';
+import * as XLSX from 'xlsx';
+import { exportAutomationStatusToPDF } from '../../utils/exportAutomationStatus';
 import {
   Bot,
   CheckCircle2,
-  Wrench,
   PlayCircle,
   Download,
   RefreshCw,
-  FileSpreadsheet,
   Layers,
-  Search
+  Search,
+  FilePlus,
+  Clock,
+  AlertCircle
 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -54,32 +52,32 @@ const AutomationStatusPage: React.FC = () => {
   const [selectedSuiteFilter, setSelectedSuiteFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [fixStatusFilter, setFixStatusFilter] = useState<string>('all');
+  const [activeTab, setActiveTab] = useState<'overview' | 'details'>('overview');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 25;
 
-  const fetchCases = async () => {
+  const fetchCases = React.useCallback(async () => {
     if (!activeProject) return;
     setIsLoading(true);
     try {
       // Fetch all project cases respecting archive filter
       const cases = await getTestCasesByProject(activeProject, { archived: excludeArchived ? 'active' : 'archived' });
       setTestCases(cases);
-    } catch (err: any) {
-      toast.error('Failed to load automation status data: ' + (err.message || 'Unknown error'));
+    } catch (err: unknown) {
+      toast.error('Failed to load automation status data: ' + ((err as Error).message || 'Unknown error'));
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [activeProject, excludeArchived]);
 
   useEffect(() => {
     fetchCases();
-  }, [activeProject, excludeArchived]);
-
-  const [excludeUi, setExcludeUi] = useState<boolean>(true);
+  }, [fetchCases]);
 
   // Active vs Filtered cases computation
   const filteredCases = useMemo(() => {
     return testCases.filter((tc) => {
       if (excludeArchived && tc.archived) return false;
-      if (excludeUi && tc.testType === 'UI') return false;
       if (selectedSuiteFilter !== 'all' && tc.suiteId !== selectedSuiteFilter) return false;
       if (statusFilter !== 'all' && (tc.automationStatus || AutomationStatus.NotAutomatable) !== statusFilter) return false;
       if (fixStatusFilter !== 'all' && (tc.automationFixStatus || AutomationFixStatus.NotApplicable) !== fixStatusFilter) return false;
@@ -92,7 +90,7 @@ const AutomationStatusPage: React.FC = () => {
       }
       return true;
     });
-  }, [testCases, excludeArchived, excludeUi, selectedSuiteFilter, statusFilter, fixStatusFilter, searchTerm]);
+  }, [testCases, excludeArchived, selectedSuiteFilter, statusFilter, fixStatusFilter, searchTerm]);
 
   // Metrics computation
   const metrics = useMemo(() => {
@@ -108,12 +106,14 @@ const AutomationStatusPage: React.FC = () => {
     const readyForExecute = filteredCases.filter((c) => c.automationFixStatus === AutomationFixStatus.ReadyForExecute).length;
     const notApplicable = filteredCases.filter((c) => c.automationFixStatus === AutomationFixStatus.NotApplicable || !c.automationFixStatus).length;
 
-    const automationCoverage = total > 0 ? ((automated / total) * 100).toFixed(1) : '0';
+    const automatableBase = automated + automatable;
+    const automationCoverage = automatableBase > 0 ? ((automated / automatableBase) * 100).toFixed(1) : '0';
 
     return {
       total,
       automated,
       automatable,
+      automatableBase,
       notAutomatable,
       created,
       inProgress,
@@ -125,47 +125,105 @@ const AutomationStatusPage: React.FC = () => {
     };
   }, [filteredCases]);
 
-  // Chart data formatting
-  const statusPieData = useMemo(() => {
+  const pieCharts = useMemo(() => {
     return [
-      { name: 'Automated', value: metrics.automated, color: STATUS_COLORS.Automated },
-      { name: 'Automatable', value: metrics.automatable, color: STATUS_COLORS.Automatable },
-      { name: 'Not Automatable', value: metrics.notAutomatable, color: STATUS_COLORS.NotAutomatable },
-    ].filter((d) => d.value > 0);
+      {
+        title: 'Total vs Automatable',
+        data: [
+          { name: 'Automatable', value: metrics.automatableBase, color: STATUS_COLORS.Automatable },
+          { name: 'Not Automatable', value: metrics.notAutomatable, color: STATUS_COLORS.NotAutomatable },
+        ].filter((d) => d.value > 0),
+      },
+      {
+        title: 'Automatable vs Created',
+        data: [
+          { name: 'Created', value: metrics.created, color: STATUS_COLORS.Created },
+          { name: 'Not Created', value: Math.max(0, metrics.automatableBase - metrics.created), color: '#9CA3AF' },
+        ].filter((d) => d.value > 0),
+      },
+      {
+        title: 'Created vs Fixed',
+        data: [
+          { name: 'Fixed', value: metrics.fixed, color: STATUS_COLORS.Fixed },
+          { name: 'Not Fixed', value: Math.max(0, metrics.created - metrics.fixed), color: '#9CA3AF' },
+        ].filter((d) => d.value > 0),
+      },
+      {
+        title: 'Created vs In Progress',
+        data: [
+          { name: 'In Progress', value: metrics.inProgress, color: STATUS_COLORS.InProgress },
+          { name: 'Not In Progress', value: Math.max(0, metrics.created - metrics.inProgress), color: '#9CA3AF' },
+        ].filter((d) => d.value > 0),
+      },
+      {
+        title: 'Created vs Ready',
+        data: [
+          { name: 'Ready for Execute', value: metrics.readyForExecute, color: STATUS_COLORS.ReadyForExecute },
+          { name: 'Not Ready', value: Math.max(0, metrics.created - metrics.readyForExecute), color: '#9CA3AF' },
+        ].filter((d) => d.value > 0),
+      },
+      {
+        title: 'Created vs Fail',
+        data: [
+          { name: 'Fail', value: metrics.fail, color: STATUS_COLORS.Fail },
+          { name: 'Not Fail', value: Math.max(0, metrics.created - metrics.fail), color: '#9CA3AF' },
+        ].filter((d) => d.value > 0),
+      },
+    ];
   }, [metrics]);
 
-  const fixStatusPieData = useMemo(() => {
-    return [
-      { name: 'Created', value: metrics.created, color: STATUS_COLORS.Created },
-      { name: 'In Progress', value: metrics.inProgress, color: STATUS_COLORS.InProgress },
-      { name: 'Fixed', value: metrics.fixed, color: STATUS_COLORS.Fixed },
-      { name: 'Ready for Execute', value: metrics.readyForExecute, color: STATUS_COLORS.ReadyForExecute },
-      { name: 'Fail', value: metrics.fail, color: STATUS_COLORS.Fail },
-      { name: 'N/A', value: metrics.notApplicable, color: STATUS_COLORS.NotApplicable },
-    ].filter((d) => d.value > 0);
-  }, [metrics]);
+  const paginatedCases = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredCases.slice(start, start + itemsPerPage);
+  }, [filteredCases, currentPage]);
 
-  const suiteBreakdownData = useMemo(() => {
-    const suiteMap: Record<string, { suiteName: string; automated: number; automatable: number; notAutomatable: number }> = {};
-    filteredCases.forEach((tc) => {
-      const sName = tc.suite || 'Unassigned Suite';
-      if (!suiteMap[sName]) {
-        suiteMap[sName] = { suiteName: sName, automated: 0, automatable: 0, notAutomatable: 0 };
-      }
-      if (tc.automationStatus === AutomationStatus.Automated) suiteMap[sName].automated++;
-      else if (tc.automationStatus === AutomationStatus.Automatable) suiteMap[sName].automatable++;
-      else suiteMap[sName].notAutomatable++;
-    });
-    return Object.values(suiteMap).slice(0, 10);
-  }, [filteredCases]);
+  const totalPages = Math.ceil(filteredCases.length / itemsPerPage);
 
-  // Export CSV handler
-  const handleExportCSV = () => {
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedSuiteFilter, statusFilter, fixStatusFilter, excludeArchived]);
+
+  // Export PDF handler
+  const exportPDF = async () => {
+    if (!currentProject) return;
+    const toastId = toast.loading('Generating PDF report...');
+    try {
+      await exportAutomationStatusToPDF(currentProject, metrics);
+      toast.success('PDF report downloaded successfully', { id: toastId });
+    } catch (err: any) {
+      toast.error('Failed to generate PDF: ' + (err.message || 'Unknown error'), { id: toastId });
+    }
+  };
+
+  // Export Excel handler
+  const handleExportExcel = () => {
     if (!filteredCases.length) {
       toast.error('No test cases available to export');
       return;
     }
 
+    const wb = XLSX.utils.book_new();
+
+    // 1. Dashboard Sheet
+    const dashboardData = [
+      ['Metric', 'Count', 'Coverage (%)'],
+      ['Total Test Cases', metrics.total, ''],
+      ['Automatable Test Cases', metrics.automatableBase, metrics.automationCoverage],
+      ['Automated Test Cases', metrics.automated, ''],
+      ['Not Automatable', metrics.notAutomatable, ''],
+      [],
+      ['Fix Status', 'Count'],
+      ['Created', metrics.created],
+      ['In Progress', metrics.inProgress],
+      ['Fixed', metrics.fixed],
+      ['Ready for Execute', metrics.readyForExecute],
+      ['Fail', metrics.fail],
+    ];
+    const wsDashboard = XLSX.utils.aoa_to_sheet(dashboardData);
+    XLSX.utils.book_append_sheet(wb, wsDashboard, 'Dashboard');
+
+    // 2. Details Sheet
     const headers = [
       'Test Case ID',
       'Title',
@@ -180,28 +238,23 @@ const AutomationStatusPage: React.FC = () => {
     ];
 
     const rows = filteredCases.map((tc) => [
-      `"${tc.displayId || tc.id}"`,
-      `"${tc.title.replace(/"/g, '""')}"`,
-      `"${(tc.suite || '').replace(/"/g, '""')}"`,
-      `"${tc.priority}"`,
-      `"${tc.status}"`,
-      `"${tc.testType || ''}"`,
-      `"${tc.automationStatus || 'Not Automatable'}"`,
-      `"${tc.automationFixStatus || 'Not Applicable'}"`,
-      `"${tc.lastAutomationUpdateDate ? new Date(tc.lastAutomationUpdateDate).toLocaleString() : ''}"`,
-      `"${tc.archived ? 'Yes' : 'No'}"`
+      tc.displayId || tc.id,
+      tc.title,
+      tc.suite || '',
+      tc.priority,
+      tc.status,
+      tc.testType || '',
+      tc.automationStatus || 'Not Automatable',
+      tc.automationFixStatus || 'Not Applicable',
+      tc.lastAutomationUpdateDate ? new Date(tc.lastAutomationUpdateDate).toLocaleString() : '',
+      tc.archived ? 'Yes' : 'No'
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${currentProject?.name || 'Project'}_Automation_Status_Report_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success(`Exported ${filteredCases.length} test cases to CSV`);
+    const wsDetails = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    XLSX.utils.book_append_sheet(wb, wsDetails, 'Detailed Data');
+
+    XLSX.writeFile(wb, `${currentProject?.name || 'Project'}_Automation_Status_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast.success(`Exported ${filteredCases.length} test cases to Excel`);
   };
 
   if (!activeProject) {
@@ -209,67 +262,93 @@ const AutomationStatusPage: React.FC = () => {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Context Breadcrumb & Top Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <ContextBreadcrumb showSuiteSelector={false} />
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2 mt-2">
-            <Bot className="text-blue-600 dark:text-blue-400" size={28} />
-            Test Automation Status & Analytics
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Real-time breakdown of automated test scripts, fix progress, and executable coverage.
-          </p>
+    <div className="h-full bg-gray-50 dark:bg-gray-900 overflow-auto p-4 md:p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Context Breadcrumb & Top Bar */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <ContextBreadcrumb showSuiteSelector={false} />
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2 mt-2">
+              <Bot className="text-blue-600 dark:text-blue-400" size={28} />
+              Test Automation Status & Analytics
+            </h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Real-time breakdown of automated test scripts, fix progress, and executable coverage.
+            </p>
+          </div>
+
+          {/* Action Controls */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+              <input
+                type="checkbox"
+                checked={excludeArchived}
+                onChange={(e) => setExcludeArchived(e.target.checked)}
+                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+              />
+              <span>Exclude Archived Cases</span>
+            </label>
+
+            <button
+              onClick={fetchCases}
+              disabled={isLoading}
+              className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 shadow-sm transition-colors text-sm font-medium"
+            >
+              <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+              <span>Refresh</span>
+            </button>
+
+            <button
+              onClick={exportPDF}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg shadow-sm font-medium text-sm transition-colors"
+            >
+              <Download size={16} />
+              <span>PDF Report</span>
+            </button>
+
+            <button
+              onClick={handleExportExcel}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm font-medium text-sm transition-colors"
+            >
+              <FilePlus size={16} />
+              <span>Excel Report</span>
+            </button>
+          </div>
         </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
-            <input
-              type="checkbox"
-              checked={excludeArchived}
-              onChange={(e) => setExcludeArchived(e.target.checked)}
-              className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-            />
-            <span>Exclude Archived Cases</span>
-          </label>
-
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
-            <input
-              type="checkbox"
-              checked={excludeUi}
-              onChange={(e) => setExcludeUi(e.target.checked)}
-              className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-            />
-            <span>Exclude UI Cases</span>
-          </label>
-
+        {/* Tabs */}
+        <div className="flex border-b border-gray-200 dark:border-gray-700">
           <button
-            onClick={fetchCases}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 shadow-sm transition-colors text-sm font-medium"
+            onClick={() => setActiveTab('overview')}
+            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 ${
+              activeTab === 'overview'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
           >
-            <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-            <span>Refresh</span>
+            Overview
           </button>
-
           <button
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm font-medium text-sm transition-colors"
+            onClick={() => setActiveTab('details')}
+            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 ${
+              activeTab === 'details'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
           >
-            <Download size={16} />
-            <span>Export CSV</span>
+            Detailed Data
           </button>
         </div>
-      </div>
+
+        {activeTab === 'overview' && (
+          <div id="overview-content" className="space-y-6">
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
         {/* Card 1: Total Test Cases */}
         <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Test Cases</span>
+            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Test Cases In {currentProject?.name || 'Project'}</span>
             <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
               <Layers size={20} />
             </div>
@@ -279,149 +358,89 @@ const AutomationStatusPage: React.FC = () => {
             <span className="text-xs text-gray-500">{excludeArchived ? 'Active cases' : 'All cases'}</span>
           </div>
           <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 flex justify-between">
-            <span>Automated: <b>{metrics.automated}</b></span>
-            <span>Coverage: <b className="text-emerald-600">{metrics.automationCoverage}%</b></span>
+            <span>Automatable: <b className="text-blue-600 dark:text-blue-400">{metrics.automatableBase} ({((metrics.automatableBase / (metrics.total || 1)) * 100).toFixed(1)}%)</b></span>
+            <span>Not Automatable: <b className="text-amber-600 dark:text-amber-400">{metrics.notAutomatable} ({((metrics.notAutomatable / (metrics.total || 1)) * 100).toFixed(1)}%)</b></span>
           </div>
         </div>
 
-        {/* Card 2: Fully Automated */}
+        {/* Card 2: Automatable Test Cases */}
         <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Automated Cases</span>
+            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Automatable Test Cases</span>
             <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg">
               <CheckCircle2 size={20} />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-emerald-600 dark:text-emerald-400">{metrics.automated}</span>
-            <span className="text-xs text-emerald-600 font-semibold">{metrics.automationCoverage}% of total</span>
+            <span className="text-3xl font-extrabold text-emerald-600 dark:text-emerald-400">{metrics.automatableBase}</span>
+            <span className="text-xs text-emerald-600 font-semibold">Cases to automate</span>
           </div>
           <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 flex justify-between">
-            <span>Automatable: <b>{metrics.automatable}</b></span>
-            <span>Not Automatable: <b>{metrics.notAutomatable}</b></span>
+            <span>Automated: <b className="text-emerald-600 dark:text-emerald-400">{metrics.automated}</b></span>
+            <span>Coverage: <b className="text-emerald-600 dark:text-emerald-400">{metrics.automationCoverage}%</b></span>
           </div>
         </div>
+      </div>
 
-        {/* Card 3: Ready For Execution */}
-        <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ready for Execution</span>
-            <div className="p-2 bg-cyan-50 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 rounded-lg">
-              <PlayCircle size={20} />
+      {/* Fix Status Breakdown Details */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+        {[
+          { label: 'Created', value: metrics.created, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-900/30', icon: FilePlus },
+          { label: 'In Progress', value: metrics.inProgress, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/30', icon: Clock },
+          { label: 'Fixed', value: metrics.fixed, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/30', icon: CheckCircle2 },
+          { label: 'Ready for Execute', value: metrics.readyForExecute, color: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50 dark:bg-cyan-900/30', icon: PlayCircle },
+          { label: 'Fail', value: metrics.fail, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/30', icon: AlertCircle },
+        ].map(stat => (
+          <div key={stat.label} className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{stat.label}</span>
+              <div className={`p-2 rounded-lg ${stat.bg} ${stat.color}`}>
+                <stat.icon size={20} />
+              </div>
+            </div>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className={`text-3xl font-extrabold ${stat.color}`}>{stat.value}</span>
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-cyan-600 dark:text-cyan-400">{metrics.readyForExecute}</span>
-            <span className="text-xs text-gray-500">Executable scripts</span>
-          </div>
-          <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 flex justify-between">
-            <span>Created: <b>{metrics.created}</b></span>
-            <span>Fixed: <b>{metrics.fixed}</b></span>
-          </div>
-        </div>
-
-        {/* Card 4: In Progress & Fix Status */}
-        <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Script Maintenance</span>
-            <div className="p-2 bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-lg">
-              <Wrench size={20} />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-purple-600 dark:text-purple-400">{metrics.created + metrics.inProgress}</span>
-            <span className="text-xs text-purple-600 font-semibold">Active tasks</span>
-          </div>
-          <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 flex justify-between">
-            <span>In Progress: <b>{metrics.inProgress}</b></span>
-            <span className="text-rose-500 font-medium">Failed Fix: <b>{metrics.fail}</b></span>
-          </div>
-        </div>
+        ))}
       </div>
 
       {/* Analytics Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Automation Status Pie Chart */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-          <h2 className="text-base font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <Bot size={18} className="text-blue-500" />
-            Automation Status Breakdown
-          </h2>
-          <div className="h-64">
-            {statusPieData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <RechartsPie>
-                  <Pie data={statusPieData} cx="50%" cy="50%" innerRadius={60} outerRadius={85} paddingAngle={4} dataKey="value" label={({ name, percent }: { name?: string; percent?: number }) => `${name || ''} ${((percent || 0) * 100).toFixed(0)}%`}>
-                    {statusPieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: any) => [`${value} cases`, 'Count']} />
-                  <Legend />
-                </RechartsPie>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center text-gray-400 text-sm">No automation status data found</div>
-            )}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {pieCharts.map((chart, idx) => (
+          <div key={idx} className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+            <h2 className="text-base font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+              <Layers size={18} className="text-blue-500" />
+              {chart.title}
+            </h2>
+            <div className="h-64">
+              {chart.data.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <RechartsPie>
+                    <Pie data={chart.data} cx="50%" cy="50%" innerRadius={60} outerRadius={85} paddingAngle={4} dataKey="value">
+                      {chart.data.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                    <Tooltip formatter={(value: any) => [`${value} cases`, 'Count']} />
+                    <Legend />
+                  </RechartsPie>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-gray-400 text-sm">No data available</div>
+              )}
+            </div>
           </div>
-        </div>
-
-        {/* Fix & Readiness Status Pie Chart */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-          <h2 className="text-base font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <Wrench size={18} className="text-purple-500" />
-            Script Fix & Readiness Progress
-          </h2>
-          <div className="h-64">
-            {fixStatusPieData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <RechartsPie>
-                  <Pie data={fixStatusPieData} cx="50%" cy="50%" innerRadius={60} outerRadius={85} paddingAngle={4} dataKey="value" label={({ name, percent }: { name?: string; percent?: number }) => `${name || ''} ${((percent || 0) * 100).toFixed(0)}%`}>
-                    {fixStatusPieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: any) => [`${value} cases`, 'Count']} />
-                  <Legend />
-                </RechartsPie>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center text-gray-400 text-sm">No fix status data found</div>
-            )}
-          </div>
-        </div>
+        ))}
       </div>
-
-      {/* Bar Chart: Suite Coverage */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-        <h2 className="text-base font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <FileSpreadsheet size={18} className="text-emerald-500" />
-          Automation Coverage by Test Suite (Top 10)
-        </h2>
-        <div className="h-72">
-          {suiteBreakdownData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={suiteBreakdownData} margin={{ top: 10, right: 30, left: 0, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                <XAxis dataKey="suiteName" tick={{ fontSize: 12 }} interval={0} angle={-15} textAnchor="end" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="automated" name="Automated" fill={STATUS_COLORS.Automated} stackId="a" />
-                <Bar dataKey="automatable" name="Automatable" fill={STATUS_COLORS.Automatable} stackId="a" />
-                <Bar dataKey="notAutomatable" name="Not Automatable" fill={STATUS_COLORS.NotAutomatable} stackId="a" />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-full flex items-center justify-center text-gray-400 text-sm">No suite data available</div>
-          )}
-        </div>
       </div>
+      )}
 
-      {/* Test Cases Automation Table */}
+      {activeTab === 'details' && (
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
         {/* Table Filters Header */}
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-850/50 flex flex-col md:flex-row gap-3 items-center justify-between">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col md:flex-row gap-3 items-center justify-between">
           <div className="relative w-full md:w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
             <input
@@ -452,27 +471,27 @@ const AutomationStatusPage: React.FC = () => {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1.5 text-gray-700 dark:text-gray-300"
+              className="text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1.5 font-semibold text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-blue-500"
             >
-              <option value="all">All Automation Statuses</option>
-              <option value={AutomationStatus.Automated}>Automated</option>
-              <option value={AutomationStatus.Automatable}>Automatable</option>
-              <option value={AutomationStatus.NotAutomatable}>Not Automatable</option>
+              <option value="all" className="font-normal text-gray-900 dark:text-gray-100">All Automation Statuses</option>
+              <option value={AutomationStatus.Automated} className="font-medium text-gray-900 dark:text-gray-100">Automated</option>
+              <option value={AutomationStatus.Automatable} className="font-medium text-gray-900 dark:text-gray-100">Automatable</option>
+              <option value={AutomationStatus.NotAutomatable} className="font-medium text-gray-900 dark:text-gray-100">Not Automatable</option>
             </select>
 
             {/* Filter by Fix Status */}
             <select
               value={fixStatusFilter}
               onChange={(e) => setFixStatusFilter(e.target.value)}
-              className="text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1.5 text-gray-700 dark:text-gray-300"
+              className="text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1.5 font-semibold text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-blue-500"
             >
-              <option value="all">All Fix Statuses</option>
-              <option value={AutomationFixStatus.Created}>Created</option>
-              <option value={AutomationFixStatus.InProgress}>In Progress</option>
-              <option value={AutomationFixStatus.Fixed}>Fixed</option>
-              <option value={AutomationFixStatus.ReadyForExecute}>Ready for Execute</option>
-              <option value={AutomationFixStatus.Fail}>Fail</option>
-              <option value={AutomationFixStatus.NotApplicable}>Not Applicable</option>
+              <option value="all" className="font-normal text-gray-900 dark:text-gray-100">All Fix Statuses</option>
+              <option value={AutomationFixStatus.Created} className="font-medium text-gray-900 dark:text-gray-100">Created</option>
+              <option value={AutomationFixStatus.InProgress} className="font-medium text-gray-900 dark:text-gray-100">In Progress</option>
+              <option value={AutomationFixStatus.Fixed} className="font-medium text-gray-900 dark:text-gray-100">Fixed</option>
+              <option value={AutomationFixStatus.ReadyForExecute} className="font-medium text-gray-900 dark:text-gray-100">Ready for Execute</option>
+              <option value={AutomationFixStatus.Fail} className="font-medium text-gray-900 dark:text-gray-100">Fail</option>
+              <option value={AutomationFixStatus.NotApplicable} className="font-medium text-gray-900 dark:text-gray-100">Not Applicable</option>
             </select>
           </div>
         </div>
@@ -492,8 +511,8 @@ const AutomationStatusPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {filteredCases.length > 0 ? (
-                filteredCases.slice(0, 100).map((tc) => (
+              {paginatedCases.length > 0 ? (
+                paginatedCases.map((tc) => (
                   <tr key={tc.id} className="hover:bg-gray-50/80 dark:hover:bg-gray-750/50 transition-colors">
                     <td className="px-4 py-3 font-mono text-xs font-semibold text-blue-600 dark:text-blue-400">
                       {tc.displayId || tc.id.substring(0, 8)}
@@ -549,13 +568,33 @@ const AutomationStatusPage: React.FC = () => {
           </table>
         </div>
 
-        {filteredCases.length > 100 && (
-          <div className="p-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 text-center text-xs text-gray-500">
-            Showing top 100 test cases of {filteredCases.length}. Export CSV to view the entire set.
+        {totalPages > 1 && (
+          <div className="p-4 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredCases.length)} of {filteredCases.length} cases
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 text-sm bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 text-sm bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </div>
+      )}
     </div>
+  </div>
   );
 };
 

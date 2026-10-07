@@ -1109,4 +1109,4 @@ export interface TicketMetricsReport {
     trend: TicketTriageDataPoint[];
 }
 
-export type ViewMode = 'projects' | 'cases' | 'suites' | 'runs' | 'tickets';
+export type ViewMode = 'projects' | 'cases' | 'suites' | 'runs' | 'tickets' | 'automation';
