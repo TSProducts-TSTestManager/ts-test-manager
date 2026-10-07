@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import toast from 'react-hot-toast';
 import { ArrowLeft, ChevronRight, Eye, Layers, Map as MapIcon, ChevronDown, ChevronUp, Check, ArrowUpDown, CheckCircle2, Download, FileText, SlidersHorizontal } from 'lucide-react';
 import { useMediaQuery } from '../../../hooks/useMediaQuery';
-import { TestRun, RunItemStatus, RunItem, TestCase, TestSuite, CustomFieldDefinition } from '../../../types/testManager';
+import { TestRun, RunItemStatus, RunItem, TestCase, TestSuite, CustomFieldDefinition, TestType, AutomationStatus, AutomationFixStatus } from '../../../types/testManager';
 import { exportTestRunToCSV, exportTestRunToXLSX } from '../../../utils/exportTestRun';
 import {
     getRunStatusColor,
@@ -13,6 +13,44 @@ import {
 } from './testRunUtils';
 import IdDisplay from '../../../components/testManager/IdDisplay';
 import RunTicketsSection from './RunTicketsSection';
+
+const TestTypeBadge: React.FC<{ value?: TestType }> = ({ value }) => {
+    if (!value) return null;
+    return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+            {value}
+        </span>
+    );
+};
+
+const AutomationStatusBadge: React.FC<{ value?: AutomationStatus }> = ({ value = AutomationStatus.NotAutomatable }) => {
+    let colorClasses = "bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700";
+    if (value === AutomationStatus.Automated) {
+        colorClasses = "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800";
+    } else if (value === AutomationStatus.Automatable) {
+        colorClasses = "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800";
+    }
+    return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${colorClasses}`}>
+            {value}
+        </span>
+    );
+};
+
+const AutomationFixStatusBadge: React.FC<{ value?: AutomationFixStatus }> = ({ value }) => {
+    if (!value) return null;
+    let colorClasses = "bg-slate-50 text-slate-700 border-slate-200";
+    if (value === AutomationFixStatus.Fixed) colorClasses = "bg-emerald-100 text-emerald-800 border-emerald-300";
+    else if (value === AutomationFixStatus.Fail) colorClasses = "bg-red-100 text-red-800 border-red-300";
+    else if (value === AutomationFixStatus.InProgress) colorClasses = "bg-amber-100 text-amber-800 border-amber-300";
+    else if (value === AutomationFixStatus.ReadyForExecute) colorClasses = "bg-cyan-100 text-cyan-800 border-cyan-300";
+    
+    return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${colorClasses}`}>
+            {value}
+        </span>
+    );
+};
 
 export interface RunDetailViewProps {
     testRun: TestRun;
@@ -671,6 +709,8 @@ const activeFilterCount = [selectedSuiteFilter, selectedAreaFilter, selectedRunS
                         <tr>
                             <th className="py-2 pl-6 pr-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-12">#</th>
                             <th className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-1/4">Title</th>
+                            <th className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-32">Test Case ID</th>
+                            <th className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-48">Type of Test</th>
                             <th className="py-2 px-4 text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-32">
                                 <button
                                     type="button"
@@ -741,12 +781,13 @@ const activeFilterCount = [selectedSuiteFilter, selectedAreaFilter, selectedRunS
                     <tbody className="divide-y divide-gray-100 dark:divide-gray-700 bg-white dark:bg-gray-900">
                         {rowVirtualizer.getVirtualItems().length > 0 && (
                             <tr aria-hidden="true">
-                                <td colSpan={7} style={{ height: rowVirtualizer.getVirtualItems()[0]?.start ?? 0, padding: 0, border: 'none' }} />
+                                <td colSpan={9} style={{ height: rowVirtualizer.getVirtualItems()[0]?.start ?? 0, padding: 0, border: 'none' }} />
                             </tr>
                         )}
                         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                             const { item, index } = sortedItems[virtualRow.index];
                             const sortedIndex = virtualRow.index;
+                            const tCase = testCaseById.get(item.caseId);
                             return (
                             <tr
                                 key={item.id}
@@ -762,9 +803,29 @@ const activeFilterCount = [selectedSuiteFilter, selectedAreaFilter, selectedRunS
                                 <td className="py-2.5 px-4">
                                     <div className="text-[15px] font-medium text-gray-900 dark:text-gray-100">{item.caseSnapshot.title}</div>
                                     {item.caseSnapshot.testDescription && (
-                                        <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate max-w-md">
+                                        <div className="text-xs text-gray-400 dark:text-gray-500 mt-1 truncate max-w-md">
                                             {item.caseSnapshot.testDescription}
                                         </div>
+                                    )}
+                                </td>
+
+                                {/* Test Case ID */}
+                                <td className="py-2.5 px-4">
+                                    <IdDisplay id={tCase?.displayId || item.caseId} className="text-[11px] text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded" />
+                                </td>
+
+                                {/* Type of Test */}
+                                <td className="py-2.5 px-4">
+                                    {tCase ? (
+                                        <div className="flex flex-col gap-1.5 items-start">
+                                            <TestTypeBadge value={tCase.testType} />
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <AutomationStatusBadge value={tCase.automationStatus} />
+                                                <AutomationFixStatusBadge value={tCase.automationFixStatus} />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <span className="text-sm text-gray-400 dark:text-gray-500">—</span>
                                     )}
                                 </td>
 
@@ -837,7 +898,7 @@ const activeFilterCount = [selectedSuiteFilter, selectedAreaFilter, selectedRunS
                                 : 0;
                             return bottomPad > 0 ? (
                                 <tr aria-hidden="true">
-                                    <td colSpan={7} style={{ height: bottomPad, padding: 0, border: 'none' }} />
+                                    <td colSpan={9} style={{ height: bottomPad, padding: 0, border: 'none' }} />
                                 </tr>
                             ) : null;
                         })()}

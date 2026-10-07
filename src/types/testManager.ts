@@ -451,6 +451,8 @@ export interface ResultsSummary {
     notRun: number;
     passRate: number;
     totalTimeSpent: number;
+    automatedCount?: number;
+    manualCount?: number;
 }
 
 export interface TestRun {

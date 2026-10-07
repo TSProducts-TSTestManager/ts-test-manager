@@ -20,7 +20,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { TestCase, Priority, Status, TestType, AutomationStatus, AutomationFixStatus, CustomFieldDefinition, HiddenDefaultColumns, TestCaseTableColumnKey, TEST_CASE_TABLE_COLUMN_LABELS, resolveHiddenTableColumns, resolveTableColumnOrder } from '../../types/testManager';
 import StatusBadge from './StatusBadge';
-import { Edit, Copy, GripVertical, ArrowUpDown, ArrowUp, ArrowDown, RotateCcw, ChevronRight, Loader2, Archive, ArchiveRestore } from 'lucide-react';
+import { Edit, Copy, GripVertical, ArrowUpDown, ArrowUp, ArrowDown, RotateCcw, ChevronRight, Loader2, Archive, ArchiveRestore, MoreHorizontal } from 'lucide-react';
 import IdDisplay from './IdDisplay';
 
 
@@ -175,6 +175,16 @@ const SortableRow: React.FC<SortableRowProps> = React.memo(({
         disabled: !enableReorder,
     });
 
+    const [showActions, setShowActions] = useState(false);
+    
+    // Close actions dropdown when clicking outside (simple implementation by listening to document clicks)
+    useEffect(() => {
+        if (!showActions) return;
+        const handleClick = () => setShowActions(false);
+        document.addEventListener('click', handleClick);
+        return () => document.removeEventListener('click', handleClick);
+    }, [showActions]);
+
     const style: React.CSSProperties = {
         transform: CSS.Transform.toString(transform),
         transition,
@@ -282,7 +292,7 @@ const SortableRow: React.FC<SortableRowProps> = React.memo(({
 
                     case 'testType':
                         return (
-                            <td key={column} className="py-2 px-4">
+                            <td key={column} className="py-2.5 px-4">
                                 {isEditMode ? (
                                     <div onClick={(e) => e.stopPropagation()}>
                                         <select
@@ -297,7 +307,33 @@ const SortableRow: React.FC<SortableRowProps> = React.memo(({
                                         </select>
                                     </div>
                                 ) : (
-                                    <TestTypeBadge value={item.testType} />
+                                    <div className="flex flex-col gap-1.5 min-w-[170px]">
+                                        {/* Primary Badge Row */}
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <TestTypeBadge value={item.testType} />
+                                            <AutomationStatusBadge value={item.automationStatus} />
+                                            <AutomationFixStatusBadge value={item.automationFixStatus} />
+                                        </div>
+                                        {/* Sub-text Date Row */}
+                                        <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 font-medium pt-0.5 border-t border-gray-100 dark:border-gray-800/80">
+                                            <span title="Last Automation Update Date">
+                                                Updated: {item.lastAutomationUpdateDate ? (() => {
+                                                    const d = new Date(item.lastAutomationUpdateDate);
+                                                    const day = String(d.getDate()).padStart(2, '0');
+                                                    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                                                    return `${day}-${months[d.getMonth()]}-${d.getFullYear()}`;
+                                                })() : <span className="text-gray-400 dark:text-gray-500 font-normal">N/A</span>}
+                                            </span>
+                                            <span title="Last PASS Date" className="ml-2">
+                                                PASS: {item.lastPassDate ? (() => {
+                                                    const d = new Date(item.lastPassDate);
+                                                    const day = String(d.getDate()).padStart(2, '0');
+                                                    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                                                    return `${day}-${months[d.getMonth()]}-${d.getFullYear()}`;
+                                                })() : <span className="text-gray-400 dark:text-gray-500 font-normal">N/A</span>}
+                                            </span>
+                                        </div>
+                                    </div>
                                 )}
                             </td>
                         );
@@ -320,39 +356,6 @@ const SortableRow: React.FC<SortableRowProps> = React.memo(({
                                 ) : (
                                     <StatusBadge type="priority" value={item.priority} />
                                 )}
-                            </td>
-                        );
-
-                    case 'testType':
-                        return (
-                            <td key={column} className="py-2.5 px-4">
-                                <div className="flex flex-col gap-1.5 min-w-[170px]">
-                                    {/* Primary Badge Row */}
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                        <TestTypeBadge value={item.testType} />
-                                        <AutomationStatusBadge value={item.automationStatus} />
-                                        <AutomationFixStatusBadge value={item.automationFixStatus} />
-                                    </div>
-                                    {/* Sub-text Date Row */}
-                                    <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 font-medium pt-0.5 border-t border-gray-100 dark:border-gray-800/80">
-                                        <span title="Last Automation Update Date">
-                                            Updated: {item.lastAutomationUpdateDate ? (() => {
-                                                const d = new Date(item.lastAutomationUpdateDate);
-                                                const day = String(d.getDate()).padStart(2, '0');
-                                                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                                                return `${day}-${months[d.getMonth()]}-${d.getFullYear()}`;
-                                            })() : <span className="text-gray-400 dark:text-gray-500 font-normal">N/A</span>}
-                                        </span>
-                                        <span title="Last PASS Date" className="ml-2">
-                                            PASS: {item.lastPassDate ? (() => {
-                                                const d = new Date(item.lastPassDate);
-                                                const day = String(d.getDate()).padStart(2, '0');
-                                                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                                                return `${day}-${months[d.getMonth()]}-${d.getFullYear()}`;
-                                            })() : <span className="text-gray-400 dark:text-gray-500 font-normal">N/A</span>}
-                                        </span>
-                                    </div>
-                                </div>
                             </td>
                         );
 
@@ -455,53 +458,69 @@ const SortableRow: React.FC<SortableRowProps> = React.memo(({
 
             {/* Actions Column */}
             <td className="py-2 px-4 text-center">
-                <div className="flex items-center justify-center gap-1">
+                <div className="relative inline-block text-left">
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
-                            onCloneClick?.(item);
+                            setShowActions(!showActions);
                         }}
-                        className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                        title="Clone Test Case"
+                        className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-sm"
+                        title="Actions"
                     >
-                        <Copy className="h-3.5 w-3.5" />
-                        Clone
+                        Action <MoreHorizontal className="h-3.5 w-3.5" />
                     </button>
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onViewClick?.(item);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
-                        title="Edit Test Case"
-                    >
-                        <Edit className="h-3.5 w-3.5" />
-                        Edit
-                    </button>
-                    {item.archived ? (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onRestoreClick?.(item);
-                            }}
-                            className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
-                            title="Restore Test Case"
-                        >
-                            <ArchiveRestore className="h-3.5 w-3.5" />
-                            Restore
-                        </button>
-                    ) : (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onArchiveClick?.(item);
-                            }}
-                            className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                            title="Archive Test Case"
-                        >
-                            <Archive className="h-3.5 w-3.5" />
-                            Archive
-                        </button>
+                    {showActions && (
+                        <div className="absolute right-0 z-10 mt-1 w-32 origin-top-right rounded-md bg-white dark:bg-gray-800 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+                            <div className="py-1">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowActions(false);
+                                        onCloneClick?.(item);
+                                    }}
+                                    className="flex w-full items-center gap-2 px-4 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                >
+                                    <Copy className="h-4 w-4" />
+                                    Clone
+                                </button>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowActions(false);
+                                        onViewClick?.(item);
+                                    }}
+                                    className="flex w-full items-center gap-2 px-4 py-2 text-sm text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                                >
+                                    <Edit className="h-4 w-4" />
+                                    Edit
+                                </button>
+                                {item.archived ? (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setShowActions(false);
+                                            onRestoreClick?.(item);
+                                        }}
+                                        className="flex w-full items-center gap-2 px-4 py-2 text-sm text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20"
+                                    >
+                                        <ArchiveRestore className="h-4 w-4" />
+                                        Restore
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setShowActions(false);
+                                            onArchiveClick?.(item);
+                                        }}
+                                        className="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                    >
+                                        <Archive className="h-4 w-4" />
+                                        Archive
+                                    </button>
+                                )}
+                            </div>
+                        </div>
                     )}
                 </div>
             </td>
