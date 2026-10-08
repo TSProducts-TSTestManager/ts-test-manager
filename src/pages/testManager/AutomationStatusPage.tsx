@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTestManagerStore } from '../../store/testManagerStore';
 import { getTestCasesByProject } from '../../services/testManagerApi';
+import { getClients } from '../../services/clientApi';
 import type { TestCaseResponse } from '../../types/api/testManager.api';
 import { AutomationStatus, AutomationFixStatus } from '../../types/api/testManager.api';
 import EmptyProjectState from '../../components/testManager/EmptyProjectState';
@@ -14,8 +15,8 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts';
-import * as XLSX from 'xlsx';
-import { exportAutomationStatusToPDF } from '../../utils/exportAutomationStatus';
+import { exportAutomationStatusToPDF, exportAutomationStatusToExcel } from '../../utils/exportAutomationStatus';
+import { useAuthStore } from '../../store/authStore';
 import {
   Bot,
   CheckCircle2,
@@ -44,6 +45,7 @@ const STATUS_COLORS = {
 const AutomationStatusPage: React.FC = () => {
   const { activeProject, projects, testSuites } = useTestManagerStore();
   const currentProject = projects.find((p) => p.id === activeProject);
+  const user = useAuthStore((state) => state.user);
 
   const [testCases, setTestCases] = useState<TestCaseResponse[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -55,6 +57,23 @@ const AutomationStatusPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'details'>('overview');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 25;
+
+  const [clientInfo, setClientInfo] = useState<{ displayId?: string; name?: string } | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    getClients().then((clients) => {
+      if (!isMounted) return;
+      const targetClientId = currentProject?.clientId || user?.clientId;
+      const found = clients.find(c => c._id === targetClientId || c.displayId === targetClientId) || clients[0];
+      if (found) {
+        setClientInfo({ displayId: found.displayId, name: found.name });
+      }
+    }).catch(() => {
+      // Fallback if client call unpermitted
+    });
+    return () => { isMounted = false; };
+  }, [currentProject?.clientId, user?.clientId]);
 
   const fetchCases = React.useCallback(async () => {
     if (!activeProject) return;
@@ -184,77 +203,57 @@ const AutomationStatusPage: React.FC = () => {
     setCurrentPage(1);
   }, [searchTerm, selectedSuiteFilter, statusFilter, fixStatusFilter, excludeArchived]);
 
+  // Dynamic reportMeta object helper
+  const getDynamicReportMeta = () => {
+    const rawClientId = currentProject?.clientId || user?.clientId || undefined;
+    const isMongoId = (id?: string | null) => !!(id && /^[0-9a-fA-F]{24}$/.test(id));
+    
+    // Resolve clean display IDs (e.g. CLT-0001 instead of MongoDB ObjectId 6ab3dc547b4e841c53dac2e3)
+    const resolvedClientId = clientInfo?.displayId || (isMongoId(rawClientId) ? 'CLT-0001' : rawClientId) || 'CLT-0001';
+    const resolvedClientName = clientInfo?.name || (resolvedClientId === 'CLT-0001' ? 'TSInternal' : 'TSConnect');
+    
+    const resolvedProjectId = currentProject?.displayId || (isMongoId(currentProject?.id) ? 'PRJ-0001' : currentProject?.id) || 'PRJ-0001';
+    const resolvedProjectName = currentProject?.name || 'TSConnect';
+
+    return {
+      clientName: resolvedClientName,
+      clientId: resolvedClientId,
+      projectName: resolvedProjectName,
+      projectId: resolvedProjectId,
+      author: {
+        name: user ? user.name : 'System Admin',
+        email: user ? user.email : ''
+      },
+      generatedAt: new Date().toLocaleString()
+    };
+  };
+
   // Export PDF handler
   const exportPDF = async () => {
     if (!currentProject) return;
     const toastId = toast.loading('Generating PDF report...');
     try {
-      await exportAutomationStatusToPDF(currentProject, metrics);
-      toast.success('PDF report downloaded successfully', { id: toastId });
+      await exportAutomationStatusToPDF(currentProject, metrics, getDynamicReportMeta(), pieCharts);
+      toast.success('PDF report generated successfully', { id: toastId });
     } catch (err: any) {
       toast.error('Failed to generate PDF: ' + (err.message || 'Unknown error'), { id: toastId });
     }
   };
 
   // Export Excel handler
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
+    if (!currentProject) return;
     if (!filteredCases.length) {
       toast.error('No test cases available to export');
       return;
     }
-
-    const wb = XLSX.utils.book_new();
-
-    // 1. Dashboard Sheet
-    const dashboardData = [
-      ['Metric', 'Count', 'Coverage (%)'],
-      ['Total Test Cases', metrics.total, ''],
-      ['Automatable Test Cases', metrics.automatableBase, metrics.automationCoverage],
-      ['Automated Test Cases', metrics.automated, ''],
-      ['Not Automatable', metrics.notAutomatable, ''],
-      [],
-      ['Fix Status', 'Count'],
-      ['Created', metrics.created],
-      ['In Progress', metrics.inProgress],
-      ['Fixed', metrics.fixed],
-      ['Ready for Execute', metrics.readyForExecute],
-      ['Fail', metrics.fail],
-    ];
-    const wsDashboard = XLSX.utils.aoa_to_sheet(dashboardData);
-    XLSX.utils.book_append_sheet(wb, wsDashboard, 'Dashboard');
-
-    // 2. Details Sheet
-    const headers = [
-      'Test Case ID',
-      'Title',
-      'Suite',
-      'Priority',
-      'Status',
-      'Test Type',
-      'Automation Status',
-      'Automation Fix Status',
-      'Last Automation Update',
-      'Archived'
-    ];
-
-    const rows = filteredCases.map((tc) => [
-      tc.displayId || tc.id,
-      tc.title,
-      tc.suite || '',
-      tc.priority,
-      tc.status,
-      tc.testType || '',
-      tc.automationStatus || 'Not Automatable',
-      tc.automationFixStatus || 'Not Applicable',
-      tc.lastAutomationUpdateDate ? new Date(tc.lastAutomationUpdateDate).toLocaleString() : '',
-      tc.archived ? 'Yes' : 'No'
-    ]);
-
-    const wsDetails = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    XLSX.utils.book_append_sheet(wb, wsDetails, 'Detailed Data');
-
-    XLSX.writeFile(wb, `${currentProject?.name || 'Project'}_Automation_Status_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
-    toast.success(`Exported ${filteredCases.length} test cases to Excel`);
+    const toastId = toast.loading('Generating Excel report with embedded charts...');
+    try {
+      await exportAutomationStatusToExcel(currentProject, metrics, filteredCases, getDynamicReportMeta());
+      toast.success(`Exported ${filteredCases.length} test cases to Excel successfully`, { id: toastId });
+    } catch (err: any) {
+      toast.error('Failed to generate Excel report: ' + (err.message || 'Unknown error'), { id: toastId });
+    }
   };
 
   if (!activeProject) {
