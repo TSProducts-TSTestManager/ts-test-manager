@@ -26,6 +26,21 @@ export enum TestType {
   Other = "Other",
 }
 
+export enum AutomationStatus {
+  NotAutomatable = "Not Automatable",
+  Automatable = "Automatable",
+  Automated = "Automated",
+}
+
+export enum AutomationFixStatus {
+  NotApplicable = "Not Applicable",
+  Created = "Created",
+  InProgress = "In Progress",
+  Fail = "Fail",
+  Fixed = "Fixed",
+  ReadyForExecute = "Ready for Execute",
+}
+
 // Base API Response
 export interface PaginationMeta {
   total: number;
@@ -156,6 +171,10 @@ export interface TestCaseResponse {
   priority: Priority;
   status: Status;
   testType?: TestType;
+  automationStatus?: AutomationStatus;
+  automationFixStatus?: AutomationFixStatus;
+  lastAutomationUpdateDate?: string | null;
+  lastPassDate?: string | null;
   projectId: string;
   suiteId: string;
   suite: string; // Suite name for display
@@ -222,6 +241,10 @@ export interface CreateTestCaseRequest {
   status?: Status;
   /** Empty string clears the field; omit to leave it untouched. */
   testType?: TestType | "";
+  automationStatus?: AutomationStatus;
+  automationFixStatus?: AutomationFixStatus;
+  lastAutomationUpdateDate?: Date | string | null;
+  lastPassDate?: Date | string | null;
   assignedTesterId?: string;
   area?: string;
   expectedResult?: string;
@@ -237,6 +260,10 @@ export interface UpdateTestCaseRequest {
   status?: Status;
   /** Empty string clears the field; omit to leave it untouched. */
   testType?: TestType | "";
+  automationStatus?: AutomationStatus;
+  automationFixStatus?: AutomationFixStatus;
+  lastAutomationUpdateDate?: Date | string | null;
+  lastPassDate?: Date | string | null;
   assignedTesterId?: string;
   area?: string;
   expectedResult?: string;

@@ -93,6 +93,7 @@ const TestManagerLayout: React.FC = () => {
         else if (path.includes('/suites')) setViewMode('suites');
         else if (path.includes('/runs')) setViewMode('runs');
         else if (path.includes('/tickets')) setViewMode('tickets');
+        else if (path.includes('/automation-status')) setViewMode('automation');
     }, [location.pathname, setViewMode]);
 
     const handleViewChange = (mode: ViewMode) => {
@@ -109,7 +110,11 @@ const TestManagerLayout: React.FC = () => {
         if (isSelectionMode) {
             setSelectionMode(false);
         }
-        navigate(`/test-manager/${mode}`);
+        if (mode === 'automation') {
+            navigate(`/test-manager/automation-status`);
+        } else {
+            navigate(`/test-manager/${mode}`);
+        }
     };
 
     const handleNew = () => {
