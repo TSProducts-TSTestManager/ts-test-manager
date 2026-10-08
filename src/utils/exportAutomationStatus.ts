@@ -175,7 +175,8 @@ export async function exportAutomationStatusToExcel(
     project: { name?: string },
     metrics: AutomationStatusMetrics,
     filteredCases: any[] = [],
-    reportMeta: ReportMeta = {}
+    reportMeta: ReportMeta = {},
+    pieCharts: PieChartConfig[] = []
 ): Promise<void> {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'TS Test Manager';
@@ -235,29 +236,33 @@ export async function exportAutomationStatusToExcel(
     wsSummary.getColumn(2).width = 15;
     wsSummary.getColumn(3).width = 25;
 
-    // 2. Embedded Charts Sheet
-    const statusSvg = pieChartSVG('Automation Coverage', [
-        { name: 'Automated', value: metrics.automated, color: '#10B981' },
-        { name: 'Automatable', value: Math.max(0, metrics.automatableBase - metrics.automated), color: '#3B82F6' },
-        { name: 'Not Automatable', value: metrics.notAutomatable, color: '#F59E0B' },
-    ].filter(d => d.value > 0));
-
+    // 2. Embedded Charts Sheet (All 6 Pie Charts)
     const wsCharts = workbook.addWorksheet('Charts');
-    wsCharts.addRow(['Automation Status Visual Graphs']).getCell(1).font = { bold: true, size: 14 };
+    wsCharts.addRow(['Automation Status Visual Graphs (All 6 Breakdown Charts)']).getCell(1).font = { bold: true, size: 14 };
     wsCharts.addRow([]);
 
-    try {
-        const png = await svgToPngBytes(statusSvg, 500, 300);
-        const imgId = workbook.addImage({
-            buffer: png as unknown as ArrayBuffer as typeof Buffer.prototype,
-            extension: 'png',
-        });
-        wsCharts.addImage(imgId, {
-            tl: { col: 0.5, row: 3 },
-            ext: { width: 500, height: 300 },
-        });
-    } catch (err) {
-        console.error('Failed to embed graph in Excel:', err);
+    // Convert and place each pie chart into Excel
+    for (let idx = 0; idx < pieCharts.length; idx++) {
+        const chart = pieCharts[idx];
+        const svg = pieChartSVG(chart.title, chart.data);
+        try {
+            const png = await svgToPngBytes(svg, 480, 280);
+            const imgId = workbook.addImage({
+                buffer: png as unknown as ArrayBuffer as typeof Buffer.prototype,
+                extension: 'png',
+            });
+
+            // Layout in 2 columns: col 0.5 for even index, col 8.5 for odd index
+            const col = (idx % 2 === 0) ? 0.5 : 8.5;
+            const row = 3 + Math.floor(idx / 2) * 16;
+
+            wsCharts.addImage(imgId, {
+                tl: { col, row },
+                ext: { width: 480, height: 280 },
+            });
+        } catch (err) {
+            console.error(`Failed to embed graph ${chart.title} in Excel:`, err);
+        }
     }
 
     // 3. Detailed Cases Sheet

@@ -249,7 +249,7 @@ const AutomationStatusPage: React.FC = () => {
     }
     const toastId = toast.loading('Generating Excel report with embedded charts...');
     try {
-      await exportAutomationStatusToExcel(currentProject, metrics, filteredCases, getDynamicReportMeta());
+      await exportAutomationStatusToExcel(currentProject, metrics, filteredCases, getDynamicReportMeta(), pieCharts);
       toast.success(`Exported ${filteredCases.length} test cases to Excel successfully`, { id: toastId });
     } catch (err: any) {
       toast.error('Failed to generate Excel report: ' + (err.message || 'Unknown error'), { id: toastId });
