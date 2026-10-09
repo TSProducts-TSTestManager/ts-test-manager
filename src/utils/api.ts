@@ -20,8 +20,8 @@ export const getApiUrl = (): string => {
 		return import.meta.env.VITE_DEV_API_URL || "/api";
 	}
 	
-	// In production, prefer VITE_API_URL if set, otherwise use relative path
-	return import.meta.env.VITE_API_URL || "/api";
+	// In production, use relative /api path so Vercel rewrites proxy all requests seamlessly
+	return "/api";
 };
 
 export const API_URL = getApiUrl();
